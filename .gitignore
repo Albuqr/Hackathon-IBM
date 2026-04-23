@@ -1,0 +1,49 @@
+# Ambiente virtual
+.venv/
+venv/
+env/
+
+# Variáveis de ambiente (NUNCA subir!)
+.env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Banco de dados
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# Embeddings (arquivo grande)
+data/*.npy
+data/*.json
+
+# PyCharm
+.idea/
+*.iml
+
+# VSCode
+.vscode/
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Credenciais IBM
+credentials.yaml
+*.pem
+*.key
