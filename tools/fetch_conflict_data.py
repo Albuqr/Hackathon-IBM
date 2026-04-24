@@ -1,156 +1,180 @@
+import io
+import csv
+import zipfile
 import requests
-from datetime import datetime, timedelta
 from ibm_watsonx_orchestrate.agent_builder.tools import tool
+
+# GDELT v2 Events CSV column indices (confirmed from live data)
+COL_EVENT_ROOT = 28   # EventRootCode  (18=Assault, 19=Fight, 20=ConvForce)
+COL_EVENT_CODE = 26   # Full EventCode
+COL_GOLDSTEIN  = 30   # GoldsteinScale (-10 worst .. +10 best)
+COL_MENTIONS   = 31   # NumMentions
+COL_ACTION_NAME= 52   # ActionGeo_FullName
+COL_ACTION_CC  = 53   # ActionGeo_CountryCode
+COL_ACTION_LAT = 56   # ActionGeo_Lat
+COL_ACTION_LON = 57   # ActionGeo_Long
+COL_SOURCE_URL = 60   # SOURCEURL
+COL_SQLDATE    = 1    # Day (YYYYMMDD)
+
+# CAMEO root codes for violent conflict
+CONFLICT_ROOTS = {'18', '19', '20'}
+
+# FIPS → country name mapping for the most common conflict zones
+CC_MAP = {
+    'IS': 'Israel', 'PS': 'Palestina', 'RS': 'Rússia', 'UP': 'Ucrânia',
+    'UA': 'Ucrânia', 'SU': 'Sudão', 'BM': 'Myanmar', 'YM': 'Iêmen',
+    'HA': 'Haiti',   'CG': 'Congo (RDC)', 'IR': 'Irã', 'LE': 'Líbano',
+    'SY': 'Síria',   'ET': 'Etiópia', 'LY': 'Líbia', 'ML': 'Mali',
+    'SO': 'Somália', 'MZ': 'Moçambique', 'AF': 'Afeganistão',
+    'IZ': 'Iraque',  'SA': 'Arábia Saudita', 'PK': 'Paquistão',
+}
+
+# Hardcoded fallback: major known active conflicts that MUST appear
+# Used when they don't appear in the GDELT 15-min window
+FALLBACK_CONFLICTS = [
+    {"id": "fallback-gaza",    "title": "Conflito armado ativo — Gaza/Israel",         "country": "Palestina", "lat": 31.35, "lon": 34.30, "severity": 5},
+    {"id": "fallback-ukraine", "title": "Guerra Rússia-Ucrânia — frente leste",        "country": "Ucrânia",  "lat": 48.50, "lon": 37.50, "severity": 5},
+    {"id": "fallback-sudan",   "title": "Guerra civil ativa — Sudão (RSF vs Exército)", "country": "Sudão",   "lat": 15.55, "lon": 32.53, "severity": 5},
+    {"id": "fallback-myanmar", "title": "Conflito armado — Myanmar (junta vs grupos)",  "country": "Myanmar",  "lat": 21.00, "lon": 96.00, "severity": 4},
+    {"id": "fallback-yemen",   "title": "Guerra civil e ataques Houthi — Iêmen",        "country": "Iêmen",   "lat": 15.35, "lon": 44.20, "severity": 4},
+    {"id": "fallback-drc",     "title": "Conflito armado M23/FARDC — Leste do Congo",  "country": "Congo",   "lat": -1.67, "lon": 29.22, "severity": 4},
+    {"id": "fallback-haiti",   "title": "Violência de gangues — Porto Príncipe, Haiti", "country": "Haiti",   "lat": 18.54, "lon":-72.34, "severity": 4},
+    {"id": "fallback-lebanon", "title": "Tensão militar — fronteira Líbano-Israel",     "country": "Líbano",  "lat": 33.30, "lon": 35.50, "severity": 4},
+    {"id": "fallback-iran",    "title": "Atividade militar e tensão regional — Irã",    "country": "Irã",     "lat": 32.00, "lon": 53.00, "severity": 3},
+]
+
+def _goldstein_to_severity(gs: float) -> int:
+    """Map GoldsteinScale (-10..+10) to severity 1-5."""
+    if gs <= -9:   return 5
+    elif gs <= -7: return 4
+    elif gs <= -5: return 3
+    elif gs <= -2: return 2
+    else:          return 1
+
+
+def _fetch_gdelt_events(max_events: int = 200) -> list[dict]:
+    """Download latest GDELT v2 Events 15-min update and extract conflict events."""
+    # Get URL of latest update
+    meta = requests.get(
+        "http://data.gdeltproject.org/gdeltv2/lastupdate.txt", timeout=15
+    )
+    export_url = meta.text.strip().split("\n")[0].split(" ")[-1]
+
+    r = requests.get(export_url, timeout=30)
+    r.raise_for_status()
+
+    # Only accept events from known active conflict country codes
+    allowed_cc = set(CC_MAP.keys())
+
+    events = []
+    with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+        fname = z.namelist()[0]
+        with z.open(fname) as f:
+            reader = csv.reader(
+                io.TextIOWrapper(f, encoding="utf-8", errors="replace"),
+                delimiter="\t"
+            )
+            for row in reader:
+                if len(row) < 61:
+                    continue
+                root = row[COL_EVENT_ROOT].strip()
+                if root not in CONFLICT_ROOTS:
+                    continue
+                cc = row[COL_ACTION_CC].strip()
+                if cc not in allowed_cc:
+                    continue  # skip non-conflict countries (US, UK, AU, etc.)
+                try:
+                    lat = float(row[COL_ACTION_LAT])
+                    lon = float(row[COL_ACTION_LON])
+                except (ValueError, IndexError):
+                    continue
+                if lat == 0.0 and lon == 0.0:
+                    continue
+                try:
+                    gs = float(row[COL_GOLDSTEIN])
+                except ValueError:
+                    gs = -5.0
+                try:
+                    mentions = int(row[COL_MENTIONS])
+                except ValueError:
+                    mentions = 1
+                if mentions < 2:
+                    continue  # skip single-mention noise
+
+                loc     = row[COL_ACTION_NAME].strip()
+                country = CC_MAP.get(cc, loc)
+                sev     = _goldstein_to_severity(gs)
+                code    = row[COL_EVENT_CODE].strip()
+                date    = row[COL_SQLDATE].strip()
+                url     = row[COL_SOURCE_URL].strip() if len(row) > COL_SOURCE_URL else ""
+
+                events.append({
+                    "id":         f"gdelt-ev-{row[0].strip()}-{code}",
+                    "title":      f"Conflito [{code}] — {loc}",
+                    "country":    country,
+                    "country_iso3": "UNK",
+                    "lat":        lat,
+                    "lon":        lon,
+                    "severity":   sev,
+                    "urgency":    "immediate" if sev >= 4 else "24h",
+                    "crisis_type": "conflict",
+                    "source":     "gdelt",
+                    "people_affected": 0,
+                    "mentions":   mentions,
+                    "url":        url,
+                    "date":       date,
+                })
+                if len(events) >= max_events:
+                    break
+
+    # Sort by severity desc, mentions desc
+    events.sort(key=lambda e: (-e["severity"], -e.get("mentions", 0)))
+    return events
 
 
 @tool
-def fetch_conflict_data(days_back: int = 3) -> list[dict]:
-    """Busca dados de conflitos armados e instabilidade política em tempo real via GDELT Project.
+def fetch_conflict_data(include_fallback: bool = True) -> list[dict]:
+    """Busca dados de conflitos armados e guerras ativas via GDELT Events v2.
+
+    Usa o banco de eventos GDELT em tempo real (atualizado a cada 15 min)
+    para encontrar eventos de conflito com coordenadas geográficas precisas.
+    Inclui fallback hardcoded para os maiores conflitos ativos conhecidos.
 
     Args:
-        days_back: Quantos dias atrás buscar eventos. Padrão: 3.
+        include_fallback: Se True, adiciona fallback para conflitos maiores
+                          que podem não aparecer numa janela de 15 minutos.
     Returns:
-        Lista de dicts com id, title, lat, lon, severity, crisis_type='conflict', source.
+        Lista de dicts com id, title, lat, lon, severity, crisis_type='conflict',
+        source, country.
     """
     events = []
+    seen_ids = set()
 
-    # ── GDELT GKG / Event API (sem autenticação, completamente gratuito) ──
+    # 1. GDELT Events v2 (real-time, with coordinates)
     try:
-        # GDELT Events API v2 — filtra por categoria de conflito/violência
-        # Códigos de evento CAMEO relacionados a conflito:
-        # 14=Protest, 17=Coerce, 18=Assault, 19=Fight, 20=Use conventional force
-        since = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y%m%d%H%M%S")
-        url = "https://api.gdeltproject.org/api/v2/events/query"
-        params = {
-            "query": "eventcode:14 OR eventcode:17 OR eventcode:18 OR eventcode:19 OR eventcode:20",
-            "mode": "artlist",
-            "maxrecords": 75,
-            "startdatetime": since,
-            "format": "json",
-            "sourcelang": "eng",
-        }
-        r = requests.get(url, params=params, timeout=20)
-        if r.status_code == 200:
-            data = r.json()
-            for art in data.get("articles", []):
-                # GDELT GKG article — extract what we can
-                title = art.get("title", "")
-                url_src = art.get("url", "")
-                # No direct lat/lon in artlist mode — skip entries without geo
-                # Use a simpler GDELT endpoint instead (see below)
-            print(f"GDELT artlist: tentativa (sem coords diretas)")
+        gdelt_events = _fetch_gdelt_events(max_events=200)
+        for ev in gdelt_events:
+            if ev["id"] not in seen_ids:
+                seen_ids.add(ev["id"])
+                events.append(ev)
+        print(f"GDELT Events: {len(gdelt_events)} conflitos com coordenadas")
     except Exception as e:
-        print(f"GDELT artlist error: {e}")
+        print(f"GDELT Events error: {e}")
 
-    # ── GDELT Events API — tabular mode with coordinates ──
-    try:
-        # GDELT 2.0 Event Database — last 15 minutes update files are free
-        # Use the geo-coded event search
-        url2 = "https://api.gdeltproject.org/api/v2/events/query"
-        params2 = {
-            "query": "eventcode:180 OR eventcode:190 OR eventcode:200 OR eventcode:1821 OR eventcode:1831",
-            "mode": "timelinecountry",
-            "format": "json",
-        }
-        # Fallback: use GDELT DOC 2.0 fulltext search for conflict news
-        doc_url = "https://api.gdeltproject.org/api/v2/doc/doc"
-        doc_params = {
-            "query": "conflict war attack battle casualties",
-            "mode": "artlist",
-            "maxrecords": 50,
-            "format": "json",
-            "sort": "DateDesc",
-        }
-        r2 = requests.get(doc_url, params=doc_params, timeout=20)
-        if r2.status_code == 200:
-            data2 = r2.json()
-            seen = set()
-            for art in data2.get("articles", []):
-                title = art.get("title", "").strip()
-                if not title or title in seen:
-                    continue
-                seen.add(title)
-                # GDELT doc API does not always include lat/lon
-                # Extract country from socialimage or domain heuristics
-                domain = art.get("domain", "")
-                lang   = art.get("language", "")
-                # Assign a rough severity based on keywords in title
-                tl = title.lower()
-                if any(k in tl for k in ["massacre", "genocide", "mass casualty", "siege", "major offensive"]):
-                    sev = 5
-                elif any(k in tl for k in ["war", "battle", "offensive", "airstrike", "bombing"]):
-                    sev = 4
-                elif any(k in tl for k in ["conflict", "fighting", "clashes", "attack", "gunfire"]):
-                    sev = 3
-                elif any(k in tl for k in ["protest", "demonstration", "unrest", "tension"]):
-                    sev = 2
-                else:
-                    sev = 2
-
+    # 2. Hardcoded fallback for major known active conflicts
+    if include_fallback:
+        for fb in FALLBACK_CONFLICTS:
+            if fb["id"] not in seen_ids:
+                seen_ids.add(fb["id"])
                 events.append({
-                    "id": f"gdelt-{abs(hash(title)) % 10**9}",
-                    "title": title,
-                    "country": "",
+                    **fb,
                     "country_iso3": "UNK",
-                    "lat": 0.0,
-                    "lon": 0.0,
-                    "severity": sev,
-                    "urgency": "immediate" if sev >= 4 else "24h",
-                    "crisis_type": "conflict",
-                    "source": "gdelt",
-                    "people_affected": 0,
-                    "url": art.get("url", ""),
-                })
-        print(f"GDELT doc: {len([e for e in events if e['source']=='gdelt'])} eventos")
-    except Exception as e:
-        print(f"GDELT doc error: {e}")
-
-    # ── ACLED (Armed Conflict Location & Event Data) — public data endpoint ──
-    # ACLED requires registration but offers a free public data API
-    # We use ReliefWeb as a reliable free alternative for conflict events
-    try:
-        rw_url = "https://api.reliefweb.int/v1/reports"
-        rw_params = {
-            "appname": "hktn26-crisis-monitor",
-            "filter[field]": "theme.name",
-            "filter[value][]": ["Conflict and Violence", "Safety and Security"],
-            "fields[include][]": ["title", "country", "date", "body"],
-            "limit": 30,
-            "sort[]": "date:desc",
-        }
-        r3 = requests.get(rw_url, params=rw_params, timeout=15)
-        if r3.status_code == 200:
-            for item in r3.json().get("data", []):
-                fields = item.get("fields", {})
-                title  = fields.get("title", "")
-                countries = fields.get("country", [{}])
-                country_name = countries[0].get("name", "") if countries else ""
-
-                tl = title.lower()
-                if any(k in tl for k in ["massacre", "mass casualty", "siege", "major offensive"]):
-                    sev = 5
-                elif any(k in tl for k in ["war", "battle", "offensive", "airstrike"]):
-                    sev = 4
-                elif any(k in tl for k in ["conflict", "clashes", "attack", "armed"]):
-                    sev = 3
-                else:
-                    sev = 2
-
-                events.append({
-                    "id": f"reliefweb-conflict-{item.get('id', abs(hash(title)) % 10**9)}",
-                    "title": title,
-                    "country": country_name,
-                    "country_iso3": "UNK",
-                    "lat": 0.0,
-                    "lon": 0.0,
-                    "severity": sev,
-                    "urgency": "immediate" if sev >= 4 else "24h",
-                    "crisis_type": "conflict",
-                    "source": "reliefweb-conflict",
+                    "urgency":      "immediate" if fb["severity"] >= 4 else "24h",
+                    "crisis_type":  "conflict",
+                    "source":       "fallback",
                     "people_affected": 0,
                 })
-        print(f"ReliefWeb conflict: {len([e for e in events if e['source']=='reliefweb-conflict'])} eventos")
-    except Exception as e:
-        print(f"ReliefWeb conflict error: {e}")
 
-    return events
+    # Return top 50 by severity
+    events.sort(key=lambda e: -e["severity"])
+    return events[:50]

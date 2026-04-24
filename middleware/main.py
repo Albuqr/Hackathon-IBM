@@ -393,52 +393,109 @@ def trigger_ingest():
     except Exception as e:
         print(f"GDACS error: {e}")
 
-    # 4. Conflict data (GDELT + ReliefWeb)
+    # 4. Conflict data — GDELT Events v2 CSV (real-time, with coordinates)
     try:
-        from datetime import timedelta
-        since = (datetime.utcnow() - timedelta(days=3)).strftime("%Y%m%d%H%M%S")
-        doc_url = "https://api.gdeltproject.org/api/v2/doc/doc"
-        doc_params = {
-            "query": "conflict war attack battle casualties armed",
-            "mode": "artlist",
-            "maxrecords": 40,
-            "format": "json",
-            "sort": "DateDesc",
+        import io as _io, csv as _csv, zipfile as _zip
+
+        # GDELT v2 column indices (confirmed from live data)
+        _CONFLICT_ROOTS = {'18', '19', '20'}
+        # Only FIPS country codes known to be active conflict zones
+        _CC_MAP = {
+            'IS':'Israel','PS':'Palestina','RS':'Rússia','UP':'Ucrânia',
+            'UA':'Ucrânia','SU':'Sudão','BM':'Myanmar','YM':'Iêmen',
+            'HA':'Haiti','CG':'Congo (RDC)','IR':'Irã','LE':'Líbano',
+            'SY':'Síria','ET':'Etiópia','LY':'Líbia','ML':'Mali',
+            'SO':'Somália','MZ':'Moçambique','AF':'Afeganistão',
+            'IZ':'Iraque','PK':'Paquistão','SA':'Arábia Saudita',
         }
-        r = requests.get(doc_url, params=doc_params, timeout=20)
-        if r.status_code == 200:
-            seen_titles = set()
-            for art in r.json().get("articles", []):
-                title = art.get("title", "").strip()
-                if not title or title in seen_titles:
-                    continue
-                seen_titles.add(title)
-                tl = title.lower()
-                if any(k in tl for k in ["massacre", "genocide", "mass casualty", "siege", "major offensive"]):
-                    sev = 5
-                elif any(k in tl for k in ["war", "battle", "offensive", "airstrike", "bombing"]):
-                    sev = 4
-                elif any(k in tl for k in ["conflict", "fighting", "clashes", "attack", "gunfire", "armed"]):
-                    sev = 3
-                else:
-                    sev = 2
-                uid = f"gdelt-{abs(hash(title)) % 10**9}"
-                events.append({
-                    "id": uid,
-                    "title": title,
-                    "country": "",
-                    "country_iso3": "UNK",
-                    "lat": 0.0,
-                    "lon": 0.0,
-                    "severity": sev,
-                    "urgency": "immediate" if sev >= 4 else "24h",
-                    "crisis_type": "conflict",
-                    "source": "gdelt",
-                    "people_affected": 0,
-                })
-        print(f"GDELT conflict: {len([e for e in events if e['source']=='gdelt'])} eventos")
+        # Only accept events whose ActionGeo country code is in the conflict zone list
+        _ALLOWED_CC = set(_CC_MAP.keys())
+
+        def _gs_to_sev(gs):
+            if gs <= -9: return 5
+            elif gs <= -7: return 4
+            elif gs <= -5: return 3
+            elif gs <= -2: return 2
+            else: return 1
+
+        # Get latest 15-min update URL
+        meta = requests.get(
+            "http://data.gdeltproject.org/gdeltv2/lastupdate.txt", timeout=15
+        )
+        export_url = meta.text.strip().split("\n")[0].split(" ")[-1]
+        rz = requests.get(export_url, timeout=30)
+        conflict_count = 0
+        with _zip.ZipFile(_io.BytesIO(rz.content)) as z:
+            with z.open(z.namelist()[0]) as f:
+                reader = _csv.reader(
+                    _io.TextIOWrapper(f, encoding="utf-8", errors="replace"),
+                    delimiter="\t"
+                )
+                for row in reader:
+                    if len(row) < 61:
+                        continue
+                    if row[28].strip() not in _CONFLICT_ROOTS:
+                        continue
+                    cc = row[53].strip()
+                    if cc not in _ALLOWED_CC:
+                        continue  # skip non-conflict countries
+                    try:
+                        lat = float(row[56]); lon = float(row[57])
+                    except ValueError:
+                        continue
+                    if lat == 0.0 and lon == 0.0:
+                        continue
+                    try:
+                        gs = float(row[30])
+                    except ValueError:
+                        gs = -5.0
+                    try:
+                        mentions = int(row[31])
+                    except (ValueError, IndexError):
+                        mentions = 1
+                    if mentions < 2:
+                        continue  # skip single-mention noise
+                    loc     = row[52].strip()
+                    country = _CC_MAP.get(cc, loc)
+                    sev     = _gs_to_sev(gs)
+                    code    = row[26].strip()
+                    uid     = f"gdelt-ev-{row[0].strip()}-{code}"
+                    events.append({
+                        "id": uid, "title": f"Conflito [{code}] — {loc}",
+                        "country": country, "country_iso3": "UNK",
+                        "lat": lat, "lon": lon, "severity": sev,
+                        "urgency": "immediate" if sev >= 4 else "24h",
+                        "crisis_type": "conflict", "source": "gdelt",
+                        "people_affected": 0,
+                    })
+                    conflict_count += 1
+        print(f"GDELT Events conflict: {conflict_count} eventos com coords")
     except Exception as e:
-        print(f"GDELT conflict error: {e}")
+        print(f"GDELT Events error: {e}")
+
+    # 5. Hardcoded fallback — major known active conflicts always present
+    _FALLBACK = [
+        ("fallback-gaza",    "Conflito armado ativo — Gaza/Israel",          "Palestina", 31.35, 34.30, 5),
+        ("fallback-ukraine", "Guerra Rússia-Ucrânia — frente leste",         "Ucrânia",   48.50, 37.50, 5),
+        ("fallback-sudan",   "Guerra civil — Sudão (RSF vs Exército)",        "Sudão",     15.55, 32.53, 5),
+        ("fallback-myanmar", "Conflito armado — Myanmar",                     "Myanmar",   21.00, 96.00, 4),
+        ("fallback-yemen",   "Guerra civil e ataques Houthi — Iêmen",         "Iêmen",     15.35, 44.20, 4),
+        ("fallback-drc",     "Conflito M23/FARDC — Leste do Congo",           "Congo",     -1.67, 29.22, 4),
+        ("fallback-haiti",   "Violência de gangues — Porto Príncipe",         "Haiti",     18.54,-72.34, 4),
+        ("fallback-lebanon", "Tensão militar — fronteira Líbano-Israel",      "Líbano",    33.30, 35.50, 4),
+        ("fallback-iran",    "Tensão regional e atividade militar — Irã",     "Irã",       32.00, 53.00, 3),
+    ]
+    existing_ids = {e["id"] for e in events}
+    for fid, ftitle, fcountry, flat, flon, fsev in _FALLBACK:
+        if fid not in existing_ids:
+            events.append({
+                "id": fid, "title": ftitle, "country": fcountry,
+                "country_iso3": "UNK", "lat": flat, "lon": flon,
+                "severity": fsev, "urgency": "immediate" if fsev >= 4 else "24h",
+                "crisis_type": "conflict", "source": "fallback",
+                "people_affected": 0,
+            })
+    print(f"Fallback conflicts: {len(_FALLBACK)} adicionados")
 
     # Salvar no banco
     db = get_db()
