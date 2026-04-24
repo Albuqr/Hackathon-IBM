@@ -15,6 +15,8 @@ tools = [
     "tools/notify_whatsapp.py",
     "tools/analyze_distribution.py",
     "tools/suggest_reallocation.py",
+    "tools/fetch_conflict_data.py",
+    "tools/predict_humanitarian_risk.py",
 ]
 
 agents = [
@@ -24,6 +26,7 @@ agents = [
     "agents/communication_agent.yaml",
     "agents/optimization_agent.yaml",
     "agents/crisis_orchestrator.yaml",
+    "agents/prediction_agent.yaml",
 ]
 
 print("=" * 50)

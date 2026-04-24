@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><title>Cadastro — Crisis Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#000;font-family:'Inter',system-ui,sans-serif;color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 20px}
+canvas{position:fixed;inset:0;pointer-events:none;z-index:0}
+.card{background:#060606;border:1px solid #1a1a1a;border-radius:12px;padding:36px;width:400px;z-index:1;position:relative}
+.logo{text-align:center;margin-bottom:24px;font-size:16px;font-weight:600}
+.error{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#ef4444;border-radius:6px;padding:10px 12px;font-size:12px;margin-bottom:16px}
+label{display:block;color:#444;font-size:11px;margin-bottom:4px}
+input,select{width:100%;height:36px;background:#0a0a0a;border:1px solid #1a1a1a;border-radius:6px;color:#fff;font-size:13px;padding:0 10px;margin-bottom:12px;font-family:inherit;transition:border-color .15s}
+select{color:#888}
+input:focus,select:focus{outline:none;border-color:#3b82f6}
+input::placeholder{color:#2a2a2a}
+.role-tabs{display:flex;gap:8px;margin-bottom:14px}
+.role-tab{flex:1;height:34px;background:transparent;border:1px solid #1a1a1a;border-radius:6px;color:#444;font-size:12px;cursor:pointer;font-family:inherit;transition:all .15s}
+.role-tab.active.volunteer{border-color:#22c55e;color:#22c55e}
+.role-tab.active.org{border-color:#3b82f6;color:#3b82f6}
+.btn{width:100%;height:40px;background:#3b82f6;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;margin-top:4px}
+.btn:hover{background:#2563eb}
+.footer{text-align:center;margin-top:16px;color:#333;font-size:12px}
+.footer a{color:#3b82f6;text-decoration:none}
+.vol-fields,.org-fields{display:none}
+.vol-fields.show,.org-fields.show{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="card">
+  <div class="logo">🛰 Crisis Monitor — Cadastro</div>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="POST" id="regForm">
+    <input type="hidden" name="role" id="roleInput" value="volunteer">
+    <label>Tipo de conta</label>
+    <div class="role-tabs">
+      <button type="button" class="role-tab volunteer active" onclick="setRole('volunteer')">🤝 Voluntário</button>
+      <button type="button" class="role-tab org" onclick="setRole('org')">🏢 ONG</button>
+    </div>
+    <label>Nome completo</label>
+    <input type="text" name="name" placeholder="Seu nome" required>
+    <label>Email</label>
+    <input type="email" name="email" placeholder="seu@email.com" required>
+    <label>Senha</label>
+    <input type="password" name="password" placeholder="••••••••" required minlength="6">
+
+    <div class="vol-fields show" id="volFields">
+      <label>Habilidade principal</label>
+      <select name="skill">
+        <option value="medical">Médico / Saúde</option>
+        <option value="logistics">Logística</option>
+        <option value="SAR">Busca e Resgate</option>
+        <option value="engineering">Engenharia</option>
+        <option value="translator">Tradutor</option>
+        <option value="psychology">Psicologia</option>
+      </select>
+      <label>Raio de atuação (km)</label>
+      <input type="number" name="radius" value="500" min="50" max="5000">
+    </div>
+
+    <div class="org-fields" id="orgFields">
+      <label>Nome da organização</label>
+      <input type="text" name="org_name" placeholder="Ex: Cruz Vermelha">
+      <label>Área de atuação</label>
+      <select name="skill">
+        <option value="humanitarian">Humanitária</option>
+        <option value="medical">Saúde</option>
+        <option value="logistics">Logística</option>
+        <option value="SAR">Resgate</option>
+      </select>
+    </div>
+
+    <button class="btn" type="submit">Criar conta</button>
+  </form>
+  <div class="footer">Já tem conta? <a href="/login">Entrar</a></div>
+</div>
+<script>
+function setRole(role){
+  document.getElementById('roleInput').value=role;
+  document.querySelectorAll('.role-tab').forEach(b=>b.classList.remove('active'));
+  document.querySelector('.role-tab.'+role).classList.add('active');
+  document.getElementById('volFields').classList.toggle('show',role==='volunteer');
+  document.getElementById('orgFields').classList.toggle('show',role==='org');
+}
+const c=document.getElementById('c'),x=c.getContext('2d');
+let m={x:-999,y:-999};
+function r(){c.width=innerWidth;c.height=innerHeight}
+r();addEventListener('resize',r);
+addEventListener('mousemove',e=>{m.x=e.clientX;m.y=e.clientY});
+function draw(){
+  x.clearRect(0,0,c.width,c.height);
+  for(let gx=0;gx<c.width;gx+=24)
+    for(let gy=0;gy<c.height;gy+=24){
+      const d=Math.sqrt((m.x-gx)**2+(m.y-gy)**2);
+      const t=Math.max(0,1-d/130);
+      const b=Math.round(0x1e+(0x58-0x1e)*t).toString(16).padStart(2,'0');
+      x.fillStyle='#'+b+b+b;
+      x.beginPath();x.arc(gx,gy,1.5,0,Math.PI*2);x.fill();
+    }
+  requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>

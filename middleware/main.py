@@ -9,6 +9,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+# ── Predictions cache ──
+_predictions_cache = {"data": None, "ts": 0}
+
 load_dotenv()
 
 app = FastAPI(title="HKTN26 Crisis API")
@@ -20,6 +23,17 @@ DB = os.environ.get("DB_PATH", "data/crisis.db")
 def get_db():
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS crisis_associations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            crisis_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('volunteer','org')),
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(crisis_id, user_id)
+        )
+    """)
+    conn.commit()
     return conn
 
 # ── Token cache ──
@@ -107,8 +121,10 @@ def list_events(country: str = None, min_severity: float = 0,
     q = "SELECT * FROM crises WHERE severity >= ?"
     params = [min_severity]
     if country:
-        q += " AND country_iso3 = ?"
-        params.append(country)
+        # country field may contain comma-separated names; use LIKE for substring match
+        q += " AND (',' || country || ',' LIKE ? OR country = ?)"
+        pattern = f"%,{country},%"
+        params.extend([f"%{country}%", country])
     if crisis_type:
         q += " AND crisis_type = ?"
         params.append(crisis_type)
@@ -117,6 +133,23 @@ def list_events(country: str = None, min_severity: float = 0,
     rows = db.execute(q, params).fetchall()
     db.close()
     return [dict(r) for r in rows]
+
+@app.get("/events/{crisis_id}/associations")
+def get_crisis_associations(crisis_id: str):
+    db = get_db()
+    row = db.execute(
+        """SELECT
+             SUM(CASE WHEN role='volunteer' THEN 1 ELSE 0 END) as volunteers,
+             SUM(CASE WHEN role='org'       THEN 1 ELSE 0 END) as orgs
+           FROM crisis_associations WHERE crisis_id=?""",
+        (crisis_id,)
+    ).fetchone()
+    db.close()
+    return {
+        "volunteers": row["volunteers"] or 0,
+        "orgs":       row["orgs"]       or 0,
+    }
+
 
 @app.post("/volunteers")
 def create_volunteer(vol: VolunteerCreate):
@@ -309,7 +342,8 @@ def trigger_ingest():
         content = content.decode('utf-8', errors='ignore').encode('utf-8')
         root = ET.fromstring(content)
         ns = {"gdacs": "http://www.gdacs.org",
-              "geo": "http://www.w3.org/2003/01/geo/wgs84_pos#"}
+              "geo": "http://www.w3.org/2003/01/geo/wgs84_pos#",
+              "georss": "http://www.georss.org/georss"}
         sev_map = {"Green": 1, "Orange": 3, "Red": 5}
         type_map = {"EQ": "seismic", "TC": "meteorological",
                     "FL": "meteorological", "VO": "seismic",
@@ -319,8 +353,15 @@ def trigger_ingest():
             etype = item.findtext("gdacs:eventtype", "", ns)
             title = item.findtext("title", "")
             try:
-                lat = float(item.findtext("geo:lat", "0", ns))
-                lon = float(item.findtext("geo:long", "0", ns))
+                # Coordinates are nested: <geo:Point><geo:lat>...</geo:lat><geo:long>...</geo:long></geo:Point>
+                lat = float(item.findtext("geo:Point/geo:lat", "0", ns))
+                lon = float(item.findtext("geo:Point/geo:long", "0", ns))
+                # Fallback: georss:point contains "lat lon" space-separated
+                if lat == 0.0 and lon == 0.0:
+                    georss_pt = item.findtext("georss:point", "", ns)
+                    if georss_pt.strip():
+                        parts = georss_pt.strip().split()
+                        lat, lon = float(parts[0]), float(parts[1])
             except:
                 lat, lon = 0.0, 0.0
 
@@ -351,6 +392,53 @@ def trigger_ingest():
         print(f"GDACS: {len([e for e in events if e['source']=='gdacs'])} eventos")
     except Exception as e:
         print(f"GDACS error: {e}")
+
+    # 4. Conflict data (GDELT + ReliefWeb)
+    try:
+        from datetime import timedelta
+        since = (datetime.utcnow() - timedelta(days=3)).strftime("%Y%m%d%H%M%S")
+        doc_url = "https://api.gdeltproject.org/api/v2/doc/doc"
+        doc_params = {
+            "query": "conflict war attack battle casualties armed",
+            "mode": "artlist",
+            "maxrecords": 40,
+            "format": "json",
+            "sort": "DateDesc",
+        }
+        r = requests.get(doc_url, params=doc_params, timeout=20)
+        if r.status_code == 200:
+            seen_titles = set()
+            for art in r.json().get("articles", []):
+                title = art.get("title", "").strip()
+                if not title or title in seen_titles:
+                    continue
+                seen_titles.add(title)
+                tl = title.lower()
+                if any(k in tl for k in ["massacre", "genocide", "mass casualty", "siege", "major offensive"]):
+                    sev = 5
+                elif any(k in tl for k in ["war", "battle", "offensive", "airstrike", "bombing"]):
+                    sev = 4
+                elif any(k in tl for k in ["conflict", "fighting", "clashes", "attack", "gunfire", "armed"]):
+                    sev = 3
+                else:
+                    sev = 2
+                uid = f"gdelt-{abs(hash(title)) % 10**9}"
+                events.append({
+                    "id": uid,
+                    "title": title,
+                    "country": "",
+                    "country_iso3": "UNK",
+                    "lat": 0.0,
+                    "lon": 0.0,
+                    "severity": sev,
+                    "urgency": "immediate" if sev >= 4 else "24h",
+                    "crisis_type": "conflict",
+                    "source": "gdelt",
+                    "people_affected": 0,
+                })
+        print(f"GDELT conflict: {len([e for e in events if e['source']=='gdelt'])} eventos")
+    except Exception as e:
+        print(f"GDELT conflict error: {e}")
 
     # Salvar no banco
     db = get_db()
@@ -426,3 +514,41 @@ def get_stats():
     }
     db.close()
     return stats
+
+
+@app.get("/predictions")
+def get_predictions():
+    """Retorna previsões de risco humanitário geradas pelo Granite.
+    Resultado cacheado por 1 hora para evitar chamadas excessivas ao modelo."""
+    global _predictions_cache
+    now = time.time()
+    # Return cache if still fresh (1 hour = 3600s)
+    if _predictions_cache["data"] and (now - _predictions_cache["ts"]) < 3600:
+        return _predictions_cache["data"]
+
+    # Fetch latest 50 events from DB
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, title, country, country_iso3, lat, lon, severity, "
+        "urgency, crisis_type, source FROM crises "
+        "ORDER BY severity DESC, created_at DESC LIMIT 50"
+    ).fetchall()
+    db.close()
+    events = [dict(r) for r in rows]
+
+    if not events:
+        return {"predictions": [], "note": "Sem eventos no banco de dados"}
+
+    # Call predict_humanitarian_risk via watsonx orchestrate tool directly
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
+    try:
+        from predict_humanitarian_risk import predict_humanitarian_risk
+        result_str = predict_humanitarian_risk(json.dumps(events))
+        result = json.loads(result_str)
+    except Exception as e:
+        result = {"error": str(e), "predictions": []}
+
+    _predictions_cache["data"] = result
+    _predictions_cache["ts"]   = now
+    return result

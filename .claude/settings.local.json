@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(del *)",
+      "Bash(python import_all.py)",
+      "Bash(orchestrate env *)"
+    ]
+  }
+}

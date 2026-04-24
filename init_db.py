@@ -60,6 +60,14 @@ CREATE TABLE IF NOT EXISTS classifications_log (
     needs_review BOOLEAN, trend TEXT,
     classified_at TEXT
 );
+CREATE TABLE IF NOT EXISTS crisis_associations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    crisis_id TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('volunteer','org')),
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(crisis_id, user_id)
+);
 ''')
 
 admin_hash = hashlib.sha256(b'admin123').hexdigest()

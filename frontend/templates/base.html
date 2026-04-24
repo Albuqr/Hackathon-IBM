@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Crisis Monitor — HKTN26</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:#000;font-family:'Inter',system-ui,sans-serif;color:#fff;display:flex;flex-direction:column}
+
+/* ── HEADER ── */
+header{
+  height:52px;flex-shrink:0;
+  background:#060606;border-bottom:1px solid #1a1a1a;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 16px;z-index:100;
+}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-name{font-size:15px;font-weight:600}
+.brand-badge{border:1px solid #3b82f6;color:#3b82f6;border-radius:4px;padding:1px 7px;font-size:10px;font-family:'JetBrains Mono',monospace}
+.user-info{display:flex;align-items:center;gap:10px;font-size:13px;color:#888}
+.avatar{width:28px;height:28px;background:#1d4ed8;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#fff;font-family:'JetBrains Mono',monospace}
+.user-info a{color:#555;text-decoration:none;font-size:12px}
+.user-info a:hover{color:#888}
+
+/* ── MAIN ROW ── */
+#main{
+  flex:1;
+  display:flex;
+  min-height:0;   /* critical — lets flex children shrink below content size */
+  position:relative;
+}
+
+/* ── SIDEBAR ── */
+#sidebar{
+  width:220px;
+  flex-shrink:0;
+  background:#060606;
+  border-right:1px solid #1a1a1a;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  transition:width 0.25s ease;
+  z-index:50;
+}
+#sidebar.collapsed{width:48px}
+.sb-content{padding:16px;display:flex;flex-direction:column;gap:16px;flex:1;min-width:220px}
+.sb-label{display:block;color:#555;font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+input[type=range]{width:100%;accent-color:#3b82f6}
+.sb-select{
+  width:100%;background:#0a0a0a;border:1px solid #1e1e1e;border-radius:5px;
+  color:#ccc;font-size:11px;padding:5px 8px;font-family:inherit;
+  appearance:none;cursor:pointer;
+}
+.sb-select:focus{outline:none;border-color:#3b82f6}
+.sb-select option{background:#0a0a0a;color:#ccc}
+.metrics{display:flex;flex-direction:column;gap:8px}
+.metric{display:flex;justify-content:space-between;align-items:center}
+.metric-label{color:#555;font-size:11px}
+.metric-value{font-size:15px;font-weight:600;font-family:'JetBrains Mono',monospace}
+.metric-value.red{color:#ef4444}
+.sb-footer{padding:16px;min-width:220px}
+.action-btn{
+  display:block;width:100%;padding:9px;background:#1d4ed8;border:none;
+  border-radius:6px;color:#fff;font-size:12px;font-weight:500;
+  cursor:pointer;font-family:inherit;text-align:center;text-decoration:none
+}
+.action-btn:hover{background:#2563eb}
+
+/* ── TOGGLE BUTTON — absolute inside #main, straddles sidebar edge ── */
+#toggleBtn{
+  position:absolute;
+  top:50%;
+  left:220px;
+  transform:translate(-50%,-50%);
+  width:22px;height:22px;
+  background:#111;border:1px solid #2a2a2a;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:12px;color:#666;
+  z-index:200;
+  transition:left 0.25s ease;
+  padding:0;line-height:1;font-family:inherit;
+}
+#toggleBtn.collapsed{left:48px}
+#toggleBtn:hover{color:#ccc;border-color:#555}
+
+/* ── MAP WRAP — takes all remaining horizontal space ── */
+#map-wrap{
+  flex:1;
+  position:relative;
+  min-width:0;    /* critical — lets flex child shrink past content size */
+  overflow:hidden;
+}
+
+/* ── MAP — fills the wrap absolutely, Leaflet reads correct clientWidth ── */
+#map{
+  position:absolute;
+  top:0;left:0;right:0;bottom:0;
+  background:#111;
+  z-index:1;
+}
+
+/* ── DOT GRID — same footprint as map ── */
+#dotgrid{
+  position:absolute;
+  top:0;left:0;
+  z-index:2;
+  pointer-events:none;
+}
+
+/* ── TILE FILTER ── */
+.leaflet-tile-pane{filter:none !important}
+
+/* ── STATUSBAR ── */
+#statusbar{
+  height:26px;flex-shrink:0;
+  background:#060606;border-top:1px solid #1a1a1a;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 12px;z-index:100;font-size:11px;
+}
+.status-online{display:flex;align-items:center;gap:6px;color:#22c55e}
+.status-dot{width:6px;height:6px;border-radius:50%;background:#22c55e}
+.legend{display:flex;align-items:center;gap:10px}
+.legend-item{display:flex;align-items:center;gap:4px;color:#555}
+.legend-dot{width:7px;height:7px;border-radius:50%}
+
+/* ── POPUP ── */
+.leaflet-popup-content-wrapper{
+  background:#0a0a0a;border:1px solid #222;border-radius:8px;
+  padding:0;box-shadow:0 8px 32px rgba(0,0,0,.8)
+}
+.leaflet-popup-tip{background:#0a0a0a}
+.leaflet-popup-content{margin:0 !important}
+.popup-card{padding:14px 16px;min-width:220px}
+.popup-title{font-size:13px;font-weight:600;margin-bottom:8px;line-height:1.4}
+.popup-row{display:flex;justify-content:space-between;margin-bottom:4px;font-size:11px}
+.popup-row .k{color:#555}
+.popup-row .v{color:#ccc;text-align:right;max-width:150px}
+.popup-sev{font-weight:600}
+.popup-close{
+  margin-top:10px;padding:5px 10px;background:transparent;
+  border:1px solid #333;border-radius:4px;color:#888;font-size:11px;
+  cursor:pointer;font-family:inherit;width:100%
+}
+.popup-close:hover{border-color:#555;color:#ccc}
+.popup-divider{border-top:1px solid #1e1e1e;margin:8px 0}
+.popup-assoc-loading{font-size:10px;color:#444;text-align:center;padding:2px 0}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="brand">
+    <span class="brand-name">Crisis Monitor</span>
+    <span class="brand-badge">HKTN26</span>
+  </div>
+  <div class="user-info">
+    <div class="avatar">{{ session.get('initials','??') }}</div>
+    <span>{{ session.get('name','') }}</span>
+    <a href="/logout">sair</a>
+  </div>
+</header>
+
+<!-- MAIN ROW -->
+<div id="main">
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div class="sb-content">
+      <div>
+        <label class="sb-label">Severidade mínima: <span id="sevLabel">1</span></label>
+        <input type="range" id="sevSlider" min="1" max="5" value="1">
+      </div>
+      <div>
+        <label class="sb-label">Região</label>
+        <select id="regionFilter" class="sb-select">
+          <option value="">Todas</option>
+          <option value="africa">África</option>
+          <option value="americas">Américas</option>
+          <option value="asia">Ásia</option>
+          <option value="europe">Europa</option>
+          <option value="oceania">Oceania</option>
+        </select>
+      </div>
+      <div>
+        <label class="sb-label">País</label>
+        <select id="countryFilter" class="sb-select">
+          <option value="">Todos</option>
+          {% for p in paises %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="sb-label">Tipo</label>
+        <select id="typeFilter" class="sb-select">
+          <option value="">Todos</option>
+          <option value="seismic">Terremoto</option>
+          <option value="meteorological">Meteorológico</option>
+          <option value="wildfire">Incêndio</option>
+          <option value="drought">Seca</option>
+          <option value="humanitarian">Humanitário</option>
+          <option value="conflict">Conflito Armado</option>
+        </select>
+      </div>
+      <div>
+        <label class="sb-label">Eventos</label>
+        <div class="metrics">
+          <div class="metric">
+            <span class="metric-label">Visíveis</span>
+            <span class="metric-value" id="mTotal">0</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Países</span>
+            <span class="metric-value" id="mCountries">0</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Críticos</span>
+            <span class="metric-value red" id="mCritical">0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="sb-footer">
+      {% if session.get('role') == 'admin' %}
+      <button class="action-btn" onclick="triggerIngest()">Atualizar dados</button>
+      {% elif session.get('role') == 'org' %}
+      <a class="action-btn" href="/org/missions/new">Nova missão</a>
+      {% else %}
+      <a class="action-btn" href="/volunteer/missions">Ver missões</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- TOGGLE BUTTON -->
+  <button id="toggleBtn" title="Recolher sidebar">&#8249;</button>
+
+  <!-- MAP WRAP -->
+  <div id="map-wrap">
+    <div id="map"></div>
+    <canvas id="dotgrid"></canvas>
+  </div>
+
+</div><!-- /main -->
+
+<!-- STATUSBAR -->
+<div id="statusbar">
+  <div class="status-online"><div class="status-dot"></div>SISTEMA ONLINE</div>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>Extremo</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f97316"></div>Crítico</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#eab308"></div>Alto</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div>Moderado</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#4b5563"></div>Baixo</div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── Data ──
+const crisisData = {{ events|tojson }};
+
+// ── Severity config ──
+const SEV_COLOR  = {1:'#4b5563',2:'#22c55e',3:'#eab308',4:'#f97316',5:'#ef4444'};
+const SEV_RADIUS = {1:4,2:6,3:8,4:10,5:12};
+const SEV_LABEL  = {1:'Baixo',2:'Moderado',3:'Alto',4:'Crítico',5:'Extremo'};
+const TYPE_PT    = {seismic:'Terremoto',meteorological:'Meteorológico',wildfire:'Incêndio Florestal',drought:'Seca',humanitarian:'Humanitário'};
+const URG_PT     = {immediate:'Imediata','24h':'Próximas 24h','48h':'Próximas 48h','7days':'Próximos 7 dias',monitoring:'Monitoramento'};
+
+// ── State ──
+let sidebarOpen = true;
+const mapWrap   = document.getElementById('map-wrap');
+
+// ── Region bounding boxes [latMin, latMax, lonMin, lonMax] ──
+const REGIONS = {
+  africa:   [-35,  37, -20,  55],
+  americas: [-56,  72, -170, -34],
+  asia:     [-12,  77,  25,  180],
+  europe:   [ 36,  72, -25,   45],
+  oceania:  [-50,   0,  110,  180],
+};
+
+// ── Map — Leaflet reads clientWidth/clientHeight from #map which fills #map-wrap via absolute inset:0 ──
+const map = L.map('map', {
+  center: [20, 10],
+  zoom: 2,
+  minZoom: 2,
+  maxZoom: 12,
+  maxBounds: [[-85,-180],[85,180]],
+  maxBoundsViscosity: 1.0,
+  worldCopyJump: true,
+  zoomControl: true,
+  dragging: false,
+  touchZoom: false,
+  doubleClickZoom: false,
+  scrollWheelZoom: true,
+  boxZoom: false,
+  keyboard: false
+});
+
+// ── Drag: disabled at minZoom, enabled when zoomed in ──
+map.on('zoomend', function() {
+  if (map.getZoom() > map.getMinZoom()) {
+    map.dragging.enable();
+  } else {
+    map.dragging.disable();
+  }
+});
+
+// Base dark tile — no noWrap so it fills wide screens
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; CARTO',
+  subdomains: 'abcd',
+  maxZoom: 12,
+  minZoom: 2
+}).addTo(map);
+
+// Border overlay
+L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_toner_lines/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; Stadia Maps &copy; Stamen Design',
+  maxZoom: 12,
+  minZoom: 2,
+  opacity: 0.35
+}).addTo(map);
+
+// ── Resize helpers ──
+function resizeMap() {
+  map.invalidateSize();
+}
+
+function resizeCvs() {
+  cvs.width  = mapWrap.offsetWidth;
+  cvs.height = mapWrap.offsetHeight;
+}
+
+window.addEventListener('resize', function() { resizeMap(); resizeCvs(); });
+
+// ── Markers ──
+let markerLayer = L.layerGroup().addTo(map);
+
+function buildPopup(ev) {
+  let title = ev.title || '';
+  const usgsMatch = title.match(/^M\s+([\d.]+)\s+-\s+(.+)$/);
+  if (usgsMatch) title = 'Terremoto M ' + usgsMatch[1] + ' — ' + usgsMatch[2];
+  const sev   = ev.severity || 1;
+  const color = SEV_COLOR[sev] || '#4b5563';
+  const type  = TYPE_PT[ev.crisis_type] || ev.crisis_type || '—';
+  const urg   = URG_PT[ev.urgency]      || ev.urgency     || '—';
+  const assocId = 'assoc-' + (ev.id || '').replace(/[^a-zA-Z0-9]/g, '-');
+  return `<div class="popup-card">
+    <div class="popup-title">${title}</div>
+    <div class="popup-row"><span class="k">Severidade</span><span class="v popup-sev" style="color:${color}">${SEV_LABEL[sev]||sev}</span></div>
+    <div class="popup-row"><span class="k">Tipo</span><span class="v">${type}</span></div>
+    <div class="popup-row"><span class="k">Urgência</span><span class="v">${urg}</span></div>
+    <div class="popup-row"><span class="k">País</span><span class="v">${ev.country||'—'}</span></div>
+    <div class="popup-row"><span class="k">Fonte</span><span class="v">${ev.source||'—'}</span></div>
+    <div class="popup-divider"></div>
+    <div id="${assocId}" class="popup-assoc">
+      <div class="popup-assoc-loading">carregando...</div>
+    </div>
+    <button class="popup-close" onclick="this.closest('.leaflet-popup').querySelector('.leaflet-popup-close-button').click()">Fechar</button>
+  </div>`;
+}
+
+// Fetch associations when popup opens
+map.on('popupopen', function(e) {
+  const popup = e.popup;
+  const ev = popup._source && popup._source.options && popup._source.options._ev;
+  if (!ev) return;
+  const assocId = 'assoc-' + (ev.id || '').replace(/[^a-zA-Z0-9]/g, '-');
+  const el = document.getElementById(assocId);
+  if (!el) return;
+  fetch('/api/events/' + encodeURIComponent(ev.id) + '/associations')
+    .then(r => r.json())
+    .then(d => {
+      el.innerHTML =
+        '<div class="popup-row"><span class="k">Voluntários mobilizados</span><span class="v">' + (d.volunteers || 0) + '</span></div>' +
+        '<div class="popup-row"><span class="k">ONGs associadas</span><span class="v">'        + (d.orgs       || 0) + '</span></div>';
+    })
+    .catch(() => { el.innerHTML = ''; });
+});
+
+function renderMarkers(predicate) {
+  markerLayer.clearLayers();
+  let rendered = 0, skipped = 0;
+  const countries = new Set();
+  let critical = 0;
+
+  for (const ev of crisisData) {
+    const lat = ev.lat, lon = ev.lon;
+    if (lat === null || lon === null || isNaN(lat) || isNaN(lon)) { skipped++; continue; }
+    if (lat === 0 && lon === 0) { skipped++; continue; }
+    const sev = ev.severity || 1;
+    if (typeof predicate === 'function' && !predicate(ev)) { skipped++; continue; }
+
+    const color  = SEV_COLOR[sev]  || '#4b5563';
+    const radius = SEV_RADIUS[sev] || 4;
+
+    L.circleMarker([lat, lon], {
+      radius: radius * 2.5,
+      color: 'none',
+      fillColor: color,
+      fillOpacity: 0.12,
+      interactive: false
+    }).addTo(markerLayer);
+
+    L.circleMarker([lat, lon], {
+      radius: radius,
+      color: '#000',
+      weight: 0.5,
+      fillColor: color,
+      fillOpacity: 0.95,
+      _ev: ev
+    }).bindPopup(buildPopup(ev), {maxWidth: 280}).addTo(markerLayer);
+
+    rendered++;
+    if (ev.country) countries.add(ev.country);
+    if (sev >= 4) critical++;
+  }
+
+  document.getElementById('mTotal').textContent     = rendered;
+  document.getElementById('mCountries').textContent = countries.size;
+  document.getElementById('mCritical').textContent  = critical;
+  console.log('[CrisisMonitor] total:', crisisData.length, 'rendered:', rendered, 'skipped:', skipped);
+}
+
+// ── Active filters ──
+let activeFilters = { minSev: 1, region: '', country: '', type: '' };
+
+function applyFilters() {
+  const { minSev, region, country, type } = activeFilters;
+  const bbox = region ? REGIONS[region] : null;
+  renderMarkers(function(ev) {
+    if ((ev.severity || 1) < minSev) return false;
+    if (type && ev.crisis_type !== type) return false;
+    if (country && ev.country !== country) return false;
+    if (bbox) {
+      const lat = ev.lat, lon = ev.lon;
+      if (lat < bbox[0] || lat > bbox[1] || lon < bbox[2] || lon > bbox[3]) return false;
+    }
+    return true;
+  });
+}
+
+// ── Slider ──
+const slider   = document.getElementById('sevSlider');
+const sevLabel = document.getElementById('sevLabel');
+slider.addEventListener('input', function() {
+  sevLabel.textContent = this.value;
+  activeFilters.minSev = parseInt(this.value);
+  applyFilters();
+});
+
+// ── Region dropdown ──
+document.getElementById('regionFilter').addEventListener('change', function() {
+  activeFilters.region = this.value;
+  applyFilters();
+});
+
+// ── Country dropdown — filters AND flies to country ──
+document.getElementById('countryFilter').addEventListener('change', function() {
+  activeFilters.country = this.value;
+  applyFilters();
+  if (this.value) {
+    // Compute center from average lat/lon of matching events
+    const matches = crisisData.filter(ev =>
+      ev.country === this.value &&
+      ev.lat !== null && ev.lon !== null &&
+      !(ev.lat === 0 && ev.lon === 0)
+    );
+    if (matches.length > 0) {
+      const avgLat = matches.reduce((s, e) => s + e.lat, 0) / matches.length;
+      const avgLon = matches.reduce((s, e) => s + e.lon, 0) / matches.length;
+      map.flyTo([avgLat, avgLon], 5, { animate: true, duration: 1.2 });
+    }
+  } else {
+    map.flyTo([20, 10], 2, { animate: true, duration: 1.2 });
+  }
+});
+
+// ── Crisis type dropdown ──
+document.getElementById('typeFilter').addEventListener('change', function() {
+  activeFilters.type = this.value;
+  applyFilters();
+});
+
+applyFilters();
+
+// ── Sidebar toggle ──
+document.getElementById('toggleBtn').addEventListener('click', function() {
+  sidebarOpen = !sidebarOpen;
+  document.getElementById('sidebar').classList.toggle('collapsed', !sidebarOpen);
+  this.classList.toggle('collapsed', !sidebarOpen);
+  this.innerHTML = sidebarOpen ? '&#8249;' : '&#8250;';
+  // Wait for CSS transition to finish, then tell Leaflet to re-measure
+  setTimeout(function() { resizeMap(); resizeCvs(); }, 270);
+});
+
+// ── Admin ingest ──
+function triggerIngest() {
+  fetch('/api/ingest', {method:'POST'})
+    .then(r => r.json())
+    .then(d => alert('Ingestão: ' + d.events_saved + ' novos eventos salvos'))
+    .catch(e => alert('Erro: ' + e));
+}
+
+// ── Dot grid ──
+const cvs  = document.getElementById('dotgrid');
+const cctx = cvs.getContext('2d');
+let mouse  = { x: -999, y: -999 };
+
+document.addEventListener('mousemove', function(e) {
+  const rect = cvs.getBoundingClientRect();
+  mouse.x = e.clientX - rect.left;
+  mouse.y = e.clientY - rect.top;
+});
+
+function drawDotGrid() {
+  cctx.clearRect(0, 0, cvs.width, cvs.height);
+  const GRID = 24;
+  for (let x = GRID/2; x < cvs.width; x += GRID) {
+    for (let y = GRID/2; y < cvs.height; y += GRID) {
+      const dx = mouse.x - x, dy = mouse.y - y;
+      const dist  = Math.sqrt(dx*dx + dy*dy);
+      const ratio = Math.max(0, 1 - dist / 130);
+      const b = Math.round(0x1e + (0x58 - 0x1e) * ratio);
+      const h = b.toString(16).padStart(2, '0');
+      cctx.fillStyle = '#' + h + h + h;
+      cctx.beginPath();
+      cctx.arc(x, y, 1.5, 0, Math.PI * 2);
+      cctx.fill();
+    }
+  }
+  requestAnimationFrame(drawDotGrid);
+}
+
+resizeCvs();
+drawDotGrid();
+</script>
+</body>
+</html>
