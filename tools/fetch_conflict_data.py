@@ -45,11 +45,11 @@ FALLBACK_CONFLICTS = [
 
 def _goldstein_to_severity(gs: float) -> int:
     """Map GoldsteinScale (-10..+10) to severity 1-5."""
-    if gs <= -9:   return 5
-    elif gs <= -7: return 4
-    elif gs <= -5: return 3
-    elif gs <= -2: return 2
-    else:          return 1
+    if gs < -7:   return 5
+    elif gs < -5: return 4
+    elif gs < -3: return 3
+    elif gs < -1: return 2
+    else:         return 1
 
 
 def _fetch_gdelt_events(max_events: int = 200) -> list[dict]:

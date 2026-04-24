@@ -1,40 +1,60 @@
-# Crisis Monitor — Fix Volunteer Map Showing Only 20 Events
+# Crisis Monitor — Docker Deploy Files
 
-The volunteer map at /volunteer/map is only showing 20 crisis events
-instead of all 150+. The admin map shows all events correctly.
-Something broke during the last implementation session.
+Read all project files before starting. Create the following files.
 
-Read all files before doing anything. Investigate and fix.
+---
 
-## What to check
+## Dockerfile.middleware
 
-1. In frontend/app.py, find the route for /volunteer/map. Compare how it
-   fetches events versus how /map (admin) fetches events. They should call
-   the same API endpoint with the same parameters. If the volunteer route
-   has a different limit, filter, or query parameter, remove it.
+For the FastAPI middleware service (port 8000):
+- Base image: python:3.12-slim
+- Working directory: /app
+- Copy middleware/, tools/, agents/, data/, .env
+- Install dependencies from middleware/requirements.txt
+- Expose port 8000
+- CMD: uvicorn middleware.main:app --host 0.0.0.0 --port 8000
 
-2. In middleware/main.py, check the GET /events endpoint. Make sure there
-   is no role-based filtering that limits results for volunteers. All roles
-   should receive all events.
+## Dockerfile.frontend
 
-3. Check if a LIMIT clause was accidentally added to the SQL query in /events
-   during the last session. Remove any hardcoded LIMIT that is lower than 500.
+For the Flask frontend service (port 5000):
+- Base image: python:3.12-slim
+- Working directory: /app
+- Copy frontend/, data/, .env
+- Install from frontend/requirements.txt
+- Expose port 5000
+- CMD: python frontend/app.py
 
-4. The screenshot shows only conflict-type events (red dots, all in the
-   Middle East). This suggests the crisis_type filter might be defaulting
-   to "conflict" for volunteer users, or the seed_volunteers.py script
-   created events that are interfering with the query.
+## docker-compose.yml
 
-5. Check the JavaScript in the volunteer map template. If it has a different
-   initial filter applied on load compared to the admin map, reset it to
-   show all events by default.
+Services:
+- middleware: builds Dockerfile.middleware, port 8000:8000, volume ./data:/app/data, env_file .env, restart always
+- frontend: builds Dockerfile.frontend, port 5000:5000, volume ./data:/app/data, env_file .env, environment API_URL=http://middleware:8000, depends_on middleware, restart always
 
-Fix whatever is causing the discrepancy. The rule is simple:
+Both services on a bridge network called crisis-net.
+No Traefik labels needed — the VPS uses Easypanel which handles routing separately.
 
-ALL crisis events must be visible on the map for ALL user roles —
-admin, volunteer, and org — with no filters applied by default.
-No role should ever see fewer events than another role.
-No crisis type, severity, or region filter should be active on page load.
-Every route that renders a map must pass the full unfiltered event list.
+## requirements files
 
-After fixing, log into all three roles and confirm each sees 150+ events.
+Create middleware/requirements.txt if missing:
+  fastapi
+  uvicorn[standard]
+  python-dotenv
+  requests
+  httpx
+  ibm-watsonx-orchestrate==2.8.0
+  python-telegram-bot
+  pydantic
+
+Create frontend/requirements.txt if missing:
+  flask
+  python-dotenv
+  requests
+
+## .dockerignore
+
+Create at project root:
+  .venv
+  __pycache__
+  *.pyc
+  .git
+  fix.md

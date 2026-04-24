@@ -40,9 +40,8 @@ def predict_humanitarian_risk(events_json: str) -> str:
                      Cada evento deve ter: id, title, country, lat, lon, severity,
                      crisis_type, urgency, source.
     Returns:
-        JSON string com lista de predições, cada uma com: location, country, lat, lon,
-        risk_type, probability, estimated_timeframe, recommended_preemptive_action,
-        estimated_affected_population.
+        JSON string com lista de predições, cada uma com: location, country,
+        risk_type, probability, timeframe, recommended_action.
     """
     try:
         events = json.loads(events_json)
@@ -62,35 +61,30 @@ def predict_humanitarian_risk(events_json: str) -> str:
         )
     events_summary = "\n".join(summary_lines)
 
-    prompt = f"""Você é um analista de inteligência humanitária sênior da ONU.
-Analise os eventos de crise abaixo e identifique quais têm maior risco de ESCALAR
-para crises humanitárias maiores nos próximos 7 a 30 dias.
+    prompt = f"""You are a humanitarian intelligence analyst. Based on these active crisis events, identify which situations are most likely to escalate into larger humanitarian emergencies in the next 7 to 30 days. For each prediction, explain the reasoning and suggest preemptive actions. Return your analysis as a JSON array.
 
-EVENTOS RECENTES:
+ACTIVE CRISIS EVENTS:
 {events_summary}
 
-Foque em:
-1. Tempestades tropicais ou furacões se formando perto de costas populosas
-2. Zonas sísmicas ativas com potencial de grandes réplicas
-3. Regiões de seca próximas a populações com insegurança alimentar
-4. Conflitos mostrando sinais de escalada (aumento de frequência, novos atores)
-5. Surtos de doenças em regiões com saúde pública frágil
+Focus on:
+1. Tropical storms or hurricanes forming near populated coasts
+2. Active seismic zones with potential for major aftershocks
+3. Drought regions near populations with food insecurity
+4. Conflicts showing escalation signs (increasing frequency, new actors)
+5. Disease outbreaks in regions with fragile public health
 
-Retorne APENAS um JSON válido com esta estrutura exata:
+Return ONLY valid JSON with this exact structure:
 ```json
 {{
   "predictions": [
     {{
-      "location": "Nome da região ou cidade específica",
-      "country": "Nome do país em português",
-      "lat": 0.0,
-      "lon": 0.0,
-      "risk_type": "tipo do risco (meteorological/seismic/conflict/drought/humanitarian/sanitary)",
+      "location": "specific region or city name",
+      "country": "country name in Portuguese",
+      "risk_type": "meteorological|seismic|conflict|drought|humanitarian|sanitary",
       "probability": "low|medium|high",
-      "estimated_timeframe": "7 dias|14 dias|30 dias",
-      "recommended_preemptive_action": "Ação específica recomendada em português",
-      "estimated_affected_population": 0,
-      "justification": "Explicação de 1-2 frases em português"
+      "timeframe": "7 days|14 days|30 days",
+      "recommended_action": "specific preemptive action in Portuguese",
+      "justification": "1-2 sentence explanation in Portuguese"
     }}
   ],
   "analysis_timestamp": "ISO datetime",

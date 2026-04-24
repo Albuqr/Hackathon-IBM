@@ -453,57 +453,16 @@ def trigger_ingest():
 
     # 2. NASA EONET
     try:
-        r = requests.get(
-            "https://eonet.gsfc.nasa.gov/api/v3/events",
-            params={"status": "open", "limit": 50},
-            timeout=15
-        )
-        cat_map = {
-            "Wildfires": "wildfire",
-            "Severe Storms": "meteorological",
-            "Volcanoes": "seismic",
-            "Floods": "meteorological",
-            "Earthquakes": "seismic",
-            "Drought": "drought",
-            "Sea and Lake Ice": "meteorological",
-            "Landslides": "meteorological"
-        }
-        cat_sev = {
-            "Wildfires": 3, "Severe Storms": 4,
-            "Volcanoes": 4, "Floods": 3,
-            "Earthquakes": 3, "Drought": 2,
-            "Landslides": 3
-        }
-        for ev in r.json().get("events", []):
-            cat = ev.get("categories", [{}])[0].get("title", "")
-            geo = ev.get("geometry", [{}])
-            coords = geo[-1].get("coordinates", [0, 0]) if geo else [0, 0]
-            try:
-                lon = float(coords[0])
-                lat = float(coords[1])
-            except:
-                lat, lon = 0.0, 0.0
-
-            # Fix: queimas controladas = severidade 1
-            title_lower = ev.get("title", "").lower()
-            is_prescribed = any(x in title_lower for x in
-                ["prescribed", " rx ", "rx-", "burn unit", "rxfire"])
-            sev = 1 if is_prescribed else cat_sev.get(cat, 2)
-
-            events.append({
-                "id": f"eonet-{ev.get('id','')}",
-                "title": ev.get("title", ""),
-                "country": "",
-                "country_iso3": "UNK",
-                "lat": lat,
-                "lon": lon,
-                "severity": sev,
-                "urgency": "24h" if sev >= 3 else "monitoring",
-                "crisis_type": cat_map.get(cat, "humanitarian"),
-                "source": "eonet",
-                "people_affected": 0
-            })
-        print(f"EONET: {len([e for e in events if e['source']=='eonet'])} eventos")
+        _tools_dir = os.path.join(os.path.dirname(__file__), "..", "tools")
+        if _tools_dir not in sys.path:
+            sys.path.insert(0, _tools_dir)
+        from fetch_eonet import fetch_eonet
+        eonet_events = fetch_eonet(days=30, status="open")
+        for ev in eonet_events:
+            if ev.get("error"):
+                continue
+            events.append(ev)
+        print(f"EONET: {len([e for e in events if e.get('source')=='eonet'])} eventos")
     except Exception as e:
         print(f"EONET error: {e}")
 
@@ -590,10 +549,10 @@ def trigger_ingest():
         _ALLOWED_CC = set(_CC_MAP.keys())
 
         def _gs_to_sev(gs):
-            if gs <= -9: return 5
-            elif gs <= -7: return 4
-            elif gs <= -5: return 3
-            elif gs <= -2: return 2
+            if gs < -7: return 5
+            elif gs < -5: return 4
+            elif gs < -3: return 3
+            elif gs < -1: return 2
             else: return 1
 
         # Get latest 15-min update URL

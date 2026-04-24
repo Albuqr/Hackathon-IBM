@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+requests
+httpx
+ibm-watsonx-orchestrate==2.8.0
+python-telegram-bot
+pydantic
