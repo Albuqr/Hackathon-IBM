@@ -68,7 +68,50 @@ CREATE TABLE IF NOT EXISTS crisis_associations (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(crisis_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS campaigns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    crisis_id TEXT DEFAULT '',
+    skills_needed TEXT DEFAULT '[]',
+    target_volunteers INTEGER DEFAULT 10,
+    start_date TEXT DEFAULT '',
+    end_date TEXT DEFAULT '',
+    urgency TEXT DEFAULT 'media',
+    status TEXT DEFAULT 'active',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS telegram_subscribers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id INTEGER NOT NULL,
+    username TEXT,
+    country TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(telegram_id, country)
+);
+CREATE TABLE IF NOT EXISTS campaign_volunteers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id INTEGER REFERENCES campaigns(id),
+    volunteer_id INTEGER REFERENCES users(id),
+    status TEXT DEFAULT 'selected',
+    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(campaign_id, volunteer_id)
+);
 ''')
+
+# Add columns if they don't exist yet (SQLite doesn't support IF NOT EXISTS for ALTER)
+for _sql in [
+    'ALTER TABLE users ADD COLUMN username TEXT',
+    'ALTER TABLE missions ADD COLUMN crisis_id TEXT',
+    'ALTER TABLE missions ADD COLUMN telegram_id INTEGER',
+    'ALTER TABLE missions ADD COLUMN user_id INTEGER',
+    'ALTER TABLE missions ADD COLUMN username TEXT',
+]:
+    try:
+        c.execute(_sql)
+    except Exception:
+        pass
 
 admin_hash = hashlib.sha256(b'admin123').hexdigest()
 c.execute(

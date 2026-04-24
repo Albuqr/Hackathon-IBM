@@ -146,6 +146,10 @@ input[type=range]{width:100%;accent-color:#3b82f6}
 .popup-close:hover{border-color:#555;color:#ccc}
 .popup-divider{border-top:1px solid #1e1e1e;margin:8px 0}
 .popup-assoc-loading{font-size:10px;color:#444;text-align:center;padding:2px 0}
+.popup-enlist{margin-top:8px;width:100%;padding:7px;background:#1d4ed8;border:none;border-radius:5px;color:#fff;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:background .15s}
+.popup-enlist:hover{background:#2563eb}
+.popup-enlist.enrolled{background:transparent;border:1px solid #22c55e;color:#22c55e;cursor:default}
+.popup-enlist:disabled{opacity:.6;cursor:wait}
 </style>
 </head>
 <body>
@@ -225,9 +229,13 @@ input[type=range]{width:100%;accent-color:#3b82f6}
       {% if session.get('role') == 'admin' %}
       <button class="action-btn" onclick="triggerIngest()">Atualizar dados</button>
       {% elif session.get('role') == 'org' %}
-      <a class="action-btn" href="/org/missions/new">Nova missão</a>
+      <a class="action-btn" href="/org/dashboard">Dashboard ONG</a>
       {% else %}
-      <a class="action-btn" href="/volunteer/missions">Ver missões</a>
+      <a class="action-btn" href="/volunteer/profile">Meu Perfil</a>
+      <a class="action-btn" href="/volunteer/campaigns" style="margin-top:8px;background:transparent;border:1px solid #1e40af;color:#60a5fa;position:relative">
+        Minhas Campanhas
+        <span id="pendingBadge" style="display:none;position:absolute;top:-5px;right:-5px;background:#f97316;color:#fff;border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:700;align-items:center;justify-content:center;line-height:1"></span>
+      </a>
       {% endif %}
     </div>
   </div>
@@ -259,6 +267,9 @@ input[type=range]{width:100%;accent-color:#3b82f6}
 <script>
 // ── Data ──
 const crisisData = {{ events|tojson }};
+const MAP_MODE = "{{ map_mode|default('admin') }}";
+const USER_ID  = {{ session.get('user_id', 0) }};
+const ENROLLED_IDS = new Set({{ enrolled_ids|default([])|tojson }});
 
 // ── Severity config ──
 const SEV_COLOR  = {1:'#4b5563',2:'#22c55e',3:'#eab308',4:'#f97316',5:'#ef4444'};
@@ -347,6 +358,19 @@ function buildPopup(ev) {
   const type  = TYPE_PT[ev.crisis_type] || ev.crisis_type || '—';
   const urg   = URG_PT[ev.urgency]      || ev.urgency     || '—';
   const assocId = 'assoc-' + (ev.id || '').replace(/[^a-zA-Z0-9]/g, '-');
+  const safeId  = (ev.id || '').replace(/'/g, "\\'");
+  let enlistBtn = '';
+  if (MAP_MODE !== 'admin') {
+    const enrolled = ENROLLED_IDS.has(ev.id);
+    const label = MAP_MODE === 'volunteer'
+      ? (enrolled ? '✓ Inscrito'     : 'Quero Ajudar')
+      : (enrolled ? '✓ ONG Associada' : 'Apoiar Campanha');
+    enlistBtn = `<button class="popup-enlist${enrolled?' enrolled':''}"
+      data-crisis-id="${safeId}" onclick="associateCrisis(this)"
+      ${enrolled?'disabled':''}>
+      ${label}
+    </button>`;
+  }
   return `<div class="popup-card">
     <div class="popup-title">${title}</div>
     <div class="popup-row"><span class="k">Severidade</span><span class="v popup-sev" style="color:${color}">${SEV_LABEL[sev]||sev}</span></div>
@@ -358,7 +382,8 @@ function buildPopup(ev) {
     <div id="${assocId}" class="popup-assoc">
       <div class="popup-assoc-loading">carregando...</div>
     </div>
-    <button class="popup-close" onclick="this.closest('.leaflet-popup').querySelector('.leaflet-popup-close-button').click()">Fechar</button>
+    ${enlistBtn}
+    <button class="popup-close" style="margin-top:8px" onclick="this.closest('.leaflet-popup').querySelector('.leaflet-popup-close-button').click()">Fechar</button>
   </div>`;
 }
 
@@ -504,6 +529,33 @@ function triggerIngest() {
     .catch(e => alert('Erro: ' + e));
 }
 
+// ── Enlist / associate ──
+function associateCrisis(btn) {
+  const crisisId = btn.dataset.crisisId;
+  btn.disabled = true;
+  fetch('/api/events/' + encodeURIComponent(crisisId) + '/associate', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({})
+  })
+  .then(r => r.json())
+  .then(function(d) {
+    ENROLLED_IDS.add(crisisId);
+    btn.classList.add('enrolled');
+    btn.textContent = MAP_MODE === 'volunteer' ? '✓ Inscrito' : '✓ ONG Associada';
+    // Bump the counter in the popup
+    const card = btn.closest('.popup-card');
+    if (card) {
+      const rows = card.querySelectorAll('.popup-assoc .v');
+      if (rows.length > 0) {
+        const cur = parseInt(rows[0].textContent) || 0;
+        rows[0].textContent = cur + 1;
+      }
+    }
+  })
+  .catch(function() { btn.disabled = false; });
+}
+
 // ── Dot grid ──
 const cvs  = document.getElementById('dotgrid');
 const cctx = cvs.getContext('2d');
@@ -536,6 +588,21 @@ function drawDotGrid() {
 
 resizeCvs();
 drawDotGrid();
+
+// ── Pending campaigns badge ──
+if (MAP_MODE === 'volunteer' && USER_ID) {
+  fetch('/api/volunteer/' + USER_ID + '/campaigns/pending')
+    .then(r => r.json())
+    .then(d => {
+      const n = d.count || 0;
+      if (n > 0) {
+        document.querySelectorAll('#pendingBadge').forEach(b => {
+          b.textContent = n;
+          b.style.display = 'flex';
+        });
+      }
+    }).catch(() => {});
+}
 </script>
 </body>
 </html>

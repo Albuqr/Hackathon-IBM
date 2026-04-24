@@ -1,0 +1,137 @@
+{% extends "layout_base.html" %}
+{% block title %}Minhas Campanhas{% endblock %}
+
+{% block head %}
+<style>
+.vc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.vc-card{background:#060606;border:1px solid #1a1a1a;border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:10px}
+.vc-card.pending{border-color:#854d0e}
+.vc-card.confirmed{border-color:#166534}
+.vc-card.declined{opacity:.5}
+.vc-title{font-size:14px;font-weight:600;color:#fff}
+.vc-org{font-size:11px;color:#555;margin-bottom:2px}
+.vc-crisis{font-size:12px;color:#888}
+.vc-desc{font-size:12px;color:#666;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sev-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px;flex-shrink:0}
+.badge-urg{padding:2px 7px;border-radius:3px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.urg-baixa{background:#14532d22;border:1px solid #166534;color:#4ade80}
+.urg-media{background:#7c2d1222;border:1px solid #c2410c;color:#fb923c}
+.urg-alta{background:#7f1d1d22;border:1px solid #991b1b;color:#f87171}
+.urg-critica{background:#4c0519;border:1px solid #9f1239;color:#fb7185}
+.status-badge{padding:2px 8px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase}
+.s-selected{background:#1f1503;border:1px solid #854d0e;color:#fbbf24}
+.s-confirmed{background:#052e16;border:1px solid #166534;color:#4ade80}
+.s-declined{background:#111;border:1px solid #333;color:#555}
+.vc-actions{display:flex;gap:8px;margin-top:4px}
+.vc-actions button{flex:1;padding:7px;font-size:12px;border-radius:5px;cursor:pointer;font-family:inherit;transition:all .15s}
+.btn-accept{background:#166534;border:1px solid #166534;color:#fff}
+.btn-accept:hover{background:#15803d}
+.btn-decline{background:transparent;border:1px solid #991b1b;color:#f87171}
+.btn-decline:hover{background:#7f1d1d22}
+.btn-accept:disabled,.btn-decline:disabled{opacity:.5;cursor:default}
+.skill-chip{display:inline-block;padding:2px 7px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:20px;font-size:10px;color:#888;margin:1px}
+.empty-state{text-align:center;padding:60px 20px;color:#333}
+.empty-state .e-icon{font-size:40px;margin-bottom:16px;color:#1a1a1a}
+.empty-state p{font-size:14px;line-height:1.6}
+.empty-state a{color:#3b82f6;text-decoration:none}
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+  <div>
+    <h1 style="font-size:20px;font-weight:600">Minhas Campanhas</h1>
+    <div style="font-size:12px;color:#555;margin-top:2px">Convites de ONGs para campanhas humanitárias</div>
+  </div>
+  {% if pending_count > 0 %}
+  <span style="background:#854d0e;color:#fbbf24;border:1px solid #92400e;border-radius:20px;padding:3px 12px;font-size:11px;font-weight:600">
+    {{ pending_count }} pendente{{ 's' if pending_count > 1 else '' }}
+  </span>
+  {% endif %}
+</div>
+
+{% if campaigns %}
+<div class="vc-grid">
+  {% set sev_colors = {1:'#4b5563',2:'#22c55e',3:'#eab308',4:'#f97316',5:'#ef4444'} %}
+  {% set urg_cls = {'baixa':'urg-baixa','media':'urg-media','alta':'urg-alta','critica':'urg-critica'} %}
+  {% set st_cls = {'selected':'s-selected','confirmed':'s-confirmed','declined':'s-declined'} %}
+  {% for c in campaigns %}
+  {% set sev = (c.crisis_severity or 1)|int %}
+  <div class="vc-card {{ 'pending' if c.status=='selected' else c.status }}"
+       id="vc-{{ c.cv_id }}">
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <span class="status-badge {{ st_cls.get(c.status,'s-selected') }}">
+          {{ {'selected':'Aguardando','confirmed':'Confirmado','declined':'Recusado'}.get(c.status, c.status) }}
+        </span>
+        <span class="badge-urg {{ urg_cls.get(c.urgency,'urg-media') }}">{{ c.urgency or 'média' }}</span>
+      </div>
+      <div class="vc-org">{{ c.org_name or 'ONG' }}</div>
+      <div class="vc-title">{{ c.title }}</div>
+      <div class="vc-crisis" style="display:flex;align-items:center;margin-top:4px">
+        <span class="sev-dot" style="background:{{ sev_colors.get(sev,'#4b5563') }}"></span>
+        {{ c.crisis_title or '—' }}{% if c.crisis_country %} · {{ c.crisis_country }}{% endif %}
+      </div>
+    </div>
+    {% if c.description %}
+    <div class="vc-desc">{{ c.description }}</div>
+    {% endif %}
+    {% set skills_raw = c.skills_needed or '[]' %}
+    {% set sk = skills_raw|replace('["','')|replace('"]','')|replace('", "',',')|replace('","',',') %}
+    {% if sk and sk != '[]' %}
+    <div>
+      {% for s in sk.split(',') %}
+      <span class="skill-chip">{{ s.strip().strip('"') }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if c.status == 'selected' %}
+    <div class="vc-actions">
+      <button class="btn-accept" onclick="respond({{ c.cv_id }},'confirmed',this)">✓ Aceitar</button>
+      <button class="btn-decline" onclick="respond({{ c.cv_id }},'declined',this)">✕ Recusar</button>
+    </div>
+    {% elif c.status == 'confirmed' %}
+    <div style="font-size:11px;color:#4ade80">✓ Você confirmou participação</div>
+    {% else %}
+    <div style="font-size:11px;color:#555">Você recusou esta campanha</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="e-icon">🤝</div>
+  <p>Nenhuma ONG te selecionou ainda.<br>
+  Continue se inscrevendo em crises no <a href="/volunteer/map">mapa</a>!</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function respond(cvId, status, btn) {
+  btn.disabled = true;
+  btn.closest('.vc-actions').querySelectorAll('button').forEach(b => b.disabled = true);
+  fetch('/api/campaign_volunteers/' + cvId, {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({status: status})
+  })
+  .then(r => r.json())
+  .then(() => {
+    const card = document.getElementById('vc-' + cvId);
+    const actDiv = btn.closest('.vc-actions');
+    if (status === 'confirmed') {
+      card.className = card.className.replace('pending','confirmed');
+      actDiv.innerHTML = '<div style="font-size:11px;color:#4ade80">✓ Você confirmou participação</div>';
+    } else {
+      card.className = card.className.replace('pending','declined');
+      actDiv.innerHTML = '<div style="font-size:11px;color:#555">Você recusou esta campanha</div>';
+    }
+  })
+  .catch(() => {
+    btn.closest('.vc-actions').querySelectorAll('button').forEach(b => b.disabled = false);
+  });
+}
+</script>
+{% endblock %}

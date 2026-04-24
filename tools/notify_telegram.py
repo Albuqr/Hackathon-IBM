@@ -7,6 +7,11 @@ from telegram import Bot
 from telegram.error import TelegramError
 from ibm_watsonx_orchestrate.agent_builder.tools import tool
 
+try:
+    import httpx
+except ImportError:
+    httpx = None
+
 
 def get_db():
     path = os.environ.get("DB_PATH", "data/crisis.db")
@@ -203,3 +208,79 @@ def notify_telegram(matches_json: str, crisis_json: str) -> str:
             "message": str(e),
             "timestamp": datetime.utcnow().isoformat()
         })
+
+
+# ── Broadcast to country subscribers ─────────────────────────────────────────
+
+def _sev_emoji(severity: int) -> str:
+    return {1: "🟢", 2: "🟡", 3: "🟠", 4: "🔴", 5: "🚨"}.get(severity, "⚠️")
+
+
+async def broadcast_to_subscribers(
+    country: str,
+    crisis_title: str,
+    severity: int,
+    map_url: str = ""
+) -> dict:
+    """Send a crisis alert to every Telegram subscriber for `country`.
+
+    Queries telegram_subscribers, POSTs to the Telegram Bot API via httpx.
+    One subscriber failure never stops the rest.
+    Returns a summary dict with sent/failed counts.
+    """
+    token = os.environ.get("TG_TOKEN", "")
+    if not token:
+        print("[broadcast] TG_TOKEN not set — skipping broadcast")
+        return {"sent": 0, "failed": 0, "reason": "no token"}
+
+    if httpx is None:
+        print("[broadcast] httpx not installed — skipping broadcast")
+        return {"sent": 0, "failed": 0, "reason": "httpx not installed"}
+
+    # Fetch subscribers
+    db_path = os.environ.get("DB_PATH", "data/crisis.db")
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT telegram_id, username FROM telegram_subscribers WHERE country = ?",
+        (country,)
+    ).fetchall()
+    conn.close()
+
+    if not rows:
+        return {"sent": 0, "failed": 0, "reason": "no subscribers"}
+
+    emoji = _sev_emoji(severity)
+    text = (
+        f"{emoji} *Alerta de Crise — HKTN26*\n\n"
+        f"*{crisis_title}*\n"
+        f"🌍 País: {country}\n"
+        f"⚠️ Severidade: {severity}/5\n"
+    )
+    if map_url:
+        text += f"\n🗺️ [Ver no mapa]({map_url})"
+    text += "\n\n_Crisis Monitor — IA Humanitária_"
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    sent = 0
+    failed = 0
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        for row in rows:
+            try:
+                resp = await client.post(url, json={
+                    "chat_id": row["telegram_id"],
+                    "text": text,
+                    "parse_mode": "Markdown"
+                })
+                if resp.status_code == 200:
+                    sent += 1
+                else:
+                    failed += 1
+                    print(f"[broadcast] failed {row['telegram_id']}: {resp.text}")
+            except Exception as e:
+                failed += 1
+                print(f"[broadcast] error {row['telegram_id']}: {e}")
+
+    print(f"[broadcast] country={country} sent={sent} failed={failed}")
+    return {"sent": sent, "failed": failed}

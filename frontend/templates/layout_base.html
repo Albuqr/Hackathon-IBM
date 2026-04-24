@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>{% block title %}Crisis Monitor{% endblock %} — HKTN26</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;display:flex;flex-direction:column;background:#000;font-family:'Inter',system-ui,sans-serif;color:#fff}
+header{height:52px;flex-shrink:0;background:#060606;border-bottom:1px solid #1a1a1a;display:flex;align-items:center;justify-content:space-between;padding:0 16px;z-index:100}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-name{font-size:15px;font-weight:600}
+.brand-badge{border:1px solid #3b82f6;color:#3b82f6;border-radius:4px;padding:1px 7px;font-size:10px;font-family:'JetBrains Mono',monospace}
+nav{display:flex;align-items:center;gap:4px}
+nav a{color:#555;text-decoration:none;font-size:12px;padding:5px 10px;border-radius:5px;transition:all .15s}
+nav a:hover{color:#ccc;background:#111}
+nav a.active{color:#fff;background:#111}
+.user-info{display:flex;align-items:center;gap:10px;font-size:13px;color:#888}
+.avatar{width:28px;height:28px;background:#1d4ed8;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#fff;font-family:'JetBrains Mono',monospace}
+.user-info a{color:#555;text-decoration:none;font-size:12px}
+.user-info a:hover{color:#888}
+.page-body{flex:1;overflow-y:auto;padding:28px}
+/* Common components */
+.card{background:#060606;border:1px solid #1a1a1a;border-radius:10px;padding:20px}
+.card-title{font-size:13px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:16px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 16px;border:none;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;text-decoration:none;transition:background .15s}
+.btn-primary{background:#1d4ed8;color:#fff}
+.btn-primary:hover{background:#2563eb}
+.btn-ghost{background:transparent;border:1px solid #222;color:#888}
+.btn-ghost:hover{border-color:#444;color:#ccc}
+.btn-danger{background:transparent;border:1px solid #7f1d1d;color:#ef4444}
+.btn-danger:hover{background:#7f1d1d22}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;font-family:'JetBrains Mono',monospace}
+.badge-blue{background:#1e3a8a22;border:1px solid #1e40af44;color:#60a5fa}
+.badge-green{background:#14532d22;border:1px solid #15803d44;color:#4ade80}
+.badge-orange{background:#7c2d1222;border:1px solid #9a3412aa;color:#fb923c}
+.badge-red{background:#7f1d1d22;border:1px solid #991b1b44;color:#f87171}
+.badge-gray{background:#1a1a1a;border:1px solid #333;color:#666}
+input,textarea,select{background:#0a0a0a;border:1px solid #1e1e1e;border-radius:6px;color:#ccc;font-size:13px;padding:8px 12px;font-family:inherit;width:100%;transition:border-color .15s}
+input:focus,textarea:focus,select:focus{outline:none;border-color:#3b82f6}
+label{display:block;color:#555;font-size:11px;margin-bottom:5px}
+.form-group{margin-bottom:16px}
+</style>
+{% block head %}{% endblock %}
+</head>
+<body>
+<header>
+  <div style="display:flex;align-items:center;gap:20px">
+    <div class="brand">
+      <span class="brand-name">Crisis Monitor</span>
+      <span class="brand-badge">HKTN26</span>
+    </div>
+    <nav>
+      {% if session.get('role') == 'volunteer' %}
+      <a href="/volunteer/map" {% if request.path == '/volunteer/map' %}class="active"{% endif %}>Mapa</a>
+      <a href="/volunteer/profile" {% if request.path == '/volunteer/profile' %}class="active"{% endif %}>Perfil</a>
+      <a href="/volunteer/campaigns" {% if request.path == '/volunteer/campaigns' %}class="active"{% endif %}
+         style="position:relative">Minhas Campanhas
+        <span id="pendingBadge" style="display:none;position:absolute;top:-4px;right:-8px;background:#f97316;color:#fff;border-radius:50%;width:14px;height:14px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1" id="pendingBadge"></span>
+      </a>
+      {% elif session.get('role') == 'org' %}
+      <a href="/org/map" {% if request.path == '/org/map' %}class="active"{% endif %}>Mapa</a>
+      <a href="/org/dashboard" {% if request.path == '/org/dashboard' %}class="active"{% endif %}>Dashboard</a>
+      <a href="/org/campaigns/new" {% if request.path == '/org/campaigns/new' %}class="active"{% endif %}>+ Campanha</a>
+      {% else %}
+      <a href="/map">Mapa</a>
+      {% endif %}
+    </nav>
+  </div>
+  <div class="user-info">
+    <div class="avatar">{{ session.get('initials','??') }}</div>
+    <span>{{ session.get('name','') }}</span>
+    <a href="/logout">sair</a>
+  </div>
+</header>
+<div class="page-body">
+{% block content %}{% endblock %}
+</div>
+{% block scripts %}{% endblock %}
+{% if session.get('role') == 'volunteer' %}
+<script>
+(function() {
+  const uid = {{ session.get('user_id', 0) }};
+  if (!uid) return;
+  fetch('/api/volunteer/' + uid + '/campaigns/pending')
+    .then(r => r.json())
+    .then(d => {
+      const n = d.count || 0;
+      if (n > 0) {
+        const badges = document.querySelectorAll('#pendingBadge');
+        badges.forEach(b => { b.textContent = n; b.style.display = 'flex'; });
+      }
+    }).catch(() => {});
+})();
+</script>
+{% endif %}
+</body>
+</html>

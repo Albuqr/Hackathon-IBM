@@ -1,0 +1,246 @@
+{% extends "layout_base.html" %}
+{% block title %}Meu Perfil{% endblock %}
+
+{% block head %}
+<style>
+.profile-layout{display:grid;grid-template-columns:320px 1fr;gap:20px;max-width:1100px}
+/* Profile card */
+.role-pill{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;background:#1e3a8a22;border:1px solid #1e40af44;color:#60a5fa;margin-bottom:12px}
+.profile-name{font-size:20px;font-weight:600;margin-bottom:2px}
+.profile-email{font-size:12px;color:#555;margin-bottom:16px}
+.avail-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid #111}
+.avail-label{font-size:12px;color:#888}
+.toggle{position:relative;width:38px;height:20px;cursor:pointer}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-track{position:absolute;inset:0;background:#1a1a1a;border-radius:20px;border:1px solid #333;transition:.2s}
+.toggle input:checked + .toggle-track{background:#15803d;border-color:#166534}
+.toggle-thumb{position:absolute;top:3px;left:3px;width:12px;height:12px;background:#555;border-radius:50%;transition:.2s}
+.toggle input:checked ~ .toggle-thumb{left:21px;background:#4ade80}
+/* Skills */
+.skills-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;min-height:28px}
+.skill-chip{display:flex;align-items:center;gap:4px;padding:3px 10px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:20px;font-size:11px;color:#ccc}
+.skill-chip button{background:none;border:none;color:#555;cursor:pointer;font-size:12px;padding:0;line-height:1}
+.skill-chip button:hover{color:#ef4444}
+.skill-add-row{display:flex;gap:6px}
+.skill-add-row input{flex:1;height:30px;font-size:11px}
+.skill-add-row button{height:30px;padding:0 12px;white-space:nowrap;font-size:11px}
+/* Chat */
+.chat-card{display:flex;flex-direction:column;height:calc(100vh - 110px)}
+.chat-messages{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 0;margin-bottom:12px}
+.chat-msg{max-width:80%;padding:10px 14px;border-radius:10px;font-size:13px;line-height:1.5}
+.chat-msg.agent{background:#0d0d0d;border:1px solid #1a1a1a;align-self:flex-start;border-radius:10px 10px 10px 2px;color:#ccc}
+.chat-msg.user{background:#1d4ed8;align-self:flex-end;border-radius:10px 10px 2px 10px;color:#fff}
+.chat-typing{align-self:flex-start;padding:10px 14px;background:#0d0d0d;border:1px solid #1a1a1a;border-radius:10px;font-size:12px;color:#444}
+.chat-input-row{display:flex;gap:8px}
+.chat-input-row textarea{flex:1;height:48px;resize:none;padding:12px;font-size:13px;border-radius:8px}
+.chat-input-row button{width:80px;align-self:stretch;border-radius:8px}
+/* Missions list */
+.mission-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #0f0f0f}
+.mission-item:last-child{border-bottom:none}
+.sev-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.mission-info{flex:1;min-width:0}
+.mission-title{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mission-meta{font-size:11px;color:#555;margin-top:2px}
+.unenroll-btn{background:none;border:1px solid #2a2a2a;color:#555;border-radius:4px;font-size:10px;padding:3px 8px;cursor:pointer;font-family:inherit;flex-shrink:0}
+.unenroll-btn:hover{border-color:#555;color:#ccc}
+.empty-state{text-align:center;color:#333;font-size:13px;padding:24px 0}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="profile-layout">
+
+  <!-- LEFT COLUMN -->
+  <div style="display:flex;flex-direction:column;gap:16px">
+
+    <!-- Profile card -->
+    <div class="card">
+      <div class="role-pill">Voluntário</div>
+      <div class="profile-name">{{ user.name }}</div>
+      <div class="profile-email">{{ user.email }}</div>
+
+      <div style="margin-bottom:14px">
+        <label style="margin-bottom:8px">Habilidades</label>
+        <div class="skills-wrap" id="skillsWrap">
+          {% for skill in user.skills_list %}
+          <div class="skill-chip" data-skill="{{ skill }}">
+            <span>{{ skill }}</span>
+            <button onclick="removeSkill('{{ skill }}',this.closest('.skill-chip'))">×</button>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="skill-add-row">
+          <input type="text" id="skillInput" placeholder="Nova habilidade..." onkeydown="if(event.key==='Enter'){addSkill();event.preventDefault()}">
+          <button class="btn btn-ghost" onclick="addSkill()">+ Adicionar</button>
+        </div>
+      </div>
+
+      <div style="padding:10px 0;border-top:1px solid #111;margin-bottom:0">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:11px;color:#555">Raio de atuação</span>
+          <span style="font-size:12px;color:#888;font-family:'JetBrains Mono',monospace">{{ user.radius_km|int }} km</span>
+        </div>
+        {% if user.lat and user.lon and user.lat != 0 and user.lon != 0 %}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+          <span style="font-size:11px;color:#555">Localização</span>
+          <span style="font-size:11px;color:#555;font-family:'JetBrains Mono',monospace">{{ "%.2f"|format(user.lat) }}, {{ "%.2f"|format(user.lon) }}</span>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="avail-row">
+        <span class="avail-label">Disponível para ação</span>
+        <label class="toggle">
+          <input type="checkbox" id="availToggle" {% if user.available %}checked{% endif %}
+                 onchange="updateAvailability(this.checked)">
+          <div class="toggle-track"></div>
+          <div class="toggle-thumb"></div>
+        </label>
+      </div>
+    </div>
+
+    <!-- My missions -->
+    <div class="card">
+      <div class="card-title">Minhas Missões</div>
+      <div id="missionsList">
+        {% if missions %}
+          {% for m in missions %}
+          {% set sev = m.severity|int %}
+          {% set colors = {1:'#4b5563',2:'#22c55e',3:'#eab308',4:'#f97316',5:'#ef4444'} %}
+          <div class="mission-item" id="mission-{{ m.crisis_id|replace('-','_') }}">
+            <div class="sev-dot" style="background:{{ colors.get(sev,'#4b5563') }}"></div>
+            <div class="mission-info">
+              <div class="mission-title" title="{{ m.title }}">{{ m.title }}</div>
+              <div class="mission-meta">{{ m.country or '—' }} · {{ m.crisis_type or '—' }}</div>
+            </div>
+            <button class="unenroll-btn"
+                    onclick="unenroll('{{ m.crisis_id }}', this)">Sair</button>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state">Você ainda não se inscreveu em nenhuma missão.</div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div><!-- /left -->
+
+  <!-- RIGHT: AI Chat -->
+  <div class="card chat-card">
+    <div class="card-title" style="margin-bottom:10px">Assistente IA — Matching Humanitário</div>
+    <div class="chat-messages" id="chatMessages">
+      <div class="chat-msg agent">
+        Olá, <strong>{{ user.name.split()[0] }}</strong>! Sou o assistente de mobilização humanitária.
+        Baseado no seu perfil, posso ajudar a encontrar as melhores crises para sua contribuição.
+        O que você gostaria de saber?
+      </div>
+    </div>
+    <div class="chat-input-row">
+      <textarea id="chatInput" placeholder="Digite sua mensagem..."
+                onkeydown="if(event.key==='Enter'&&!event.shiftKey){sendMsg();event.preventDefault()}"></textarea>
+      <button class="btn btn-primary" onclick="sendMsg()">Enviar</button>
+    </div>
+  </div>
+
+</div><!-- /profile-layout -->
+{% endblock %}
+
+{% block scripts %}
+<script>
+const USER_ID = {{ session.get('user_id', 0) }};
+let currentSkills = {{ user.skills_list|tojson }};
+
+// ── Availability toggle ──
+function updateAvailability(val) {
+  fetch('/api/users/' + USER_ID, {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({available: val})
+  });
+}
+
+// ── Skills ──
+function removeSkill(skill, chip) {
+  currentSkills = currentSkills.filter(s => s !== skill);
+  chip.remove();
+  saveSkills();
+}
+
+function addSkill() {
+  const inp = document.getElementById('skillInput');
+  const val = inp.value.trim();
+  if (!val || currentSkills.includes(val)) { inp.value = ''; return; }
+  currentSkills.push(val);
+  const wrap = document.getElementById('skillsWrap');
+  const chip = document.createElement('div');
+  chip.className = 'skill-chip';
+  chip.dataset.skill = val;
+  chip.innerHTML = `<span>${val}</span><button onclick="removeSkill('${val}',this.closest('.skill-chip'))">×</button>`;
+  wrap.appendChild(chip);
+  inp.value = '';
+  saveSkills();
+}
+
+function saveSkills() {
+  fetch('/api/users/' + USER_ID, {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({skills: currentSkills})
+  });
+}
+
+// ── Unenroll ──
+function unenroll(crisisId, btn) {
+  btn.disabled = true;
+  fetch('/api/events/' + encodeURIComponent(crisisId) + '/disassociate', {
+    method: 'POST'
+  })
+  .then(r => r.json())
+  .then(function() {
+    const row = btn.closest('.mission-item');
+    if (row) row.remove();
+    const list = document.getElementById('missionsList');
+    if (list && !list.querySelector('.mission-item')) {
+      list.innerHTML = '<div class="empty-state">Você ainda não se inscreveu em nenhuma missão.</div>';
+    }
+  })
+  .catch(function() { btn.disabled = false; });
+}
+
+// ── AI Chat ──
+const chatMsgs = document.getElementById('chatMessages');
+
+function appendMsg(text, cls) {
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + cls;
+  div.innerHTML = text.replace(/\n/g, '<br>');
+  chatMsgs.appendChild(div);
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+  return div;
+}
+
+function sendMsg() {
+  const inp = document.getElementById('chatInput');
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  appendMsg(text, 'user');
+  const typing = appendMsg('...', 'chat-typing');
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+  fetch('/api/chat', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({text: text})
+  })
+  .then(r => r.json())
+  .then(function(d) {
+    typing.remove();
+    appendMsg(d.reply || 'Sem resposta disponível.', 'agent');
+  })
+  .catch(function() {
+    typing.remove();
+    appendMsg('Erro ao conectar com o agente. Tente novamente.', 'agent');
+  });
+}
+</script>
+{% endblock %}

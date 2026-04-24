@@ -1,7 +1,10 @@
 import os
+import sys
 import json
+import math
 import sqlite3
 import time
+import asyncio
 import requests
 from datetime import datetime
 from dotenv import load_dotenv
@@ -23,7 +26,7 @@ DB = os.environ.get("DB_PATH", "data/crisis.db")
 def get_db():
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
-    conn.execute("""
+    conn.executescript("""
         CREATE TABLE IF NOT EXISTS crisis_associations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             crisis_id TEXT NOT NULL,
@@ -31,9 +34,52 @@ def get_db():
             role TEXT NOT NULL CHECK(role IN ('volunteer','org')),
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(crisis_id, user_id)
-        )
+        );
+        CREATE TABLE IF NOT EXISTS campaigns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            org_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            crisis_id TEXT DEFAULT '',
+            skills_needed TEXT DEFAULT '[]',
+            target_volunteers INTEGER DEFAULT 10,
+            start_date TEXT DEFAULT '',
+            end_date TEXT DEFAULT '',
+            urgency TEXT DEFAULT 'media',
+            status TEXT DEFAULT 'active',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS telegram_subscribers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER NOT NULL,
+            username TEXT,
+            country TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(telegram_id, country)
+        );
+        CREATE TABLE IF NOT EXISTS campaign_volunteers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            campaign_id INTEGER REFERENCES campaigns(id),
+            volunteer_id INTEGER REFERENCES users(id),
+            status TEXT DEFAULT 'selected',
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(campaign_id, volunteer_id)
+        );
     """)
     conn.commit()
+    # Add missing columns (SQLite does not support IF NOT EXISTS for ALTER TABLE)
+    for sql in [
+        "ALTER TABLE users ADD COLUMN username TEXT",
+        "ALTER TABLE missions ADD COLUMN crisis_id TEXT",
+        "ALTER TABLE missions ADD COLUMN telegram_id INTEGER",
+        "ALTER TABLE missions ADD COLUMN user_id INTEGER",
+        "ALTER TABLE missions ADD COLUMN username TEXT",
+    ]:
+        try:
+            conn.execute(sql)
+            conn.commit()
+        except Exception:
+            pass
     return conn
 
 # ── Token cache ──
@@ -91,6 +137,7 @@ class VolunteerCreate(BaseModel):
     languages: list = ["pt-BR"]
     radius_km: float = 500
     telegram_id: int = None
+    username: str = None
     phone: str = None
     lat: float = 0
     lon: float = 0
@@ -105,9 +152,59 @@ class MissionCreate(BaseModel):
     urgency: str = "Media"
     org_id: int = None
 
-class ChatMessage(BaseModel):
-    text: str
+class BotMissionCreate(BaseModel):
+    crisis_id: str
+    telegram_id: int = None
     user_id: int = None
+    username: str = None
+
+class ChatMessage(BaseModel):
+    text: str = None
+    message: str = None
+    user_id: int = None
+    telegram_id: int = None
+    username: str = None
+
+class AssociateRequest(BaseModel):
+    user_id: int
+    role: str
+
+class UserUpdate(BaseModel):
+    available: bool = None
+    skills: list = None
+
+class CampaignCreate(BaseModel):
+    org_id: int
+    title: str
+    description: str = ""
+    crisis_id: str = ""
+    skills_needed: list = []
+    target_volunteers: int = 10
+    start_date: str = ""
+    end_date: str = ""
+    urgency: str = "media"
+
+class SubscribeRequest(BaseModel):
+    telegram_id: int
+    username: str = None
+    country: str
+
+class CampaignUpdate(BaseModel):
+    title: str = None
+    description: str = None
+    skills_needed: list = None
+    target_volunteers: int = None
+    urgency: str = None
+    status: str = None
+    start_date: str = None
+    end_date: str = None
+
+class CampaignVolunteerAdd(BaseModel):
+    volunteer_id: int
+    status: str = "selected"
+
+class CampaignVolunteerUpdate(BaseModel):
+    status: str
 
 # ── Endpoints ──
 @app.get("/")
@@ -116,26 +213,32 @@ def root():
 
 @app.get("/events")
 def list_events(country: str = None, min_severity: float = 0,
-                crisis_type: str = None, limit: int = 200):
+                severity: int = None, crisis_type: str = None,
+                limit: int = 500, order_by: str = "severity"):
     db = get_db()
+    effective_min = severity if severity is not None else min_severity
     q = "SELECT * FROM crises WHERE severity >= ?"
-    params = [min_severity]
+    params = [effective_min]
     if country:
-        # country field may contain comma-separated names; use LIKE for substring match
-        q += " AND (',' || country || ',' LIKE ? OR country = ?)"
-        pattern = f"%,{country},%"
         params.extend([f"%{country}%", country])
+        q += " AND (country LIKE ? OR country = ?)"
     if crisis_type:
         q += " AND crisis_type = ?"
         params.append(crisis_type)
-    q += " ORDER BY severity DESC LIMIT ?"
+    safe_order = "severity" if order_by not in ("severity", "created_at") else order_by
+    q += f" ORDER BY {safe_order} DESC LIMIT ?"
     params.append(limit)
     rows = db.execute(q, params).fetchall()
     db.close()
-    return [dict(r) for r in rows]
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["country_code"] = d.get("country_iso3", "UNK")
+        result.append(d)
+    return result
 
 @app.get("/events/{crisis_id}/associations")
-def get_crisis_associations(crisis_id: str):
+def get_crisis_associations(crisis_id: str, user_id: int = None):
     db = get_db()
     row = db.execute(
         """SELECT
@@ -144,28 +247,86 @@ def get_crisis_associations(crisis_id: str):
            FROM crisis_associations WHERE crisis_id=?""",
         (crisis_id,)
     ).fetchone()
+    user_enrolled = False
+    if user_id:
+        check = db.execute(
+            "SELECT 1 FROM crisis_associations WHERE crisis_id=? AND user_id=?",
+            (crisis_id, user_id)
+        ).fetchone()
+        user_enrolled = check is not None
     db.close()
     return {
-        "volunteers": row["volunteers"] or 0,
-        "orgs":       row["orgs"]       or 0,
+        "volunteers":    row["volunteers"] or 0,
+        "orgs":          row["orgs"]       or 0,
+        "user_enrolled": user_enrolled,
     }
+
+@app.post("/events/{crisis_id}/associate")
+def associate_event(crisis_id: str, req: AssociateRequest):
+    if req.role not in ("volunteer", "org"):
+        raise HTTPException(status_code=400, detail="role must be volunteer or org")
+    db = get_db()
+    db.execute(
+        "INSERT OR IGNORE INTO crisis_associations (crisis_id, user_id, role) VALUES (?,?,?)",
+        (crisis_id, req.user_id, req.role)
+    )
+    campaign_id = None
+    if req.role == "org":
+        existing = db.execute(
+            "SELECT id FROM campaigns WHERE org_id=? AND crisis_id=?",
+            (req.user_id, crisis_id)
+        ).fetchone()
+        if not existing:
+            crisis_row = db.execute(
+                "SELECT title FROM crises WHERE id=?", (crisis_id,)
+            ).fetchone()
+            draft_title = (
+                f"Campanha de Apoio — {crisis_row['title']}"
+                if crisis_row else f"Campanha de Apoio — {crisis_id}"
+            )
+            now = datetime.utcnow().isoformat()
+            cur = db.execute(
+                "INSERT INTO campaigns (org_id, title, description, crisis_id, "
+                "skills_needed, target_volunteers, urgency, status, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (req.user_id, draft_title, "", crisis_id,
+                 "[]", 10, "media", "pendente", now)
+            )
+            campaign_id = cur.lastrowid
+        else:
+            campaign_id = existing["id"]
+    db.commit()
+    db.close()
+    return {"status": "ok", "campaign_id": campaign_id}
+
+@app.delete("/events/{crisis_id}/associate/{user_id}")
+def disassociate_event(crisis_id: str, user_id: int):
+    db = get_db()
+    db.execute(
+        "DELETE FROM crisis_associations WHERE crisis_id=? AND user_id=?",
+        (crisis_id, user_id)
+    )
+    db.commit()
+    db.close()
+    return {"status": "ok"}
 
 
 @app.post("/volunteers")
 def create_volunteer(vol: VolunteerCreate):
     db = get_db()
-    db.execute(
-        "INSERT INTO users (name,skills,languages,radius_km,"
+    cur = db.execute(
+        "INSERT INTO users (name,username,skills,languages,radius_km,"
         "telegram_id,phone,lat,lon,role,available) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (vol.name, json.dumps([vol.skill]),
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (vol.name, vol.username, json.dumps([vol.skill]),
          json.dumps(vol.languages), vol.radius_km,
          vol.telegram_id, vol.phone,
          vol.lat, vol.lon, "volunteer", 1)
     )
     db.commit()
+    new_id = cur.lastrowid
     db.close()
-    return {"status": "ok", "name": vol.name}
+    return {"id": new_id, "name": vol.name, "skill": vol.skill}
 
 @app.get("/volunteers")
 def list_volunteers(skill: str = None, available: bool = True):
@@ -180,56 +341,73 @@ def list_volunteers(skill: str = None, available: bool = True):
     return [dict(r) for r in rows]
 
 @app.post("/missions")
-def create_mission(m: MissionCreate):
+def create_mission(m: BotMissionCreate):
+    if not m.telegram_id and not m.user_id:
+        raise HTTPException(status_code=400,
+                            detail="At least one of telegram_id or user_id is required")
     db = get_db()
-    db.execute(
-        "INSERT INTO missions (title,description,location,"
-        "lat,lon,skills_needed,urgency,org_id) VALUES (?,?,?,?,?,?,?,?)",
-        (m.title, m.description, m.location,
-         m.lat, m.lon, json.dumps(m.skills),
-         m.urgency, m.org_id)
+    now = datetime.utcnow().isoformat()
+    cur = db.execute(
+        "INSERT INTO missions (crisis_id, telegram_id, user_id, username, status, created_at) "
+        "VALUES (?, ?, ?, ?, 'active', ?)",
+        (m.crisis_id, m.telegram_id, m.user_id, m.username, now)
     )
     db.commit()
+    new_id = cur.lastrowid
     db.close()
-    # Disparar ingestão
-    return {"status": "created"}
+    return {"id": new_id, "crisis_id": m.crisis_id, "status": "active"}
 
 @app.get("/missions")
-def list_missions(status: str = None, org_id: int = None):
+def list_missions(telegram_id: int = None, user_id: int = None,
+                  status: str = None, org_id: int = None):
     db = get_db()
-    q = "SELECT * FROM missions WHERE 1=1"
+    q = """
+        SELECT m.id, m.crisis_id, m.telegram_id, m.user_id, m.username,
+               m.status, m.created_at,
+               c.title as crisis_title, c.country, c.severity
+        FROM missions m
+        LEFT JOIN crises c ON m.crisis_id = c.id
+        WHERE 1=1
+    """
     params = []
+    if telegram_id:
+        q += " AND m.telegram_id = ?"
+        params.append(telegram_id)
+    if user_id:
+        q += " AND m.user_id = ?"
+        params.append(user_id)
     if status:
-        q += " AND status=?"
+        q += " AND m.status = ?"
         params.append(status)
     if org_id:
-        q += " AND org_id=?"
+        q += " AND m.org_id = ?"
         params.append(org_id)
-    q += " ORDER BY created_at DESC"
+    q += " ORDER BY m.created_at DESC"
     rows = db.execute(q, params).fetchall()
     db.close()
     return [dict(r) for r in rows]
 
 @app.post("/subscribe")
-def subscribe(user_id: int, country: str):
+def subscribe(req: SubscribeRequest):
     db = get_db()
     db.execute(
-        "INSERT OR IGNORE INTO subscriptions VALUES (?,?)",
-        (user_id, country)
+        "INSERT OR IGNORE INTO telegram_subscribers (telegram_id, username, country) "
+        "VALUES (?, ?, ?)",
+        (req.telegram_id, req.username, req.country)
     )
     db.commit()
     db.close()
-    return {"status": "subscribed"}
+    return {"ok": True, "country": req.country}
 
 @app.get("/subscribers")
 def get_subscribers(country: str):
     db = get_db()
     rows = db.execute(
-        "SELECT user_id FROM subscriptions WHERE country_iso3=?",
+        "SELECT telegram_id, username FROM telegram_subscribers WHERE country = ?",
         (country,)
     ).fetchall()
     db.close()
-    return [r["user_id"] for r in rows]
+    return [{"telegram_id": r["telegram_id"], "username": r["username"]} for r in rows]
 
 
 @app.post("/ingest")
@@ -500,6 +678,7 @@ def trigger_ingest():
     # Salvar no banco
     db = get_db()
     saved = 0
+    saved_events = []
     for event in events:
         if not event.get("id"):
             continue
@@ -523,6 +702,7 @@ def trigger_ingest():
                     event["people_affected"], now, now
                 ))
                 saved += 1
+                saved_events.append(event)
         except Exception as e:
             print(f"DB error {event.get('id')}: {e}")
             continue
@@ -535,6 +715,24 @@ def trigger_ingest():
         s = e["source"]
         sources_count[s] = sources_count.get(s, 0) + 1
 
+    # Broadcast new crises to Telegram subscribers
+    if saved_events:
+        try:
+            _tools_dir = os.path.join(os.path.dirname(__file__), "..", "tools")
+            if _tools_dir not in sys.path:
+                sys.path.insert(0, _tools_dir)
+            from notify_telegram import broadcast_to_subscribers
+            for ev in saved_events:
+                country = ev.get("country", "")
+                if country:
+                    asyncio.run(broadcast_to_subscribers(
+                        country=country,
+                        crisis_title=ev.get("title", "Nova crise"),
+                        severity=int(ev.get("severity", 1)),
+                    ))
+        except Exception as _be:
+            print(f"[broadcast] error: {_be}")
+
     return {
         "status": "ok",
         "events_collected": len(events),
@@ -544,16 +742,19 @@ def trigger_ingest():
 
 @app.post("/chat")
 def chat(msg: ChatMessage):
-    result = call_orchestrate(msg.text)
+    text = msg.message or msg.text or ""
+    if not text:
+        return {"reply": "Mensagem vazia.", "response": "Mensagem vazia."}
     try:
+        result = call_orchestrate(text)
         content = result["result"]["data"]["message"]["content"]
         if isinstance(content, list):
             reply = content[0].get("text", str(content))
         else:
             reply = str(content)
     except Exception:
-        reply = "Sem resposta disponivel."
-    return {"reply": reply}
+        reply = "Agente indisponível no momento. Tente mais tarde."
+    return {"reply": reply, "response": reply}
 
 @app.get("/stats")
 def get_stats():
@@ -572,6 +773,266 @@ def get_stats():
     db.close()
     return stats
 
+
+@app.get("/users/{user_id}")
+def get_user(user_id: int):
+    db = get_db()
+    row = db.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+    db.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    d = dict(row)
+    d.pop("password_hash", None)
+    return d
+
+@app.put("/users/{user_id}")
+def update_user(user_id: int, upd: UserUpdate):
+    db = get_db()
+    if upd.available is not None:
+        db.execute("UPDATE users SET available=? WHERE id=?", (int(upd.available), user_id))
+    if upd.skills is not None:
+        db.execute("UPDATE users SET skills=? WHERE id=?", (json.dumps(upd.skills), user_id))
+    db.commit()
+    db.close()
+    return {"status": "ok"}
+
+@app.get("/users/{user_id}/missions")
+def get_user_missions(user_id: int):
+    db = get_db()
+    rows = db.execute("""
+        SELECT ca.crisis_id, ca.role, ca.created_at as enrolled_at,
+               c.title, c.country, c.severity, c.crisis_type, c.urgency, c.lat, c.lon
+        FROM crisis_associations ca
+        JOIN crises c ON ca.crisis_id = c.id
+        WHERE ca.user_id = ?
+        ORDER BY ca.created_at DESC
+    """, (user_id,)).fetchall()
+    db.close()
+    return [dict(r) for r in rows]
+
+@app.post("/campaigns")
+def create_campaign(c: CampaignCreate):
+    db = get_db()
+    now = datetime.utcnow().isoformat()
+    cur = db.execute(
+        "INSERT INTO campaigns (org_id, title, description, crisis_id, skills_needed, "
+        "target_volunteers, start_date, end_date, urgency, status, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (c.org_id, c.title, c.description, c.crisis_id,
+         json.dumps(c.skills_needed), c.target_volunteers,
+         c.start_date, c.end_date, c.urgency, "active", now)
+    )
+    db.commit()
+    campaign_id = cur.lastrowid
+    db.close()
+    return {"status": "created", "id": campaign_id}
+
+@app.get("/campaigns")
+def list_campaigns(org_id: int = None):
+    db = get_db()
+    q = """
+        SELECT cam.*,
+               c.title as crisis_title, c.country as crisis_country,
+               c.severity as crisis_severity, c.crisis_type as crisis_type_val,
+               (SELECT COUNT(*) FROM crisis_associations ca
+                WHERE ca.crisis_id = cam.crisis_id AND ca.role='volunteer') as volunteer_count
+        FROM campaigns cam
+        LEFT JOIN crises c ON cam.crisis_id = c.id
+        WHERE 1=1
+    """
+    params = []
+    if org_id:
+        q += " AND cam.org_id=?"
+        params.append(org_id)
+    q += " ORDER BY cam.created_at DESC"
+    rows = db.execute(q, params).fetchall()
+    db.close()
+    return [dict(r) for r in rows]
+
+@app.get("/campaigns/{campaign_id}")
+def get_campaign(campaign_id: int):
+    db = get_db()
+    row = db.execute("""
+        SELECT cam.*,
+               c.title as crisis_title, c.country as crisis_country,
+               c.severity as crisis_severity, c.lat as crisis_lat, c.lon as crisis_lon
+        FROM campaigns cam
+        LEFT JOIN crises c ON cam.crisis_id = c.id
+        WHERE cam.id = ?
+    """, (campaign_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    volunteers = db.execute("""
+        SELECT u.id, u.name, u.email, u.skills, u.lat, u.lon, ca.created_at as enrolled_at
+        FROM crisis_associations ca
+        JOIN users u ON ca.user_id = u.id
+        WHERE ca.crisis_id = ? AND ca.role = 'volunteer'
+    """, (row["crisis_id"],)).fetchall()
+    db.close()
+    result = dict(row)
+    result["volunteers"] = [dict(v) for v in volunteers]
+    return result
+
+@app.get("/campaigns/{campaign_id}/growth")
+def get_campaign_growth(campaign_id: int):
+    """Returns volunteer enrollment count per day for last 7 days."""
+    db = get_db()
+    row = db.execute("SELECT crisis_id FROM campaigns WHERE id=?", (campaign_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    rows = db.execute("""
+        SELECT DATE(created_at) as day, COUNT(*) as count
+        FROM crisis_associations
+        WHERE crisis_id=? AND role='volunteer'
+          AND created_at >= DATE('now', '-6 days')
+        GROUP BY DATE(created_at)
+        ORDER BY day
+    """, (row["crisis_id"],)).fetchall()
+    db.close()
+    return [dict(r) for r in rows]
+
+@app.put("/campaigns/{campaign_id}")
+def update_campaign(campaign_id: int, upd: CampaignUpdate):
+    db = get_db()
+    sets, params = [], []
+    if upd.title is not None:
+        sets.append("title=?"); params.append(upd.title)
+    if upd.description is not None:
+        sets.append("description=?"); params.append(upd.description)
+    if upd.skills_needed is not None:
+        sets.append("skills_needed=?"); params.append(json.dumps(upd.skills_needed))
+    if upd.target_volunteers is not None:
+        sets.append("target_volunteers=?"); params.append(upd.target_volunteers)
+    if upd.urgency is not None:
+        sets.append("urgency=?"); params.append(upd.urgency)
+    if upd.status is not None:
+        sets.append("status=?"); params.append(upd.status)
+    if upd.start_date is not None:
+        sets.append("start_date=?"); params.append(upd.start_date)
+    if upd.end_date is not None:
+        sets.append("end_date=?"); params.append(upd.end_date)
+    if sets:
+        params.append(campaign_id)
+        db.execute(f"UPDATE campaigns SET {', '.join(sets)} WHERE id=?", params)
+        db.commit()
+    db.close()
+    return {"status": "ok"}
+
+@app.get("/campaigns/{campaign_id}/volunteers")
+def list_campaign_volunteers(campaign_id: int):
+    db = get_db()
+    rows = db.execute("""
+        SELECT cv.id, cv.volunteer_id, cv.status, cv.added_at,
+               u.name, u.email, u.skills, u.lat, u.lon, u.available
+        FROM campaign_volunteers cv
+        JOIN users u ON cv.volunteer_id = u.id
+        WHERE cv.campaign_id = ? AND cv.status != 'removed'
+        ORDER BY cv.added_at DESC
+    """, (campaign_id,)).fetchall()
+    db.close()
+    return [dict(r) for r in rows]
+
+@app.post("/campaigns/{campaign_id}/volunteers")
+def add_campaign_volunteer(campaign_id: int, req: CampaignVolunteerAdd):
+    db = get_db()
+    now = datetime.utcnow().isoformat()
+    db.execute(
+        "INSERT INTO campaign_volunteers (campaign_id, volunteer_id, status, added_at) "
+        "VALUES (?,?,?,?) ON CONFLICT(campaign_id, volunteer_id) DO UPDATE SET status=excluded.status",
+        (campaign_id, req.volunteer_id, req.status, now)
+    )
+    db.commit()
+    db.close()
+    return {"status": "ok"}
+
+@app.delete("/campaigns/{campaign_id}/volunteers/{volunteer_id}")
+def remove_campaign_volunteer(campaign_id: int, volunteer_id: int):
+    db = get_db()
+    db.execute(
+        "UPDATE campaign_volunteers SET status='removed' "
+        "WHERE campaign_id=? AND volunteer_id=?",
+        (campaign_id, volunteer_id)
+    )
+    db.commit()
+    db.close()
+    return {"status": "ok"}
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlam = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+@app.get("/volunteers/available")
+def list_available_volunteers(crisis_id: str = None, radius_km: float = 1000):
+    db = get_db()
+    clat, clon = None, None
+    if crisis_id:
+        c = db.execute("SELECT lat, lon FROM crises WHERE id=?", (crisis_id,)).fetchone()
+        if c:
+            clat, clon = c["lat"], c["lon"]
+    rows = db.execute(
+        "SELECT * FROM users WHERE role='volunteer' AND lat!=0 AND lon!=0"
+    ).fetchall()
+    db.close()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d.pop("password_hash", None)
+        if clat is not None:
+            dist = _haversine_km(clat, clon, d["lat"], d["lon"])
+            if dist > radius_km:
+                continue
+            d["distance_km"] = round(dist, 1)
+        else:
+            d["distance_km"] = None
+        result.append(d)
+    if clat is not None:
+        result.sort(key=lambda x: x["distance_km"] or 9999)
+    return result
+
+@app.get("/volunteer/{user_id}/campaigns")
+def get_volunteer_campaigns(user_id: int):
+    db = get_db()
+    rows = db.execute("""
+        SELECT cv.id as cv_id, cv.campaign_id, cv.status, cv.added_at,
+               cam.title, cam.description, cam.urgency, cam.skills_needed,
+               cam.org_id, cam.target_volunteers,
+               c.title as crisis_title, c.country as crisis_country,
+               c.severity as crisis_severity,
+               u.name as org_name
+        FROM campaign_volunteers cv
+        JOIN campaigns cam ON cv.campaign_id = cam.id
+        LEFT JOIN crises c ON cam.crisis_id = c.id
+        LEFT JOIN users u ON cam.org_id = u.id
+        WHERE cv.volunteer_id = ? AND cv.status NOT IN ('removed','declined')
+        ORDER BY cv.added_at DESC
+    """, (user_id,)).fetchall()
+    db.close()
+    return [dict(r) for r in rows]
+
+@app.get("/volunteer/{user_id}/campaigns/pending")
+def get_volunteer_campaigns_pending(user_id: int):
+    db = get_db()
+    row = db.execute(
+        "SELECT COUNT(*) as count FROM campaign_volunteers "
+        "WHERE volunteer_id=? AND status='selected'",
+        (user_id,)
+    ).fetchone()
+    db.close()
+    return {"count": row["count"] if row else 0}
+
+@app.put("/campaign_volunteers/{cv_id}")
+def update_campaign_volunteer_status(cv_id: int, upd: CampaignVolunteerUpdate):
+    if upd.status not in ("confirmed", "declined", "selected", "removed"):
+        raise HTTPException(status_code=400, detail="invalid status")
+    db = get_db()
+    db.execute("UPDATE campaign_volunteers SET status=? WHERE id=?", (upd.status, cv_id))
+    db.commit()
+    db.close()
+    return {"status": "ok"}
 
 @app.get("/predictions")
 def get_predictions():

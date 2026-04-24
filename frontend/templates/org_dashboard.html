@@ -1,0 +1,146 @@
+{% extends "layout_base.html" %}
+{% block title %}Dashboard ONG{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4/dist/chart.umd.min.js"></script>
+<style>
+.metrics-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.metric-card{background:#060606;border:1px solid #1a1a1a;border-radius:10px;padding:20px}
+.metric-val{font-size:32px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-bottom:4px}
+.metric-lbl{font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.06em}
+.metric-card.chart-card{grid-column:span 2;display:flex;flex-direction:column;gap:10px}
+.chart-wrap{position:relative;height:80px}
+.campaigns-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.campaign-card{background:#060606;border:1px solid #1a1a1a;border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:10px;text-decoration:none}
+.campaign-card.new-card{align-items:center;justify-content:center;border:1px dashed #222;cursor:pointer;min-height:160px;transition:border-color .15s,background .15s}
+.campaign-card.new-card:hover{border-color:#3b82f6;background:#0a0a0a}
+.new-card-plus{font-size:36px;color:#222;margin-bottom:8px}
+.new-card-txt{font-size:12px;color:#444}
+.cc-top{display:flex;align-items:center;gap:8px}
+.cc-sev{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.cc-title{font-size:13px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff}
+.cc-crisis{font-size:11px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cc-desc{font-size:12px;color:#666;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.5;flex:1}
+.cc-bottom{display:flex;align-items:center;justify-content:space-between;margin-top:auto}
+.cc-vols{font-size:11px;color:#555}
+.cc-actions{display:flex;gap:6px}
+.cc-btn{padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid #222;background:transparent;color:#666;cursor:pointer;font-family:inherit;text-decoration:none}
+.cc-btn:hover{border-color:#444;color:#ccc}
+.urgency-badge{padding:2px 7px;border-radius:3px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.urg-baixa{background:#14532d22;border:1px solid #166534;color:#4ade80}
+.urg-media{background:#7c2d1222;border:1px solid #c2410c;color:#fb923c}
+.urg-alta{background:#7f1d1d22;border:1px solid #991b1b;color:#f87171}
+.urg-critica{background:#4c0519;border:1px solid #9f1239;color:#fb7185}
+.status-pill{padding:2px 7px;border-radius:3px;font-size:9px;font-weight:600;text-transform:uppercase}
+.status-active{color:#4ade80}
+.status-pendente{color:#eab308}
+.status-paused{color:#6b7280}
+.status-completed{color:#3b82f6}
+@media(max-width:900px){
+  .metrics-row{grid-template-columns:repeat(2,1fr)}
+  .metric-card.chart-card{grid-column:span 2}
+  .campaigns-grid{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Page header -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+  <div>
+    <h1 style="font-size:20px;font-weight:600">Dashboard</h1>
+    <div style="font-size:12px;color:#555;margin-top:2px">{{ session.get('name','') }} · Organização</div>
+  </div>
+  <a href="/org/campaigns/new" class="btn btn-primary">+ Nova Campanha</a>
+</div>
+
+<!-- Metrics -->
+<div class="metrics-row">
+  <div class="metric-card">
+    <div class="metric-val" style="color:#3b82f6">{{ total_volunteers }}</div>
+    <div class="metric-lbl">Voluntários mobilizados</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-val" style="color:#4ade80">{{ active_campaigns }}</div>
+    <div class="metric-lbl">Campanhas ativas</div>
+  </div>
+  <div class="metric-card chart-card">
+    <div class="metric-lbl">Voluntários por campanha</div>
+    <div class="chart-wrap">
+      <canvas id="growthChart"></canvas>
+    </div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-val" style="color:#f97316">{{ crises_supported }}</div>
+    <div class="metric-lbl">Crises apoiadas</div>
+  </div>
+</div>
+
+<!-- Campaigns grid -->
+{% set sev_colors = {1:'#4b5563',2:'#22c55e',3:'#eab308',4:'#f97316',5:'#ef4444'} %}
+{% set urg_cls = {'baixa':'urg-baixa','media':'urg-media','alta':'urg-alta','critica':'urg-critica'} %}
+
+<div class="campaigns-grid">
+  <!-- Always-first: Create card -->
+  <a href="/org/campaigns/new" class="campaign-card new-card">
+    <div class="new-card-plus">+</div>
+    <div class="new-card-txt">Criar primeira campanha</div>
+  </a>
+
+  {% for c in campaigns %}
+  {% set sev = (c.crisis_severity or 1)|int %}
+  <div class="campaign-card">
+    <div class="cc-top">
+      <div class="cc-sev" style="background:{{ sev_colors.get(sev,'#4b5563') }}"></div>
+      <div class="cc-title">{{ c.title }}</div>
+      <span class="urgency-badge {{ urg_cls.get(c.urgency,'urg-media') }}">{{ c.urgency or 'média' }}</span>
+    </div>
+    {% if c.crisis_title %}
+    <div class="cc-crisis">{{ c.crisis_title }} · {{ c.crisis_country or '' }}</div>
+    {% endif %}
+    <div class="cc-desc">{{ c.description or 'Sem descrição.' }}</div>
+    <div class="cc-bottom">
+      <span class="cc-vols">{{ c.volunteer_count or 0 }} / {{ c.target_volunteers or '?' }} voluntários</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        {% set st = c.status or 'active' %}
+        <span class="status-{{ st }}">● {{ st }}</span>
+        <div class="cc-actions">
+          <a href="/org/campaigns/{{ c.id }}" class="cc-btn">Gerenciar</a>
+          <a href="/org/campaigns/{{ c.id }}" class="cc-btn">Editar</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const labels = {{ chart_labels|safe }};
+const data   = {{ chart_data|safe }};
+const ctx = document.getElementById('growthChart').getContext('2d');
+new Chart(ctx, {
+  type: 'bar',
+  data: {
+    labels: labels,
+    datasets: [{
+      data: data,
+      backgroundColor: 'rgba(59,130,246,.6)',
+      borderColor: '#3b82f6',
+      borderWidth: 1,
+      borderRadius: 3
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { enabled: true } },
+    scales: {
+      x: { ticks: { color:'#444', font:{size:9}, maxRotation:30 }, grid:{ color:'#111' } },
+      y: { ticks: { color:'#444', font:{size:10}, stepSize:1 }, grid:{ color:'#111' }, beginAtZero:true }
+    }
+  }
+});
+</script>
+{% endblock %}
