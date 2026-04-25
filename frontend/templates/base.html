@@ -253,7 +253,16 @@ input[type=range]{width:100%;accent-color:#3b82f6}
 
 <!-- STATUSBAR -->
 <div id="statusbar">
-  <div class="status-online"><div class="status-dot"></div>SISTEMA ONLINE</div>
+  <div class="status-online">
+    <div class="status-dot"></div>SISTEMA ONLINE
+  </div>
+  <div id="ingest-status" style="font-size:10px;color:#555;font-family:'JetBrains Mono',monospace">
+    {% if refreshing %}
+      <span id="ingest-label" style="color:#3b82f6">&#8635; Atualizando dados...</span>
+    {% else %}
+      <span id="ingest-label">Dados em cache</span>
+    {% endif %}
+  </div>
   <div class="legend">
     <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>Extremo</div>
     <div class="legend-item"><div class="legend-dot" style="background:#f97316"></div>Crítico</div>

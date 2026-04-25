@@ -15,6 +15,9 @@ from pydantic import BaseModel
 # ── Predictions cache ──
 _predictions_cache = {"data": None, "ts": 0}
 
+# ── Ingest tracking ──
+_last_ingest = {"ts": 0, "count": 0}
+
 load_dotenv()
 
 app = FastAPI(title="HKTN26 Crisis API")
@@ -99,25 +102,28 @@ def get_wxo_token():
     _token_cache["exp"] = time.time() + d["expires_in"]
     return _token_cache["token"]
 
-def call_orchestrate(message: str) -> dict:
+def call_orchestrate(message: str, agent_id: str = None, max_wait: int = 120) -> dict:
     base = os.environ["WO_INSTANCE"]
     token = get_wxo_token()
     headers = {"Authorization": f"Bearer {token}",
                "Content-Type": "application/json"}
+    aid = agent_id or os.environ["ORCHESTRATOR_AGENT_ID"]
     r = requests.post(
         f"{base}/v1/orchestrate/runs?stream=false",
         headers=headers,
         json={"message": {"role": "user", "content": message},
-              "agent_id": os.environ["ORCHESTRATOR_AGENT_ID"]},
+              "agent_id": aid},
         timeout=120
     )
     r.raise_for_status()
     data = r.json()
     run_id = data.get("run_id")
 
-    # Aguardar conclusão
-    for _ in range(24):
-        time.sleep(5)
+    # Poll for completion
+    interval  = 3
+    iterations = max_wait // interval
+    for _ in range(iterations):
+        time.sleep(interval)
         r2 = requests.get(
             f"{base}/v1/orchestrate/runs/{run_id}",
             headers=headers
@@ -410,8 +416,118 @@ def get_subscribers(country: str):
     return [{"telegram_id": r["telegram_id"], "username": r["username"]} for r in rows]
 
 
-@app.post("/ingest")
-def trigger_ingest():
+@app.get("/ingest/status")
+def ingest_status():
+    """Returns when the last ingest ran and whether data is stale (>60 min)."""
+    stale_after = 60
+    last_ts = _last_ingest["ts"]
+    if last_ts == 0:
+        last_str = None
+        is_stale = True
+    else:
+        last_str = datetime.utcfromtimestamp(last_ts).isoformat()
+        is_stale = (time.time() - last_ts) > (stale_after * 60)
+    return {
+        "last_ingest":         last_str,
+        "events_count":        _last_ingest["count"],
+        "is_stale":            is_stale,
+        "stale_after_minutes": stale_after,
+    }
+
+
+@app.post("/save_event")
+def save_event(event: dict):
+    """Save a single crisis event dict to the crises table. Unauthenticated."""
+    now = datetime.utcnow().isoformat()
+    eid = event.get("id") or f"api-{now}"
+    try:
+        db = get_db()
+        existing = db.execute("SELECT id FROM crises WHERE id=?", (eid,)).fetchone()
+        if existing:
+            db.execute(
+                "UPDATE crises SET severity=?, urgency=?, crisis_type=?, updated_at=? WHERE id=?",
+                (event.get("severity", 1), event.get("urgency", "monitoring"),
+                 event.get("crisis_type", "humanitarian"), now, eid)
+            )
+        else:
+            db.execute("""
+                INSERT INTO crises
+                (id, title, country, country_iso3, lat, lon,
+                 severity, urgency, crisis_type, source,
+                 people_affected, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                eid,
+                event.get("title", ""),
+                event.get("country", ""),
+                event.get("country_iso3", "UNK"),
+                float(event.get("lat", 0)),
+                float(event.get("lon", 0)),
+                event.get("severity", 1),
+                event.get("urgency", "monitoring"),
+                event.get("crisis_type", "humanitarian"),
+                event.get("source", "api"),
+                int(event.get("people_affected", 0)),
+                now, now
+            ))
+        db.commit()
+        db.close()
+        return {"ok": True, "id": eid}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/save_events")
+def save_events(events: list):
+    """Save a list of crisis event dicts to the crises table. Unauthenticated."""
+    now = datetime.utcnow().isoformat()
+    saved = 0
+    errors = []
+    db = get_db()
+    for event in events:
+        eid = event.get("id") or f"api-{now}-{saved}"
+        try:
+            existing = db.execute("SELECT id FROM crises WHERE id=?", (eid,)).fetchone()
+            if existing:
+                db.execute(
+                    "UPDATE crises SET severity=?, urgency=?, crisis_type=?, updated_at=? WHERE id=?",
+                    (event.get("severity", 1), event.get("urgency", "monitoring"),
+                     event.get("crisis_type", "humanitarian"), now, eid)
+                )
+            else:
+                db.execute("""
+                    INSERT INTO crises
+                    (id, title, country, country_iso3, lat, lon,
+                     severity, urgency, crisis_type, source,
+                     people_affected, created_at, updated_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, (
+                    eid,
+                    event.get("title", ""),
+                    event.get("country", ""),
+                    event.get("country_iso3", "UNK"),
+                    float(event.get("lat", 0)),
+                    float(event.get("lon", 0)),
+                    event.get("severity", 1),
+                    event.get("urgency", "monitoring"),
+                    event.get("crisis_type", "humanitarian"),
+                    event.get("source", "api"),
+                    int(event.get("people_affected", 0)),
+                    now, now
+                ))
+                saved += 1
+        except Exception as e:
+            errors.append({"id": eid, "error": str(e)})
+    db.commit()
+    db.close()
+    # Update ingest tracking
+    _last_ingest["ts"]    = time.time()
+    _last_ingest["count"] = _last_ingest["count"] + saved
+    return {"ok": True, "saved": saved, "errors": errors}
+
+
+def _ingest_fallback():
+    """Direct tool calls used as fallback when Orchestrate is unavailable."""
     import xml.etree.ElementTree as ET
     import re as _re
     events = []
@@ -692,12 +808,54 @@ def trigger_ingest():
         except Exception as _be:
             print(f"[broadcast] error: {_be}")
 
+    # Update ingest tracking
+    _last_ingest["ts"]    = time.time()
+    _last_ingest["count"] = saved
+
     return {
-        "status": "ok",
+        "ok":              True,
+        "triggered_by":    "fallback",
         "events_collected": len(events),
-        "events_saved": saved,
-        "by_source": sources_count
+        "events_saved":    saved,
+        "by_source":       sources_count,
     }
+
+
+@app.post("/ingest")
+def trigger_ingest():
+    """Trigger crisis data ingestion.
+    Primary path: watsonx Orchestrate monitoring_agent.
+    Fallback: direct tool calls if Orchestrate fails or times out.
+    """
+    global _last_ingest
+    vps_url    = os.environ.get("VPS_API_URL", "http://31.97.83.21:17291")
+    agent_id   = os.environ.get("MONITORING_AGENT_ID",
+                                os.environ.get("ORCHESTRATOR_AGENT_ID", ""))
+
+    # ── Primary: Orchestrate ──────────────────────────────────────────
+    if agent_id:
+        try:
+            message = (
+                f"Fetch all crisis data from USGS, GDACS, EONET and conflict APIs, "
+                f"classify each event, and save them to the database at {vps_url}"
+            )
+            print("[ingest] Trying Orchestrate monitoring_agent...")
+            result = call_orchestrate(message, agent_id=agent_id, max_wait=60)
+            if not result.get("error"):
+                _last_ingest["ts"] = time.time()
+                print("[ingest] Orchestrate path succeeded")
+                return {"ok": True, "triggered_by": "orchestrate"}
+            else:
+                print(f"[ingest] Orchestrate returned error: {result.get('error')} — falling back")
+        except Exception as e:
+            print(f"[ingest] Orchestrate exception: {e} — falling back")
+    else:
+        print("[ingest] No agent_id configured — using fallback directly")
+
+    # ── Fallback: direct tool calls ───────────────────────────────────
+    print("[ingest] Running fallback (direct tool calls)")
+    return _ingest_fallback()
+
 
 @app.post("/chat")
 def chat(msg: ChatMessage):

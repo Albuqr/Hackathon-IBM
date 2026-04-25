@@ -47,3 +47,4 @@ logs/
 credentials.yaml
 *.pem
 *.key
+fix.md

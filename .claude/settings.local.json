@@ -14,7 +14,9 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "Bash(python seed_volunteers.py)"
+      "Bash(python seed_volunteers.py)",
+      "Bash(grep -i wxo find \"C:/Users/davia/OneDrive/Desktop/projects/Hackathon/\" -name \"wxo_client*\" find \"C:/Users/davia/OneDrive/Desktop/projects/Hackathon/\" -name \"*.py\")",
+      "Bash(xargs grep *)"
     ]
   }
 }

@@ -1,20 +1,15 @@
 import os
 import json
-import sqlite3
+import requests
 from datetime import datetime
 from ibm_watsonx_orchestrate.agent_builder.tools import tool
 
-
-def get_db():
-    path = os.environ.get("DB_PATH", "data/crisis.db")
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    return conn
+VPS_API_URL = os.environ.get("VPS_API_URL", "http://31.97.83.21:17291")
 
 
 @tool
 def save_classification(event_json: str, classification_json: str) -> str:
-    """Salva um evento de crise com sua classificacao no banco de dados.
+    """Salva um evento de crise com sua classificacao via API do VPS.
 
     Args:
         event_json: JSON string do evento original coletado pelas tools de fetch.
@@ -27,92 +22,45 @@ def save_classification(event_json: str, classification_json: str) -> str:
         classification = json.loads(classification_json)
 
         crisis_id = event.get("id", f"manual-{datetime.utcnow().timestamp()}")
-        title = event.get("title", "")
-        country = event.get("country", "")
-        country_iso3 = event.get("country_iso3", "UNK")
-        lat = float(event.get("lat", 0))
-        lon = float(event.get("lon", 0))
-        source = event.get("source", "manual")
-        people_affected = int(event.get("people_affected", 0))
-        url = event.get("url", "")
 
-        severity = float(classification.get("severity", 1))
-        urgency = classification.get("urgency", "monitoring")
+        severity    = float(classification.get("severity", 1))
+        urgency     = classification.get("urgency", "monitoring")
         crisis_type = classification.get("type", "humanitarian")
-        justification = classification.get("justification", "")
-        confidence = float(classification.get("confidence", 0.5))
-        needs_review = bool(classification.get("needs_review", False))
-        trend = classification.get("trend", "stable")
 
-        db = get_db()
-        now = datetime.utcnow().isoformat()
+        payload = {
+            "id":              crisis_id,
+            "title":           event.get("title", ""),
+            "country":         event.get("country", ""),
+            "country_iso3":    event.get("country_iso3", "UNK"),
+            "lat":             float(event.get("lat", 0)),
+            "lon":             float(event.get("lon", 0)),
+            "severity":        severity,
+            "urgency":         urgency,
+            "crisis_type":     crisis_type,
+            "source":          event.get("source", "manual"),
+            "people_affected": int(event.get("people_affected", 0)),
+        }
 
-        existing = db.execute(
-            "SELECT id FROM crises WHERE id = ?", (crisis_id,)
-        ).fetchone()
-
-        if existing:
-            db.execute("""
-                UPDATE crises SET
-                    severity = ?, urgency = ?, crisis_type = ?,
-                    people_affected = ?, updated_at = ?
-                WHERE id = ?
-            """, (severity, urgency, crisis_type, people_affected, now, crisis_id))
-            action = "updated"
-        else:
-            db.execute("""
-                INSERT INTO crises (
-                    id, title, country, country_iso3, lat, lon,
-                    severity, urgency, crisis_type, source,
-                    people_affected, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                crisis_id, title, country, country_iso3, lat, lon,
-                severity, urgency, crisis_type, source,
-                people_affected, now, now
-            ))
-            action = "created"
-
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS classifications_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                crisis_id TEXT,
-                severity REAL,
-                urgency TEXT,
-                crisis_type TEXT,
-                confidence REAL,
-                justification TEXT,
-                needs_review BOOLEAN,
-                trend TEXT,
-                classified_at TEXT
-            )
-        """)
-        db.execute("""
-            INSERT INTO classifications_log (
-                crisis_id, severity, urgency, crisis_type,
-                confidence, justification, needs_review, trend, classified_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            crisis_id, severity, urgency, crisis_type,
-            confidence, justification, needs_review, trend, now
-        ))
-
-        db.commit()
-        db.close()
+        r = requests.post(
+            f"{VPS_API_URL}/save_events",
+            json=[payload],
+            timeout=15
+        )
+        r.raise_for_status()
+        result = r.json()
 
         return json.dumps({
-            "status": "ok",
-            "action": action,
-            "crisis_id": crisis_id,
-            "severity": severity,
-            "urgency": urgency,
-            "needs_review": needs_review,
-            "message": f"Crise {crisis_id} salva com sucesso ({action})"
+            "status":     "ok",
+            "crisis_id":  crisis_id,
+            "severity":   severity,
+            "urgency":    urgency,
+            "saved":      result.get("saved", 0),
+            "message":    f"Crise {crisis_id} enviada para o VPS com sucesso"
         }, ensure_ascii=False)
 
     except Exception as e:
         return json.dumps({
-            "status": "error",
-            "message": str(e),
+            "status":    "error",
+            "message":   str(e),
             "crisis_id": event.get("id", "unknown") if "event" in dir() else "unknown"
         })

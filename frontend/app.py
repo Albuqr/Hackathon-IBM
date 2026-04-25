@@ -1,5 +1,5 @@
 # frontend/app.py
-import os, json, hashlib, sqlite3, requests
+import os, json, hashlib, sqlite3, requests, threading
 from functools import wraps
 from flask import (Flask, render_template, request,
                    redirect, session, jsonify)
@@ -59,8 +59,23 @@ def require_login(f):
         return f(*args, **kwargs)
     return wrapper
 
+def _maybe_trigger_ingest():
+    """Fire a background ingest if data is stale. Non-blocking."""
+    try:
+        status = api_get("/ingest/status") or {}
+        if status.get("is_stale", True):
+            threading.Thread(
+                target=api_post, args=("/ingest",), daemon=True
+            ).start()
+            return True   # refreshing
+    except Exception:
+        pass
+    return False  # fresh
+
+
 def _build_map_context():
     """Shared context builder for all map views."""
+    refreshing = _maybe_trigger_ingest()
     events = api_get("/events", {"limit": 500}) or []
     stats  = api_get("/stats")  or {}
     paises = sorted(set(
@@ -69,7 +84,7 @@ def _build_map_context():
         for p in (e.get("country", "") or "").split(",")
         if p.strip()
     ))
-    return events, stats, paises
+    return events, stats, paises, refreshing
 
 def _get_enrolled_ids(user_id):
     """Return set of crisis_ids this user is enrolled in."""
@@ -162,10 +177,10 @@ def map_view():
         return redirect("/volunteer/map")
     if role == "org":
         return redirect("/org/map")
-    events, stats, paises = _build_map_context()
+    events, stats, paises, refreshing = _build_map_context()
     return render_template("map.html", events=events, stats=stats,
                            paises=paises, map_mode="admin", enrolled_ids=[],
-                           stadia_key=STADIA_KEY)
+                           stadia_key=STADIA_KEY, refreshing=refreshing)
 
 # ── Volunteer routes ──────────────────────────────────────────────────
 @app.route("/volunteer/map")
@@ -175,11 +190,12 @@ def volunteer_map():
         return redirect("/map")
     if session.get("role") == "org":
         return redirect("/org/map")
-    events, stats, paises = _build_map_context()
+    events, stats, paises, refreshing = _build_map_context()
     enrolled = _get_enrolled_ids(session["user_id"])
     return render_template("map.html", events=events, stats=stats,
                            paises=paises, map_mode="volunteer",
-                           enrolled_ids=enrolled, stadia_key=STADIA_KEY)
+                           enrolled_ids=enrolled, stadia_key=STADIA_KEY,
+                           refreshing=refreshing)
 
 @app.route("/volunteer/profile")
 @require_login
@@ -221,11 +237,12 @@ def org_map():
         return redirect("/map")
     if session.get("role") == "volunteer":
         return redirect("/volunteer/map")
-    events, stats, paises = _build_map_context()
+    events, stats, paises, refreshing = _build_map_context()
     enrolled = _get_enrolled_ids(session["user_id"])
     return render_template("map.html", events=events, stats=stats,
                            paises=paises, map_mode="org",
-                           enrolled_ids=enrolled, stadia_key=STADIA_KEY)
+                           enrolled_ids=enrolled, stadia_key=STADIA_KEY,
+                           refreshing=refreshing)
 
 @app.route("/org/dashboard")
 @require_login
