@@ -875,20 +875,40 @@ def trigger_ingest():
 
 @app.post("/chat")
 def chat(msg: ChatMessage):
-    text = msg.message or msg.text or ""
-    if not text:
-        return {"reply": "Mensagem vazia.", "response": "Mensagem vazia."}
-    assistant_id = os.environ["ASSISTANT_AGENT_ID"]
     try:
+        text = msg.message or msg.text or ""
+        if not text:
+            return {"reply": "Mensagem vazia.", "response": "Mensagem vazia."}
+
+        assistant_id = os.environ["ASSISTANT_AGENT_ID"]
         result = call_orchestrate(text, agent_id=assistant_id)
-        content = result["result"]["data"]["message"]["content"]
-        if isinstance(content, list):
-            reply = content[0].get("text", str(content))
-        else:
-            reply = str(content)
-    except Exception:
-        reply = "Agente indisponível no momento. Tente mais tarde."
-    return {"reply": reply, "response": reply}
+
+        # Safely extract reply from whatever shape Orchestrate returns
+        reply = None
+        try:
+            content = result["result"]["data"]["message"]["content"]
+            if isinstance(content, list):
+                # List of content blocks: [{"type": "text", "text": "..."}]
+                parts = [c.get("text", "") for c in content if isinstance(c, dict)]
+                reply = " ".join(p for p in parts if p).strip()
+            elif isinstance(content, dict):
+                reply = content.get("text") or str(content)
+            elif isinstance(content, str):
+                reply = content
+        except (KeyError, TypeError, AttributeError):
+            pass
+
+        if not reply:
+            reply = "Agente indisponível no momento. Tente mais tarde."
+
+        return {"reply": reply, "response": reply}
+
+    except Exception as e:
+        return {
+            "reply": "Desculpe, ocorreu um erro interno. Tente novamente.",
+            "response": "Desculpe, ocorreu um erro interno. Tente novamente.",
+            "error": str(e)
+        }
 
 @app.get("/stats")
 def get_stats():
