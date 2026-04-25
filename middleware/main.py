@@ -119,21 +119,30 @@ def call_orchestrate(message: str, agent_id: str = None, max_wait: int = 120) ->
     data = r.json()
     run_id = data.get("run_id")
 
-    # Poll for completion
-    interval  = 3
+    interval   = 3
     iterations = max_wait // interval
-    for _ in range(iterations):
+    print(f"[orchestrate] run_id={run_id} | timeout={max_wait}s | polling every {interval}s (max {iterations} attempts)")
+
+    start = time.time()
+    for attempt in range(1, iterations + 1):
         time.sleep(interval)
+        elapsed = time.time() - start
         r2 = requests.get(
             f"{base}/v1/orchestrate/runs/{run_id}",
             headers=headers
         )
         if r2.status_code == 200:
             run_data = r2.json()
-            if run_data.get("status") == "completed":
+            status   = run_data.get("status", "unknown")
+            print(f"[orchestrate] attempt {attempt}/{iterations} | status={status} | elapsed={elapsed:.1f}s")
+            if status == "completed":
                 return run_data
-            elif run_data.get("status") == "failed":
+            elif status == "failed":
                 return {"error": run_data.get("last_error")}
+        else:
+            print(f"[orchestrate] attempt {attempt}/{iterations} | poll HTTP {r2.status_code} | elapsed={elapsed:.1f}s")
+
+    print(f"[orchestrate] TIMEOUT after {time.time() - start:.1f}s (limit={max_wait}s) | run_id={run_id}")
     return {"error": "timeout"}
 
 # ── Models ──
