@@ -878,9 +878,9 @@ def chat(msg: ChatMessage):
     text = msg.message or msg.text or ""
     if not text:
         return {"reply": "Mensagem vazia.", "response": "Mensagem vazia."}
-    assistant_id = os.environ.get("ASSISTANT_AGENT_ID", "")
+    assistant_id = os.environ["ASSISTANT_AGENT_ID"]
     try:
-        result = call_orchestrate(text, agent_id=assistant_id or None)
+        result = call_orchestrate(text, agent_id=assistant_id)
         content = result["result"]["data"]["message"]["content"]
         if isinstance(content, list):
             reply = content[0].get("text", str(content))
