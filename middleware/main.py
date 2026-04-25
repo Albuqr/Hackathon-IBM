@@ -119,7 +119,7 @@ def call_orchestrate(message: str, agent_id: str = None, max_wait: int = 120) ->
     data = r.json()
     run_id = data.get("run_id")
 
-    interval   = 3
+    interval   = 5
     iterations = max_wait // interval
     print(f"[orchestrate] run_id={run_id} | timeout={max_wait}s | polling every {interval}s (max {iterations} attempts)")
 
@@ -136,6 +136,13 @@ def call_orchestrate(message: str, agent_id: str = None, max_wait: int = 120) ->
             status   = run_data.get("status", "unknown")
             print(f"[orchestrate] attempt {attempt}/{iterations} | status={status} | elapsed={elapsed:.1f}s")
             if status == "completed":
+                try:
+                    content = run_data.get("result", {}).get("data", {}).get("message", {}).get("content", "")
+                    if isinstance(content, list):
+                        content = " ".join(c.get("text", "") for c in content if isinstance(c, dict))
+                    print(f"[orchestrate] COMPLETED | run_id={run_id} | response: {str(content)[:500]}")
+                except Exception as _le:
+                    print(f"[orchestrate] COMPLETED | run_id={run_id} | (could not parse response: {_le})")
                 return run_data
             elif status == "failed":
                 return {"error": run_data.get("last_error")}
@@ -849,7 +856,7 @@ def trigger_ingest():
                 f"classify each event, and save them to the database at {vps_url}"
             )
             print("[ingest] Trying Orchestrate monitoring_agent...")
-            result = call_orchestrate(message, agent_id=agent_id, max_wait=60)
+            result = call_orchestrate(message, agent_id=agent_id, max_wait=300)
             if not result.get("error"):
                 _last_ingest["ts"] = time.time()
                 print("[ingest] Orchestrate path succeeded")
