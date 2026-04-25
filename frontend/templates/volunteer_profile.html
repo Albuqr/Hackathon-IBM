@@ -210,6 +210,23 @@ function unenroll(crisisId, btn) {
 // ── AI Chat ──
 const chatMsgs = document.getElementById('chatMessages');
 
+function cleanAgentResponse(text) {
+  // Remove ```json ... ``` and ``` ... ``` blocks
+  text = text.replace(/```json[\s\S]*?```/gi, '');
+  text = text.replace(/```[\s\S]*?```/g, '');
+  // Remove lines that are pure JSON structure
+  const lines = text.split('\n').filter(line => {
+    const t = line.trim();
+    if (!t) return false;
+    if (/^[\{\[\}\]]/.test(t)) return false;        // starts with { [ } ]
+    if (/^"[\w_]+":\s/.test(t)) return false;        // "key": value
+    if (/^[\}\]],?$/.test(t)) return false;          // lone } or ]
+    return true;
+  });
+  const cleaned = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return cleaned || 'O agente processou sua solicitação. Verifique os campos sugeridos acima.';
+}
+
 function appendMsg(text, cls) {
   const div = document.createElement('div');
   div.className = 'chat-msg ' + cls;
@@ -235,7 +252,7 @@ function sendMsg() {
   .then(r => r.json())
   .then(function(d) {
     typing.remove();
-    appendMsg(d.reply || 'Sem resposta disponível.', 'agent');
+    appendMsg(cleanAgentResponse(d.reply || d.response || '') || 'Sem resposta disponível.', 'agent');
   })
   .catch(function() {
     typing.remove();
