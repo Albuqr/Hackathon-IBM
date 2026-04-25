@@ -10,8 +10,9 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "hktn26-dev-secret")
 
-API = os.environ.get("API_URL", "http://localhost:8000")
-DB  = os.environ.get("DB_PATH", "data/crisis.db")
+API        = os.environ.get("API_URL", "http://localhost:8000")
+DB         = os.environ.get("DB_PATH", "data/crisis.db")
+STADIA_KEY = os.environ.get("STADIA_API_KEY", "")
 
 # ── Helpers ───────────────────────────────────────────────────────────
 def get_db():
@@ -163,7 +164,8 @@ def map_view():
         return redirect("/org/map")
     events, stats, paises = _build_map_context()
     return render_template("map.html", events=events, stats=stats,
-                           paises=paises, map_mode="admin", enrolled_ids=[])
+                           paises=paises, map_mode="admin", enrolled_ids=[],
+                           stadia_key=STADIA_KEY)
 
 # ── Volunteer routes ──────────────────────────────────────────────────
 @app.route("/volunteer/map")
@@ -177,7 +179,7 @@ def volunteer_map():
     enrolled = _get_enrolled_ids(session["user_id"])
     return render_template("map.html", events=events, stats=stats,
                            paises=paises, map_mode="volunteer",
-                           enrolled_ids=enrolled)
+                           enrolled_ids=enrolled, stadia_key=STADIA_KEY)
 
 @app.route("/volunteer/profile")
 @require_login
@@ -223,7 +225,7 @@ def org_map():
     enrolled = _get_enrolled_ids(session["user_id"])
     return render_template("map.html", events=events, stats=stats,
                            paises=paises, map_mode="org",
-                           enrolled_ids=enrolled)
+                           enrolled_ids=enrolled, stadia_key=STADIA_KEY)
 
 @app.route("/org/dashboard")
 @require_login

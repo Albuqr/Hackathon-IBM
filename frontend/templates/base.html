@@ -327,7 +327,7 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png'
 }).addTo(map);
 
 // Border overlay
-L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_toner_lines/{z}/{x}/{y}{r}.png', {
+L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_toner_lines/{z}/{x}/{y}{r}.png?api_key={{ stadia_key }}', {
   attribution: '&copy; Stadia Maps &copy; Stamen Design',
   maxZoom: 12,
   minZoom: 2,
