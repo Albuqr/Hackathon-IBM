@@ -376,17 +376,43 @@ function appendMsg(text, cls) {
   return div;
 }
 
+{% set sev_labels = {1:'Baixo',2:'Moderado',3:'Alto',4:'Crítico',5:'Extremo'} %}
+{% set type_pt = {'seismic':'Terremoto / Atividade Sísmica','meteorological':'Tempestade / Evento Meteorológico','wildfire':'Incêndio Florestal','drought':'Seca','humanitarian':'Crise Humanitária','conflict':'Conflito Armado'} %}
+const SYS_CTX = `Você é um especialista em resposta humanitária da plataforma Crisis Monitor.
+Contexto da crise atual:
+- Evento: {{ campaign.crisis_title or 'desconhecido' }}
+- País: {{ campaign.crisis_country or 'não informado' }}
+- Severidade: {{ sev }}/5 ({{ sev_labels.get(sev, 'desconhecido') }})
+- Tipo: {{ type_pt.get(campaign.crisis_type or '', 'não informado') or 'não informado' }}
+- Coordenadas: {{ campaign.crisis_lat or 0 }}, {{ campaign.crisis_lon or 0 }}
+
+Contexto da campanha:
+- Campanha: {{ campaign.title }} (status: {{ campaign.status or 'active' }})
+- Voluntários selecionados até agora: {{ (campaign.volunteers or [])|length }}
+- Habilidades já definidas: {{ campaign.skills_needed or 'nenhuma ainda' }}
+
+Sua missão é ajudar esta ONG a estruturar uma campanha de resposta eficiente.
+Quando o usuário descrever o que precisa, responda com:
+1. Resumo do que entendeu
+2. Habilidades recomendadas (escolha da lista: medical, logistics, SAR, engineering, psychology, translator)
+3. Número sugerido de voluntários e justificativa
+4. Urgência recomendada e justificativa
+5. Descrição pronta para copiar na campanha
+
+Seja específico para esta crise. Não mencione nomes de pessoas. Responda sempre em português claro e objetivo.
+
+Mensagem do usuário: `;
+
 function sendMsg() {
   const inp = document.getElementById('chatInput');
   const text = inp.value.trim();
   if (!text) return;
   inp.value = '';
   appendMsg(text, 'user');
-  const ctx = '[Campanha: "{{ campaign.title }}" vinculada à crise "{{ campaign.crisis_title or "" }}" em {{ campaign.crisis_country or "" }}, severidade {{ sev }}. Ajude a planejar.] ';
   const typing = appendMsg('...', 'chat-typing');
   fetch('/api/chat', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({text: ctx + text})
+    body: JSON.stringify({text: SYS_CTX + text})
   })
   .then(r => r.json())
   .then(d => {
