@@ -307,17 +307,16 @@ def associate_event(crisis_id: str, req: AssociateRequest):
             crisis_row = db.execute(
                 "SELECT title FROM crises WHERE id=?", (crisis_id,)
             ).fetchone()
-            draft_title = (
-                f"Campanha de Apoio — {crisis_row['title']}"
-                if crisis_row else f"Campanha de Apoio — {crisis_id}"
-            )
+            crisis_title = crisis_row["title"] if crisis_row else crisis_id
+            draft_title  = f"Apoio a crise: {crisis_title}"
             now = datetime.utcnow().isoformat()
             cur = db.execute(
                 "INSERT INTO campaigns (org_id, title, description, crisis_id, "
                 "skills_needed, target_volunteers, urgency, status, created_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?)",
-                (req.user_id, draft_title, "", crisis_id,
-                 "[]", 10, "media", "pendente", now)
+                (req.user_id, draft_title,
+                 "Campanha criada automaticamente ao apoiar crise.",
+                 crisis_id, "[]", 0, "monitoring", "pending", now)
             )
             campaign_id = cur.lastrowid
         else:

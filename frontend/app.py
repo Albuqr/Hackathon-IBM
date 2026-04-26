@@ -497,7 +497,8 @@ def api_campaign_volunteer_respond(cv_id):
 @app.route("/api/chat", methods=["POST"])
 @require_login
 def api_chat():
-    text = request.json.get("text", "")
+    text         = request.json.get("text", "")
+    context_type = request.json.get("context_type", "")
     # Prepend volunteer profile context for richer agent matching
     if session.get("role") == "volunteer":
         db = get_db()
@@ -512,7 +513,11 @@ def api_chat():
                    f"disponibilidade={avail}. "
                    f"Ajude-o a encontrar crises humanitárias onde possa contribuir.] ")
             text = ctx + text
-    result = api_post("/chat", {"text": text, "user_id": session.get("user_id")}, timeout=60)
+    result = api_post("/chat", {
+        "text": text,
+        "user_id": session.get("user_id"),
+        "context_type": context_type,
+    }, timeout=60)
     return jsonify(result)
 
 # ── Run ───────────────────────────────────────────────────────────────

@@ -489,6 +489,14 @@ slider.addEventListener('input', function() {
 document.getElementById('regionFilter').addEventListener('change', function() {
   activeFilters.region = this.value;
   applyFilters();
+  if (this.value) {
+    const bb = REGIONS[this.value];
+    const centerLat = (bb[0] + bb[1]) / 2;
+    const centerLon = (bb[2] + bb[3]) / 2;
+    map.flyTo([centerLat, centerLon], 4, { animate: true, duration: 1.2 });
+  } else {
+    map.flyTo([20, 10], 2, { animate: true, duration: 1.2 });
+  }
 });
 
 // ── Country dropdown — filters AND flies to country ──
