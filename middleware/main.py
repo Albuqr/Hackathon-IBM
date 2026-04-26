@@ -899,8 +899,8 @@ def chat(msg: ChatMessage):
         try:
             content = result["result"]["data"]["message"]["content"]
             if isinstance(content, list):
-                parts = [c.get("text", "") for c in content if isinstance(c, dict)]
-                reply = " ".join(p for p in parts if p).strip() or None
+                parts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("text")]
+                reply = " ".join(parts).strip() or None
             elif isinstance(content, dict):
                 reply = content.get("text") or str(content) or None
             elif isinstance(content, str):
