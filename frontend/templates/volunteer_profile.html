@@ -308,6 +308,7 @@ const TYPE_PT = {
 };
 
 function renderCrisisCards(crises, totalChecked, radius) {
+  console.log('[debug] renderCrisisCards called');
   const container = document.getElementById('crisisCards');
   container.innerHTML = '';
   if (!crises.length) {
@@ -371,6 +372,26 @@ function expandRadius(newRadius) {
       const display = document.getElementById('radiusDisplay');
       if (display) display.textContent = Math.round(volRadius) + ' km';
       fetchAndRenderCrisisCards();
+      // Auto-send message to agent with updated radius context
+      const autoMsg = `Ampliei meu raio para ${Math.round(volRadius)} km. O que está acontecendo agora na minha área?`;
+      appendMsg(autoMsg, 'user');
+      const typing = appendMsg('...', 'chat-typing');
+      chatMsgs.scrollTop = chatMsgs.scrollHeight;
+      fetch('/api/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text: buildVolCtx(autoMsg), context_type: 'volunteer'})
+      })
+      .then(r => r.json())
+      .then(function(d) {
+        typing.remove();
+        appendMsg(cleanAgentResponse(d.reply || d.response || '') || 'Sem resposta disponível.', 'agent');
+        fetchAndRenderCrisisCards();
+      })
+      .catch(function() {
+        typing.remove();
+        appendMsg('Erro ao conectar com o agente. Tente novamente.', 'agent');
+      });
     }
   })
   .catch(() => {});
@@ -387,24 +408,29 @@ function fetchAndRenderCrisisCards() {
   console.log('[crisis] fetching events...');
   fetch('/api/events?limit=500')
     .then(r => r.json())
-    .then(events => {
-      if (!Array.isArray(events)) {
-        console.log('[crisis] response is not an array:', events);
+    .then(allEvents => {
+      if (!Array.isArray(allEvents)) {
+        console.log('[crisis] response is not an array:', allEvents);
         showCrisisPanel();
         renderCrisisCards([], 0, volRadius);
         return;
       }
-      console.log('[crisis] total events:', events.length);
-      console.log('[crisis] volunteer lat/lon/radius:', volLat, volLon, volRadius);
       const radius = volRadius > 0 ? volRadius : 5000;
-      const withDist = events
+      const withDist = allEvents
         .filter(e => e.lat != null && e.lon != null && !(parseFloat(e.lat) === 0 && parseFloat(e.lon) === 0))
         .map(e => ({ ...e, _dist: haversineKm(volLat, volLon, parseFloat(e.lat), parseFloat(e.lon)) }));
       withDist.sort((a, b) => a._dist - b._dist);
-      console.log('[crisis] first 5 events by distance:',
-        withDist.slice(0,5).map(e => `${e.title} lat=${e.lat} lon=${e.lon} dist=${e._dist.toFixed(1)}km`));
       const nearby = withDist.filter(e => e._dist <= radius);
-      console.log('[crisis] within radius:', nearby.length, 'of', events.length);
+
+      console.log('[debug] volLat:', volLat, 'volLon:', volLon, 'volRadius:', volRadius);
+      console.log('[debug] total events from API:', allEvents.length);
+      console.log('[debug] events within radius:', nearby.length);
+      if (nearby.length > 0) {
+        console.log('[debug] first nearby event:', nearby[0]);
+      }
+      const container = document.getElementById('crisisCards');
+      console.log('[debug] container found:', !!container);
+
       // Context for agent: all within radius (up to 10), fallback to 10 closest
       closestCrises = (nearby.length > 0 ? nearby : withDist).slice(0, 10);
       showCrisisPanel();
