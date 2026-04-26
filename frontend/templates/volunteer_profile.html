@@ -237,12 +237,13 @@ function unenroll(crisisId, btn) {
 }
 
 // ── Volunteer context for system prompt ──
-const VOL_NAME    = {{ user.name|tojson }};
-const VOL_SKILLS  = {{ user.skills_list|tojson }};
-const VOL_LAT     = {{ user.lat or 0 }};
-const VOL_LON     = {{ user.lon or 0 }};
-const VOL_RADIUS  = {{ user.radius_km|int }};
-const VOL_AVAIL   = {{ 'true' if user.available else 'false' }};
+const VOL_NAME   = {{ user.name|tojson }};
+const VOL_SKILLS = {{ user.skills_list|tojson }};
+const VOL_AVAIL  = {{ 'true' if user.available else 'false' }};
+const volLat     = {{ user.lat or -23.55 }};
+const volLon     = {{ user.lon or -46.63 }};
+const volRadius  = {{ user.radius_km or 500 }};
+const volId      = {{ user.id or 0 }};
 
 let closestCrises = [];
 
@@ -283,8 +284,8 @@ Não adicione instruções de inscrição, botões ou links na sua resposta. A i
 [PERFIL]
 Nome: ${VOL_NAME}
 Habilidades: ${skillsStr}
-Localização: lat ${VOL_LAT}, lon ${VOL_LON}
-Raio: ${VOL_RADIUS} km
+Localização: lat ${volLat}, lon ${volLon}
+Raio: ${volRadius} km
 
 [CRISES PRÓXIMAS]
 ${crisesStr}
@@ -301,10 +302,14 @@ const TYPE_PT = {
   epidemic:'Epidemia', famine:'Fome', storm:'Tempestade'
 };
 
-function renderCrisisCards(crises) {
+function renderCrisisCards(crises, totalChecked, radius) {
   const container = document.getElementById('crisisCards');
+  container.innerHTML = '';
   if (!crises.length) {
-    container.innerHTML = '<div class="empty-state">Nenhuma crise na sua área de atuação no momento.</div>';
+    const info = totalChecked !== undefined
+      ? `Nenhuma crise encontrada num raio de ${radius} km. (${totalChecked} eventos verificados)`
+      : 'Nenhuma crise na sua área de atuação no momento.';
+    container.innerHTML = `<div class="empty-state">${info}</div>`;
     return;
   }
   container.innerHTML = crises.slice(0, 5).map(c => {
@@ -351,31 +356,33 @@ function showCrisisPanel() {
 }
 
 function fetchAndRenderCrisisCards() {
+  console.log('[crisis] fetching events...');
   fetch('/api/events?limit=500')
     .then(r => r.json())
     .then(events => {
       if (!Array.isArray(events)) {
         console.log('[crisis] response is not an array:', events);
         showCrisisPanel();
-        renderCrisisCards([]);
+        renderCrisisCards([], 0, volRadius);
         return;
       }
-      const radius = VOL_RADIUS > 0 ? VOL_RADIUS : 5000;
-      console.log('[crisis] fetched', events.length, 'events | lat:', VOL_LAT, 'lon:', VOL_LON, 'radius:', radius, 'km');
+      console.log('[crisis] total events:', events.length);
+      console.log('[crisis] volunteer lat/lon/radius:', volLat, volLon, volRadius);
+      const radius = volRadius > 0 ? volRadius : 5000;
       const withDist = events
         .filter(e => e.lat && e.lon)
-        .map(e => ({ ...e, _dist: haversineKm(VOL_LAT, VOL_LON, e.lat, e.lon) }));
+        .map(e => ({ ...e, _dist: haversineKm(volLat, volLon, e.lat, e.lon) }));
       withDist.sort((a, b) => a._dist - b._dist);
       closestCrises = withDist.slice(0, 3);
-      const inRadius = withDist.filter(e => e._dist <= radius);
-      console.log('[crisis] events with coords:', withDist.length, '| within radius:', inRadius.length);
+      const nearby = withDist.filter(e => e._dist <= radius);
+      console.log('[crisis] events within radius:', nearby.length);
       showCrisisPanel();
-      renderCrisisCards(inRadius);
+      renderCrisisCards(nearby, withDist.length, radius);
     })
     .catch(err => {
       console.log('[crisis] fetch error:', err);
       showCrisisPanel();
-      renderCrisisCards([]);
+      renderCrisisCards([], 0, volRadius);
     });
 }
 
