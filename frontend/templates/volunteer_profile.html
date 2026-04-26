@@ -432,7 +432,9 @@ function fetchAndRenderCrisisCards() {
       // Context for agent: all within radius (up to 10), fallback to 10 closest
       closestCrises = (nearby.length > 0 ? nearby : withDist).slice(0, 10);
       showCrisisPanel();
-      renderCrisisCards(nearby, withDist.length, radius);
+      // If nothing within radius, show the 5 closest events as fallback
+      const toRender = nearby.length > 0 ? nearby : withDist.slice(0, 5);
+      renderCrisisCards(toRender, withDist.length, radius);
     })
     .catch(err => {
       console.log('[crisis] fetch error:', err);

@@ -93,12 +93,7 @@ def _build_map_context():
     refreshing = _maybe_trigger_ingest()
     events = get_events_from_db()
     stats  = api_get("/stats") or {}
-    paises = sorted(set(
-        p.strip()
-        for e in events
-        for p in (e.get("country", "") or "").split(",")
-        if p.strip()
-    ))
+    paises = sorted(set(e["country"] for e in events if e.get("country")))
     return events, stats, paises, refreshing
 
 def _get_enrolled_ids(user_id):

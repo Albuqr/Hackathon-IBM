@@ -276,6 +276,7 @@ input[type=range]{width:100%;accent-color:#3b82f6}
 <script>
 // ── Data ──
 const crisisData = {{ events|tojson }};
+console.log('[CrisisMonitor] crisisData loaded:', crisisData.length, 'events');
 const MAP_MODE = "{{ map_mode|default('admin') }}";
 const USER_ID  = {{ session.get('user_id', 0) }};
 const ENROLLED_IDS = new Set({{ enrolled_ids|default([])|tojson }});
