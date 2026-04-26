@@ -244,6 +244,31 @@ def org_map():
                            enrolled_ids=enrolled, stadia_key=STADIA_KEY,
                            refreshing=refreshing)
 
+_SKILL_COLORS = {
+    "Médico / Saúde":  "#3b82f6",
+    "Logística":       "#f97316",
+    "Busca e Resgate": "#22c55e",
+    "Engenharia":      "#eab308",
+    "Psicologia":      "#a855f7",
+    "Tradutor":        "#ef4444",
+}
+
+def _normalize_skill(s):
+    s = s.lower().strip()
+    if any(x in s for x in ("médico", "medico", "saúde", "saude")):
+        return "Médico / Saúde"
+    if any(x in s for x in ("logística", "logistica")):
+        return "Logística"
+    if any(x in s for x in ("busca", "resgate", "sar")):
+        return "Busca e Resgate"
+    if "engenharia" in s:
+        return "Engenharia"
+    if "psicologia" in s:
+        return "Psicologia"
+    if "tradutor" in s or "translator" in s:
+        return "Tradutor"
+    return None
+
 @app.route("/org/dashboard")
 @require_login
 def org_dashboard():
@@ -252,22 +277,50 @@ def org_dashboard():
     campaigns = api_get(f"/campaigns?org_id={session['user_id']}") or []
     stats = api_get("/stats") or {}
 
-    # Per-campaign bar chart: volunteer count per campaign
-    chart_labels = json.dumps([c.get("title", "")[:20] for c in campaigns])
-    chart_data   = json.dumps([c.get("volunteer_count", 0) or 0 for c in campaigns])
+    # Fetch explicitly selected/confirmed volunteers per campaign
+    seen_ids = set()
+    selected_list = []
+    for c in campaigns:
+        vols = api_get(f"/campaigns/{c['id']}/volunteers") or []
+        for v in vols:
+            if v.get("status") in ("selected", "confirmed"):
+                vid = v.get("volunteer_id")
+                if vid not in seen_ids:
+                    seen_ids.add(vid)
+                    selected_list.append(v)
 
-    # Metrics
-    total_volunteers = sum(c.get("volunteer_count", 0) or 0 for c in campaigns)
+    selected_volunteers = len(seen_ids)
+    total_near_crises = sum(c.get("volunteer_count", 0) or 0 for c in campaigns)
+    available_volunteers = max(0, total_near_crises - selected_volunteers)
     active_campaigns = sum(1 for c in campaigns if c.get("status") == "active")
     crises_supported = len(set(c.get("crisis_id") for c in campaigns if c.get("crisis_id")))
 
+    # Aggregate skills from selected volunteers
+    skill_counts = {k: 0 for k in _SKILL_COLORS}
+    for v in selected_list:
+        raw = v.get("skills") or []
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except Exception:
+                raw = [raw]
+        for s in raw:
+            label = _normalize_skill(str(s))
+            if label:
+                skill_counts[label] += 1
+
+    skill_items = [
+        {"label": k, "count": skill_counts[k], "color": _SKILL_COLORS[k]}
+        for k in _SKILL_COLORS
+    ]
+
     return render_template("org_dashboard.html",
                            campaigns=campaigns,
-                           chart_labels=chart_labels,
-                           chart_data=chart_data,
-                           total_volunteers=total_volunteers,
+                           selected_volunteers=selected_volunteers,
+                           available_volunteers=available_volunteers,
                            active_campaigns=active_campaigns,
                            crises_supported=crises_supported,
+                           skill_items=skill_items,
                            stats=stats)
 
 @app.route("/org/campaigns/new", methods=["GET", "POST"])
