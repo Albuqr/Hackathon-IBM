@@ -3,10 +3,9 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY frontend/ frontend/
-COPY data/ data/
-COPY .env .env
 
-RUN pip install --no-cache-dir -r frontend/requirements.txt
+RUN pip install --no-cache-dir -r frontend/requirements.txt && \
+    mkdir -p /app/data
 
 EXPOSE 5000
 
