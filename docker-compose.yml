@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile.middleware
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ./data:/app/data
     env_file: .env
