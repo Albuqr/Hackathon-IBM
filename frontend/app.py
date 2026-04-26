@@ -26,8 +26,8 @@ def get_events_from_db():
         conn = sqlite3.connect(DB)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT id, title, country, lat, lon, severity, crisis_type, "
-            "source, description, skills_needed "
+            "SELECT id, title, country, lat, lon, severity, urgency, "
+            "crisis_type, source "
             "FROM crises ORDER BY severity DESC LIMIT 500"
         ).fetchall()
         conn.close()
