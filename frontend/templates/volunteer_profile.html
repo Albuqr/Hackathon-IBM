@@ -3,7 +3,9 @@
 
 {% block head %}
 <style>
-.profile-layout{display:grid;grid-template-columns:320px 1fr;gap:20px;max-width:1100px}
+.profile-layout{display:flex;gap:16px;width:100%;align-items:flex-start}
+.left-col{width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:16px}
+.profile-layout > .card.chat-card{flex:1;min-width:0}
 /* Profile card */
 .role-pill{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;background:#1e3a8a22;border:1px solid #1e40af44;color:#60a5fa;margin-bottom:12px}
 .profile-name{font-size:20px;font-weight:600;margin-bottom:2px}
@@ -34,10 +36,8 @@
 .chat-input-row{display:flex;gap:8px}
 .chat-input-row textarea{flex:1;height:48px;resize:none;padding:12px;font-size:13px;border-radius:8px}
 .chat-input-row button{width:80px;align-self:stretch;border-radius:8px}
-/* Right container + crisis panel */
-.right-container{display:flex;gap:16px}
-.right-container .chat-card{flex:1;min-width:0}
-.crisis-panel{display:none;flex:0 0 38%;overflow-y:auto;max-height:calc(100vh - 110px)}
+/* Crisis panel */
+.crisis-panel{width:340px;flex-shrink:0;display:none;overflow-y:auto;max-height:calc(100vh - 110px)}
 .crisis-panel.visible{display:block;animation:crisisSlideIn .35s ease forwards}
 @keyframes crisisSlideIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
 .crisis-card{border:1px solid #1a1a1a;border-radius:8px;padding:14px;margin-bottom:10px;background:#060606}
@@ -69,7 +69,7 @@
 <div class="profile-layout">
 
   <!-- LEFT COLUMN -->
-  <div style="display:flex;flex-direction:column;gap:16px">
+  <div class="left-col">
 
     <!-- Profile card -->
     <div class="card">
@@ -143,10 +143,8 @@
 
   </div><!-- /left -->
 
-  <!-- RIGHT: Chat + Crisis panel -->
-  <div class="right-container">
-
-    <div class="card chat-card">
+  <!-- CENTER: Chat -->
+  <div class="card chat-card">
       <div class="card-title" style="margin-bottom:10px">Assistente IA — Matching Humanitário</div>
       <div class="chat-messages" id="chatMessages">
         <div class="chat-msg agent">
@@ -168,8 +166,6 @@
         <div style="color:#444;font-size:12px;text-align:center;padding:24px 12px;line-height:1.6">Pergunte ao assistente o que está acontecendo na sua área para ver crises aqui.</div>
       </div>
     </div>
-
-  </div>
 
 </div><!-- /profile-layout -->
 {% endblock %}
@@ -251,8 +247,9 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2)**2 +
-            Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
@@ -370,8 +367,8 @@ function fetchAndRenderCrisisCards() {
       console.log('[crisis] volunteer lat/lon/radius:', volLat, volLon, volRadius);
       const radius = volRadius > 0 ? volRadius : 5000;
       const withDist = events
-        .filter(e => e.lat && e.lon)
-        .map(e => ({ ...e, _dist: haversineKm(volLat, volLon, e.lat, e.lon) }));
+        .filter(e => e.lat != null && e.lon != null && !(parseFloat(e.lat) === 0 && parseFloat(e.lon) === 0))
+        .map(e => ({ ...e, _dist: haversineKm(volLat, volLon, parseFloat(e.lat), parseFloat(e.lon)) }));
       withDist.sort((a, b) => a._dist - b._dist);
       closestCrises = withDist.slice(0, 3);
       const nearby = withDist.filter(e => e._dist <= radius);
