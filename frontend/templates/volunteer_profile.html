@@ -34,6 +34,20 @@
 .chat-input-row{display:flex;gap:8px}
 .chat-input-row textarea{flex:1;height:48px;resize:none;padding:12px;font-size:13px;border-radius:8px}
 .chat-input-row button{width:80px;align-self:stretch;border-radius:8px}
+/* Crisis panel */
+.crisis-panel{overflow-y:auto;max-height:calc(100vh - 110px)}
+.crisis-card{border:1px solid #1a1a1a;border-radius:8px;padding:14px;margin-bottom:10px;background:#060606}
+.crisis-card:last-child{margin-bottom:0}
+.crisis-card-top{display:flex;align-items:center;gap:7px;margin-bottom:4px}
+.crisis-card-title{font-size:12px;font-weight:600;color:#ddd;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crisis-type-badge{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:2px 6px;border-radius:3px;background:#1a1a1a;color:#666;white-space:nowrap;flex-shrink:0}
+.crisis-card-meta{font-size:11px;color:#555;margin-bottom:6px}
+.crisis-card-desc{font-size:11px;color:#666;line-height:1.5;margin-bottom:6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.crisis-card-pills{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.crisis-skill-pill{font-size:9px;padding:2px 6px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;color:#777}
+.crisis-enroll-btn{width:100%;padding:6px;background:transparent;border:1px solid #22c55e;color:#22c55e;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;transition:all .15s}
+.crisis-enroll-btn:hover{background:#15803d22}
+.crisis-enroll-btn.enrolled{border-color:#555;color:#555;cursor:default}
 /* Missions list */
 .mission-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #0f0f0f}
 .mission-item:last-child{border-bottom:none}
@@ -125,21 +139,32 @@
 
   </div><!-- /left -->
 
-  <!-- RIGHT: AI Chat -->
-  <div class="card chat-card">
-    <div class="card-title" style="margin-bottom:10px">Assistente IA — Matching Humanitário</div>
-    <div class="chat-messages" id="chatMessages">
-      <div class="chat-msg agent">
-        Olá, <strong>{{ user.name.split()[0] }}</strong>! Sou o assistente de mobilização humanitária.
-        Baseado no seu perfil, posso ajudar a encontrar as melhores crises para sua contribuição.
-        O que você gostaria de saber?
+  <!-- RIGHT: Chat + Crisis panel -->
+  <div style="display:grid;grid-template-columns:3fr 2fr;gap:16px">
+
+    <div class="card chat-card">
+      <div class="card-title" style="margin-bottom:10px">Assistente IA — Matching Humanitário</div>
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-msg agent">
+          Olá, <strong>{{ user.name.split()[0] }}</strong>! Sou o assistente de mobilização humanitária.
+          Baseado no seu perfil, posso ajudar a encontrar as melhores crises para sua contribuição.
+          O que você gostaria de saber?
+        </div>
+      </div>
+      <div class="chat-input-row">
+        <textarea id="chatInput" placeholder="Digite sua mensagem..."
+                  onkeydown="if(event.key==='Enter'&&!event.shiftKey){sendMsg();event.preventDefault()}"></textarea>
+        <button class="btn btn-primary" onclick="sendMsg()">Enviar</button>
       </div>
     </div>
-    <div class="chat-input-row">
-      <textarea id="chatInput" placeholder="Digite sua mensagem..."
-                onkeydown="if(event.key==='Enter'&&!event.shiftKey){sendMsg();event.preventDefault()}"></textarea>
-      <button class="btn btn-primary" onclick="sendMsg()">Enviar</button>
+
+    <div class="card crisis-panel">
+      <div class="card-title" style="margin-bottom:12px">Crises na Sua Área</div>
+      <div id="crisisCards">
+        <div style="color:#444;font-size:12px;text-align:center;padding:24px 12px;line-height:1.6">Pergunte ao assistente o que está acontecendo na sua área para ver crises aqui.</div>
+      </div>
     </div>
+
   </div>
 
 </div><!-- /profile-layout -->
@@ -227,7 +252,6 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 }
 
 function buildVolCtx(userMessage) {
-  const availStr = VOL_AVAIL ? 'Sim' : 'Não';
   const skillsStr = VOL_SKILLS.length ? VOL_SKILLS.join(', ') : 'não informadas';
   const crisesStr = closestCrises.length
     ? closestCrises.map(c =>
@@ -235,31 +259,99 @@ function buildVolCtx(userMessage) {
       ).join('\n')
     : 'Nenhuma crise encontrada no sistema.';
 
-  return `[PERFIL DO VOLUNTÁRIO]
+  return `[INSTRUÇÃO: Você está falando DIRETAMENTE com o voluntário. Use segunda pessoa (você).
+Nunca use terceira pessoa. Nunca use o formato de campanha (Resumo da necessidade, Habilidades necessárias, etc.) - esse formato é para ONGs.
+Responda de forma direta, humana e conversacional.
+Quando recomendar crises, use este formato simples:
+
+Encontrei X crises próximas onde você pode ajudar:
+
+1. [Nome da crise] — [País]
+   📍 [X] km de distância
+   ⚠️ Severidade: [N]/5
+   O que está acontecendo: [2 frases simples]
+   Como você pode ajudar com suas habilidades de ${skillsStr}: [1 frase]
+
+2. ...
+
+Para se inscrever, clique no ponto desta crise no mapa e pressione Quero Ajudar.]
+
+[PERFIL]
 Nome: ${VOL_NAME}
 Habilidades: ${skillsStr}
 Localização: lat ${VOL_LAT}, lon ${VOL_LON}
-Raio de atuação: ${VOL_RADIUS} km
-Disponível: ${availStr}
-[CRISES MAIS PRÓXIMAS — ordenadas por distância]
+Raio: ${VOL_RADIUS} km
+
+[CRISES PRÓXIMAS]
 ${crisesStr}
 
-[PERGUNTA DO VOLUNTÁRIO]
+[MENSAGEM]
 ${userMessage}`;
 }
 
-// Fetch all events on page load, keep 3 closest
-fetch('/api/events?limit=500')
-  .then(r => r.json())
-  .then(events => {
-    if (!Array.isArray(events)) return;
-    const withDist = events
-      .filter(e => e.lat && e.lon)
-      .map(e => ({ ...e, _dist: haversineKm(VOL_LAT, VOL_LON, e.lat, e.lon) }));
-    withDist.sort((a, b) => a._dist - b._dist);
-    closestCrises = withDist.slice(0, 3);
+const SEV_COLORS = ['#4b5563','#4b5563','#22c55e','#eab308','#f97316','#ef4444'];
+const TYPE_PT = {
+  earthquake:'Terremoto', flood:'Inundação', conflict:'Conflito',
+  hurricane:'Furacão', drought:'Seca', wildfire:'Incêndio',
+  tsunami:'Tsunami', volcano:'Vulcão', landslide:'Deslizamento',
+  epidemic:'Epidemia', famine:'Fome', storm:'Tempestade'
+};
+
+function renderCrisisCards(crises) {
+  const container = document.getElementById('crisisCards');
+  if (!crises.length) {
+    container.innerHTML = '<div class="empty-state">Nenhuma crise na sua área de atuação no momento.</div>';
+    return;
+  }
+  container.innerHTML = crises.slice(0, 5).map(c => {
+    const sev = Math.min(parseInt(c.severity) || 1, 5);
+    const color = SEV_COLORS[sev];
+    const typePt = TYPE_PT[(c.crisis_type || '').toLowerCase()] || c.crisis_type || '—';
+    const dist = Math.round(c._dist);
+    let skills = [];
+    try { skills = JSON.parse(c.skills_needed || '[]'); } catch(e) {}
+    const pills = skills.slice(0, 3).map(s => `<span class="crisis-skill-pill">${s}</span>`).join('');
+    const desc = (c.description || '').slice(0, 120) + ((c.description || '').length > 120 ? '…' : '');
+    return `<div class="crisis-card">
+      <div class="crisis-card-top">
+        <div class="sev-dot" style="background:${color}"></div>
+        <div class="crisis-card-title" title="${c.title}">${c.title}</div>
+        <span class="crisis-type-badge">${typePt}</span>
+      </div>
+      <div class="crisis-card-meta">${c.country || '—'} · ${dist} km</div>
+      ${desc ? `<div class="crisis-card-desc">${desc}</div>` : ''}
+      ${pills ? `<div class="crisis-card-pills">${pills}</div>` : ''}
+      <button class="crisis-enroll-btn" onclick="enrollCrisis('${c.id}', this)">Quero Ajudar</button>
+    </div>`;
+  }).join('');
+}
+
+function enrollCrisis(crisisId, btn) {
+  btn.disabled = true;
+  fetch('/api/events/' + encodeURIComponent(crisisId) + '/associate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({user_id: USER_ID, role: 'volunteer'})
   })
-  .catch(() => {});
+  .then(r => r.json())
+  .then(() => { btn.textContent = '✓ Inscrito'; btn.classList.add('enrolled'); })
+  .catch(() => { btn.disabled = false; });
+}
+
+function fetchAndRenderCrisisCards() {
+  fetch('/api/events?limit=500')
+    .then(r => r.json())
+    .then(events => {
+      if (!Array.isArray(events)) return;
+      const withDist = events
+        .filter(e => e.lat && e.lon)
+        .map(e => ({ ...e, _dist: haversineKm(VOL_LAT, VOL_LON, e.lat, e.lon) }));
+      withDist.sort((a, b) => a._dist - b._dist);
+      closestCrises = withDist.slice(0, 3);
+      renderCrisisCards(withDist.filter(e => e._dist <= VOL_RADIUS));
+    })
+    .catch(() => {});
+}
 
 // ── AI Chat ──
 const chatMsgs = document.getElementById('chatMessages');
@@ -307,6 +399,7 @@ function sendMsg() {
   .then(function(d) {
     typing.remove();
     appendMsg(cleanAgentResponse(d.reply || d.response || '') || 'Sem resposta disponível.', 'agent');
+    fetchAndRenderCrisisCards();
   })
   .catch(function() {
     typing.remove();
