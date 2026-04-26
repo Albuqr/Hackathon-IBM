@@ -880,8 +880,7 @@ def chat(msg: ChatMessage):
         if not text:
             return {"reply": "Mensagem vazia.", "response": "Mensagem vazia."}
 
-        assistant_id = os.environ["ASSISTANT_AGENT_ID"]
-        result = call_orchestrate(text, agent_id=assistant_id)
+        result = call_orchestrate(text, agent_id=os.environ.get("ASSISTANT_AGENT_ID"))
 
         # Safely extract reply from whatever shape Orchestrate returns
         reply = None
