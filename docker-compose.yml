@@ -10,6 +10,7 @@ services:
     env_file: .env
     networks:
       - crisis-net
+      - easypanel
     restart: always
 
   frontend:
@@ -27,8 +28,18 @@ services:
       - middleware
     networks:
       - crisis-net
+      - easypanel
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.crisis-frontend.rule=Host(`hackathon.albuqr.com`)"
+      - "traefik.http.routers.crisis-frontend.entrypoints=websecure"
+      - "traefik.http.routers.crisis-frontend.tls=true"
+      - "traefik.http.routers.crisis-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.crisis-frontend.loadbalancer.server.port=5000"
     restart: always
 
 networks:
   crisis-net:
     driver: bridge
+  easypanel:
+    external: true
