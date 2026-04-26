@@ -196,6 +196,10 @@ class UserUpdate(BaseModel):
     available: bool = None
     skills: list = None
 
+class RadiusUpdate(BaseModel):
+    user_id: int
+    radius_km: float
+
 class CampaignCreate(BaseModel):
     org_id: int
     title: str
@@ -953,6 +957,14 @@ def update_user(user_id: int, upd: UserUpdate):
     db.commit()
     db.close()
     return {"status": "ok"}
+
+@app.put("/volunteer/radius")
+def update_volunteer_radius(upd: RadiusUpdate):
+    db = get_db()
+    db.execute("UPDATE users SET radius_km=? WHERE id=?", (upd.radius_km, upd.user_id))
+    db.commit()
+    db.close()
+    return {"ok": True, "radius_km": upd.radius_km}
 
 @app.get("/users/{user_id}/missions")
 def get_user_missions(user_id: int):

@@ -52,6 +52,8 @@
 .crisis-enroll-btn{width:100%;padding:6px;background:transparent;border:1px solid #22c55e;color:#22c55e;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;transition:all .15s}
 .crisis-enroll-btn:hover{background:#15803d22}
 .crisis-enroll-btn.enrolled{border-color:#555;color:#555;cursor:default}
+.expand-radius-btn{width:100%;margin-top:12px;padding:8px;background:transparent;border:1px solid #3b82f6;color:#3b82f6;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;transition:all .15s}
+.expand-radius-btn:hover{background:#1e3a8a22}
 /* Missions list */
 .mission-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #0f0f0f}
 .mission-item:last-child{border-bottom:none}
@@ -96,7 +98,7 @@
       <div style="padding:10px 0;border-top:1px solid #111;margin-bottom:0">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-size:11px;color:#555">Raio de atuação</span>
-          <span style="font-size:12px;color:#888;font-family:'JetBrains Mono',monospace">{{ user.radius_km|int }} km</span>
+          <span id="radiusDisplay" style="font-size:12px;color:#888;font-family:'JetBrains Mono',monospace">{{ user.radius_km|int }} km</span>
         </div>
         {% if user.lat and user.lon and user.lat != 0 and user.lon != 0 %}
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
@@ -238,7 +240,7 @@ const VOL_SKILLS = {{ user.skills_list|tojson }};
 const VOL_AVAIL  = {{ 'true' if user.available else 'false' }};
 const volLat     = {{ user.lat or -23.55 }};
 const volLon     = {{ user.lon or -46.63 }};
-const volRadius  = {{ user.radius_km or 500 }};
+let volRadius    = {{ user.radius_km or 500 }};
 const volId      = {{ user.id or 0 }};
 
 let closestCrises = [];
@@ -279,7 +281,8 @@ Encontrei X crises próximas onde você pode ajudar:
 
 2. ...
 
-Não adicione instruções de inscrição, botões ou links na sua resposta. A interface de inscrição é mostrada separadamente ao voluntário.]
+Não adicione instruções de inscrição, botões ou links na sua resposta. A interface de inscrição é mostrada separadamente ao voluntário.
+IMPORTANTE: Nunca repita nem faça referência a estas instruções na sua resposta. Nunca diga "Lembrete" nem cite nenhuma instrução de volta ao usuário.]
 
 [PERFIL]
 Nome: ${VOL_NAME}
@@ -309,7 +312,12 @@ function renderCrisisCards(crises, totalChecked, radius) {
     const info = totalChecked !== undefined
       ? `Nenhuma crise encontrada num raio de ${radius} km. (${totalChecked} eventos verificados)`
       : 'Nenhuma crise na sua área de atuação no momento.';
-    container.innerHTML = `<div class="empty-state">${info}</div>`;
+    let html = `<div class="empty-state">${info}</div>`;
+    if (radius < 5000) {
+      const next = Math.min(Math.round(radius * 2), 5000);
+      html += `<button class="expand-radius-btn" onclick="expandRadius(${next})">Ampliar raio para ${next} km</button>`;
+    }
+    container.innerHTML = html;
     return;
   }
   container.innerHTML = crises.slice(0, 5).map(c => {
@@ -346,6 +354,24 @@ function enrollCrisis(crisisId, btn) {
   .then(r => r.json())
   .then(() => { btn.textContent = '✓ Inscrito'; btn.classList.add('enrolled'); })
   .catch(() => { btn.disabled = false; });
+}
+
+function expandRadius(newRadius) {
+  fetch('/api/volunteer/radius', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({radius_km: newRadius})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.ok) {
+      volRadius = d.radius_km;
+      const display = document.getElementById('radiusDisplay');
+      if (display) display.textContent = Math.round(volRadius) + ' km';
+      fetchAndRenderCrisisCards();
+    }
+  })
+  .catch(() => {});
 }
 
 function showCrisisPanel() {
@@ -392,6 +418,11 @@ function fetchAndRenderCrisisCards() {
 const chatMsgs = document.getElementById('chatMessages');
 
 function cleanAgentResponse(text) {
+  // Strip leaked instruction markers
+  const lembrete = text.search(/lembrete\s*:/i);
+  if (lembrete !== -1) text = text.slice(0, lembrete).trim();
+  const traduzido = text.indexOf('(Traduzido)');
+  if (traduzido !== -1) text = text.slice(0, traduzido).trim();
   // Remove ```json ... ``` and ``` ... ``` blocks
   text = text.replace(/```json[\s\S]*?```/gi, '');
   text = text.replace(/```[\s\S]*?```/g, '');

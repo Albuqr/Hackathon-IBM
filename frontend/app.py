@@ -409,6 +409,18 @@ def api_update_user(user_id):
         return jsonify({"error": "forbidden"}), 403
     return jsonify(api_put(f"/users/{user_id}", request.json))
 
+@app.route("/api/volunteer/radius", methods=["POST"])
+@require_login
+def api_volunteer_radius():
+    data = request.json or {}
+    radius_km = data.get("radius_km")
+    if not radius_km:
+        return jsonify({"error": "radius_km required"}), 400
+    result = api_put("/volunteer/radius", {"radius_km": float(radius_km), "user_id": session["user_id"]})
+    if result.get("ok"):
+        session["radius_km"] = float(radius_km)
+    return jsonify(result)
+
 @app.route("/api/users/<int:user_id>/missions")
 @require_login
 def api_user_missions(user_id):
