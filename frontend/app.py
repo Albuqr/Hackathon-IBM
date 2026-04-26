@@ -20,6 +20,21 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+def get_events_from_db():
+    """Read crises directly from SQLite — bypasses middleware entirely."""
+    try:
+        conn = sqlite3.connect(DB)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, title, country, lat, lon, severity, crisis_type, "
+            "source, description, skills_needed "
+            "FROM crises ORDER BY severity DESC LIMIT 500"
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+
 def hash_pw(pw):
     return hashlib.sha256(pw.encode()).hexdigest()
 
@@ -76,8 +91,8 @@ def _maybe_trigger_ingest():
 def _build_map_context():
     """Shared context builder for all map views."""
     refreshing = _maybe_trigger_ingest()
-    events = api_get("/events", {"limit": 500}) or []
-    stats  = api_get("/stats")  or {}
+    events = get_events_from_db()
+    stats  = api_get("/stats") or {}
     paises = sorted(set(
         p.strip()
         for e in events
@@ -344,7 +359,7 @@ def org_campaign_new():
         result = api_post("/campaigns", data)
         if result.get("status") == "created":
             return redirect("/org/dashboard")
-    events = api_get("/events") or []
+    events = get_events_from_db()
     return render_template("org_campaign_new.html", events=events)
 
 @app.route("/org/campaigns/<int:campaign_id>")
