@@ -34,8 +34,12 @@
 .chat-input-row{display:flex;gap:8px}
 .chat-input-row textarea{flex:1;height:48px;resize:none;padding:12px;font-size:13px;border-radius:8px}
 .chat-input-row button{width:80px;align-self:stretch;border-radius:8px}
-/* Crisis panel */
-.crisis-panel{overflow-y:auto;max-height:calc(100vh - 110px)}
+/* Right container + crisis panel */
+.right-container{display:flex;gap:16px}
+.right-container .chat-card{flex:1;min-width:0}
+.crisis-panel{display:none;flex:0 0 38%;overflow-y:auto;max-height:calc(100vh - 110px)}
+.crisis-panel.visible{display:block;animation:crisisSlideIn .35s ease forwards}
+@keyframes crisisSlideIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
 .crisis-card{border:1px solid #1a1a1a;border-radius:8px;padding:14px;margin-bottom:10px;background:#060606}
 .crisis-card:last-child{margin-bottom:0}
 .crisis-card-top{display:flex;align-items:center;gap:7px;margin-bottom:4px}
@@ -140,7 +144,7 @@
   </div><!-- /left -->
 
   <!-- RIGHT: Chat + Crisis panel -->
-  <div style="display:grid;grid-template-columns:3fr 2fr;gap:16px">
+  <div class="right-container">
 
     <div class="card chat-card">
       <div class="card-title" style="margin-bottom:10px">Assistente IA — Matching Humanitário</div>
@@ -274,7 +278,7 @@ Encontrei X crises próximas onde você pode ajudar:
 
 2. ...
 
-Para se inscrever, clique no ponto desta crise no mapa e pressione Quero Ajudar.]
+Não adicione instruções de inscrição, botões ou links na sua resposta. A interface de inscrição é mostrada separadamente ao voluntário.]
 
 [PERFIL]
 Nome: ${VOL_NAME}
@@ -312,6 +316,7 @@ function renderCrisisCards(crises) {
     try { skills = JSON.parse(c.skills_needed || '[]'); } catch(e) {}
     const pills = skills.slice(0, 3).map(s => `<span class="crisis-skill-pill">${s}</span>`).join('');
     const desc = (c.description || '').slice(0, 120) + ((c.description || '').length > 120 ? '…' : '');
+    const cid = c.id || c.event_id || c.crisis_id || '';
     return `<div class="crisis-card">
       <div class="crisis-card-top">
         <div class="sev-dot" style="background:${color}"></div>
@@ -321,7 +326,7 @@ function renderCrisisCards(crises) {
       <div class="crisis-card-meta">${c.country || '—'} · ${dist} km</div>
       ${desc ? `<div class="crisis-card-desc">${desc}</div>` : ''}
       ${pills ? `<div class="crisis-card-pills">${pills}</div>` : ''}
-      <button class="crisis-enroll-btn" onclick="enrollCrisis('${c.id}', this)">Quero Ajudar</button>
+      <button class="crisis-enroll-btn" onclick="enrollCrisis('${cid}', this)">Quero Ajudar</button>
     </div>`;
   }).join('');
 }
@@ -338,19 +343,40 @@ function enrollCrisis(crisisId, btn) {
   .catch(() => { btn.disabled = false; });
 }
 
+function showCrisisPanel() {
+  const panel = document.querySelector('.crisis-panel');
+  if (panel && !panel.classList.contains('visible')) {
+    panel.classList.add('visible');
+  }
+}
+
 function fetchAndRenderCrisisCards() {
   fetch('/api/events?limit=500')
     .then(r => r.json())
     .then(events => {
-      if (!Array.isArray(events)) return;
+      if (!Array.isArray(events)) {
+        console.log('[crisis] response is not an array:', events);
+        showCrisisPanel();
+        renderCrisisCards([]);
+        return;
+      }
+      const radius = VOL_RADIUS > 0 ? VOL_RADIUS : 5000;
+      console.log('[crisis] fetched', events.length, 'events | lat:', VOL_LAT, 'lon:', VOL_LON, 'radius:', radius, 'km');
       const withDist = events
         .filter(e => e.lat && e.lon)
         .map(e => ({ ...e, _dist: haversineKm(VOL_LAT, VOL_LON, e.lat, e.lon) }));
       withDist.sort((a, b) => a._dist - b._dist);
       closestCrises = withDist.slice(0, 3);
-      renderCrisisCards(withDist.filter(e => e._dist <= VOL_RADIUS));
+      const inRadius = withDist.filter(e => e._dist <= radius);
+      console.log('[crisis] events with coords:', withDist.length, '| within radius:', inRadius.length);
+      showCrisisPanel();
+      renderCrisisCards(inRadius);
     })
-    .catch(() => {});
+    .catch(err => {
+      console.log('[crisis] fetch error:', err);
+      showCrisisPanel();
+      renderCrisisCards([]);
+    });
 }
 
 // ── AI Chat ──
