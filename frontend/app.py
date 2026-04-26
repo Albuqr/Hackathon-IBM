@@ -38,16 +38,16 @@ def get_events_from_db():
 def hash_pw(pw):
     return hashlib.sha256(pw.encode()).hexdigest()
 
-def api_get(path, params=None):
+def api_get(path, params=None, timeout=60):
     try:
-        r = requests.get(f"{API}{path}", params=params, timeout=10)
+        r = requests.get(f"{API}{path}", params=params, timeout=timeout)
         return r.json()
     except:
         return []
 
-def api_post(path, data=None):
+def api_post(path, data=None, timeout=60):
     try:
-        r = requests.post(f"{API}{path}", json=data, timeout=120)
+        r = requests.post(f"{API}{path}", json=data, timeout=timeout)
         return r.json()
     except Exception as e:
         return {"error": str(e)}
@@ -512,7 +512,7 @@ def api_chat():
                    f"disponibilidade={avail}. "
                    f"Ajude-o a encontrar crises humanitárias onde possa contribuir.] ")
             text = ctx + text
-    result = api_post("/chat", {"text": text, "user_id": session.get("user_id")})
+    result = api_post("/chat", {"text": text, "user_id": session.get("user_id")}, timeout=60)
     return jsonify(result)
 
 # ── Run ───────────────────────────────────────────────────────────────
