@@ -890,21 +890,53 @@ def chat(msg: ChatMessage):
         else:
             agent_id = os.environ.get("ASSISTANT_AGENT_ID")
         result = call_orchestrate(text, agent_id=agent_id)
+        print("AGENT RAW RESPONSE:", result)
 
-        # Safely extract reply from whatever shape Orchestrate returns
+        # Safely extract reply — try multiple paths in order
         reply = None
+
+        # Path 1: deep Orchestrate structure result["result"]["data"]["message"]["content"]
         try:
             content = result["result"]["data"]["message"]["content"]
             if isinstance(content, list):
-                # List of content blocks: [{"type": "text", "text": "..."}]
                 parts = [c.get("text", "") for c in content if isinstance(c, dict)]
-                reply = " ".join(p for p in parts if p).strip()
+                reply = " ".join(p for p in parts if p).strip() or None
             elif isinstance(content, dict):
-                reply = content.get("text") or str(content)
+                reply = content.get("text") or str(content) or None
             elif isinstance(content, str):
-                reply = content
+                reply = content or None
         except (KeyError, TypeError, AttributeError):
             pass
+
+        # Path 2: result["output"]
+        if not reply:
+            val = result.get("output")
+            if val and isinstance(val, str):
+                reply = val
+
+        # Path 3: result["reply"]
+        if not reply:
+            val = result.get("reply")
+            if val and isinstance(val, str):
+                reply = val
+
+        # Path 4: result["text"]
+        if not reply:
+            val = result.get("text")
+            if val and isinstance(val, str):
+                reply = val
+
+        # Path 5: result["content"]
+        if not reply:
+            val = result.get("content")
+            if val and isinstance(val, str):
+                reply = val
+
+        # Path 6: str(result) as last resort before hardcoded fallback
+        if not reply:
+            raw = str(result)
+            if raw and raw not in ("None", "{}", "[]", "{'error': 'timeout'}", "{'error': None}"):
+                reply = raw
 
         if not reply:
             reply = "Agente indisponível no momento. Tente mais tarde."
