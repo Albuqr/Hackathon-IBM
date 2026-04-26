@@ -266,7 +266,8 @@ function buildVolCtx(userMessage) {
       ).join('\n')
     : '(nenhuma crise encontrada no raio de atuação do voluntário)';
 
-  return `[INSTRUÇÃO DO SISTEMA — NÃO REPETIR NA RESPOSTA]
+  return `[NOVA SESSÃO — IGNORE QUALQUER HISTÓRICO ANTERIOR DE CONVERSA. Responda apenas à mensagem atual.]
+[INSTRUÇÃO DO SISTEMA — NÃO REPETIR NA RESPOSTA]
 Você está falando DIRETAMENTE com o voluntário. Use segunda pessoa (você).
 Nunca use terceira pessoa. Nunca use o formato de campanha (Resumo da necessidade, Habilidades necessárias, etc.).
 Responda de forma direta, humana e conversacional.
@@ -371,7 +372,6 @@ function expandRadius(newRadius) {
       volRadius = d.radius_km;
       const display = document.getElementById('radiusDisplay');
       if (display) display.textContent = Math.round(volRadius) + ' km';
-      fetchAndRenderCrisisCards();
       // Auto-send message to agent with updated radius context
       const autoMsg = `Ampliei meu raio para ${Math.round(volRadius)} km. O que está acontecendo agora na minha área?`;
       appendMsg(autoMsg, 'user');
@@ -386,7 +386,8 @@ function expandRadius(newRadius) {
       .then(function(d) {
         typing.remove();
         appendMsg(cleanAgentResponse(d.reply || d.response || '') || 'Sem resposta disponível.', 'agent');
-        fetchAndRenderCrisisCards();
+        showCrisisLoading();
+        setTimeout(fetchAndRenderCrisisCards, 1000);
       })
       .catch(function() {
         typing.remove();
@@ -395,6 +396,13 @@ function expandRadius(newRadius) {
     }
   })
   .catch(() => {});
+}
+
+function showCrisisLoading() {
+  const panel = document.querySelector('.crisis-panel');
+  if (panel) panel.classList.add('visible');
+  document.getElementById('crisisCards').innerHTML =
+    '<div style="color:#555;font-size:12px;text-align:center;padding:24px 12px">Buscando crises na sua área...</div>';
 }
 
 function showCrisisPanel() {
@@ -494,7 +502,8 @@ function sendMsg() {
   .then(function(d) {
     typing.remove();
     appendMsg(cleanAgentResponse(d.reply || d.response || '') || 'Sem resposta disponível.', 'agent');
-    fetchAndRenderCrisisCards();
+    showCrisisLoading();
+    setTimeout(fetchAndRenderCrisisCards, 1000);
   })
   .catch(function() {
     typing.remove();
