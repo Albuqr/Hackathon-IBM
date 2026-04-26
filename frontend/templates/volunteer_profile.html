@@ -244,7 +244,7 @@ const volId      = {{ user.id or 0 }};
 let closestCrises = [];
 
 function haversineKm(lat1, lon1, lat2, lon2) {
-  const R = 6371;
+  const R = 6371; // km
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
@@ -252,6 +252,9 @@ function haversineKm(lat1, lon1, lat2, lon2) {
     Math.sin(dLon/2) * Math.sin(dLon/2);
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
+// Sanity check: SP→Rio ~360km, SP→Buenos Aires ~1700km
+console.log('[haversine] SP→Rio:', haversineKm(-23.55,-46.63,-22.91,-43.17).toFixed(0),'km (expect ~360)');
+console.log('[haversine] SP→BuenosAires:', haversineKm(-23.55,-46.63,-34.60,-58.38).toFixed(0),'km (expect ~1700)');
 
 function buildVolCtx(userMessage) {
   const skillsStr = VOL_SKILLS.length ? VOL_SKILLS.join(', ') : 'não informadas';
@@ -370,9 +373,11 @@ function fetchAndRenderCrisisCards() {
         .filter(e => e.lat != null && e.lon != null && !(parseFloat(e.lat) === 0 && parseFloat(e.lon) === 0))
         .map(e => ({ ...e, _dist: haversineKm(volLat, volLon, parseFloat(e.lat), parseFloat(e.lon)) }));
       withDist.sort((a, b) => a._dist - b._dist);
+      console.log('[crisis] first 5 events by distance:',
+        withDist.slice(0,5).map(e => `${e.title} lat=${e.lat} lon=${e.lon} dist=${e._dist.toFixed(1)}km`));
       closestCrises = withDist.slice(0, 3);
       const nearby = withDist.filter(e => e._dist <= radius);
-      console.log('[crisis] events within radius:', nearby.length);
+      console.log('[crisis] within radius:', nearby.length, 'of', events.length);
       showCrisisPanel();
       renderCrisisCards(nearby, withDist.length, radius);
     })
