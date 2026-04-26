@@ -461,8 +461,16 @@ async function loadVolunteers() {
   filterVols();
 }
 
+const SKILL_MAP = {
+  'medicina': 'medical', 'logística': 'logistics', 'logistica': 'logistics',
+  'busca e resgate': 'sar', 'sar (busca e resgate)': 'sar',
+  'engenharia': 'engineering', 'psicologia': 'psychology',
+  'tradutor': 'translator', 'tradução': 'translator', 'geral': 'general',
+};
+
 function filterVols() {
-  const skill  = document.getElementById('fSkill').value.toLowerCase();
+  const skillRaw = document.getElementById('fSkill').value.toLowerCase();
+  const skill    = SKILL_MAP[skillRaw] || skillRaw;
   const avail  = document.getElementById('fAvail').value;
   const maxDist = parseInt(document.getElementById('fDist').value);
   const name   = document.getElementById('fName').value.toLowerCase();
