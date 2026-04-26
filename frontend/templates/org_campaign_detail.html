@@ -406,7 +406,7 @@ function sendMsg() {
   const typing = appendMsg('...', 'chat-typing');
   fetch('/api/chat', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({text: buildCampaignCtx(text)})
+    body: JSON.stringify({text: buildCampaignCtx(text), context_type: 'campaign'})
   })
   .then(r => r.json())
   .then(d => {

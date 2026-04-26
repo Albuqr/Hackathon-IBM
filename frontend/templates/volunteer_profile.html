@@ -226,43 +226,38 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-function buildSysCtx() {
+function buildVolCtx(userMessage) {
   const availStr = VOL_AVAIL ? 'Sim' : 'Não';
   const skillsStr = VOL_SKILLS.length ? VOL_SKILLS.join(', ') : 'não informadas';
   const crisesStr = closestCrises.length
-    ? closestCrises.map((c, i) =>
-        `  ${i+1}. ${c.title} — ${c.country} (severidade ${c.severity}/5, ~${Math.round(c._dist)} km)`
+    ? closestCrises.map(c =>
+        `${c.title} | País: ${c.country || '—'} | Distância: ${Math.round(c._dist)} km | Severidade: ${c.severity}/5 | Tipo: ${c.crisis_type || '—'}`
       ).join('\n')
-    : '  Nenhuma crise encontrada no sistema.';
+    : 'Nenhuma crise encontrada no sistema.';
 
-  return `Você é um assistente de matching humanitário da plataforma Crisis Monitor.
-Perfil do voluntário:
-- Nome: ${VOL_NAME}
-- Habilidades: ${skillsStr}
-- Localização: lat ${VOL_LAT}, lon ${VOL_LON}
-- Raio de atuação: ${VOL_RADIUS} km
-- Disponível: ${availStr}
-
-Crises ativas mais próximas (por distância):
+  return `[PERFIL DO VOLUNTÁRIO]
+Nome: ${VOL_NAME}
+Habilidades: ${skillsStr}
+Localização: lat ${VOL_LAT}, lon ${VOL_LON}
+Raio de atuação: ${VOL_RADIUS} km
+Disponível: ${availStr}
+[CRISES MAIS PRÓXIMAS — ordenadas por distância]
 ${crisesStr}
 
-Sua missão é recomendar as melhores causas para este voluntário com base no perfil dele e nas crises ativas.
-Explique por que cada crise é uma boa combinação com as habilidades e localização dele.
-Seja empático, motivador e específico. Responda sempre em português.
-
-Mensagem do voluntário: `;
+[PERGUNTA DO VOLUNTÁRIO]
+${userMessage}`;
 }
 
-// Fetch top 5 closest crises with severity >= 3 on page load
-fetch('/api/events?min_severity=3&limit=200')
+// Fetch all events on page load, keep 3 closest
+fetch('/api/events?limit=500')
   .then(r => r.json())
   .then(events => {
     if (!Array.isArray(events)) return;
     const withDist = events
-      .filter(e => e.severity >= 3 && e.lat && e.lon)
+      .filter(e => e.lat && e.lon)
       .map(e => ({ ...e, _dist: haversineKm(VOL_LAT, VOL_LON, e.lat, e.lon) }));
     withDist.sort((a, b) => a._dist - b._dist);
-    closestCrises = withDist.slice(0, 5);
+    closestCrises = withDist.slice(0, 3);
   })
   .catch(() => {});
 
@@ -306,7 +301,7 @@ function sendMsg() {
   fetch('/api/chat', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({text: buildSysCtx() + text})
+    body: JSON.stringify({text: buildVolCtx(text), context_type: 'volunteer'})
   })
   .then(r => r.json())
   .then(function(d) {

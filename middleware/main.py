@@ -186,6 +186,7 @@ class ChatMessage(BaseModel):
     user_id: int = None
     telegram_id: int = None
     username: str = None
+    context_type: str = None
 
 class AssociateRequest(BaseModel):
     user_id: int
@@ -880,7 +881,11 @@ def chat(msg: ChatMessage):
         if not text:
             return {"reply": "Mensagem vazia.", "response": "Mensagem vazia."}
 
-        result = call_orchestrate(text, agent_id=os.environ.get("ASSISTANT_AGENT_ID"))
+        if msg.context_type == "volunteer":
+            agent_id = os.environ.get("VOLUNTEER_AGENT_ID")
+        else:
+            agent_id = os.environ.get("ASSISTANT_AGENT_ID")
+        result = call_orchestrate(text, agent_id=agent_id)
 
         # Safely extract reply from whatever shape Orchestrate returns
         reply = None
