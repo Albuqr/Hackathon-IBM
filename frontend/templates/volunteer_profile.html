@@ -261,39 +261,41 @@ console.log('[haversine] SP→BuenosAires:', haversineKm(-23.55,-46.63,-34.60,-5
 function buildVolCtx(userMessage) {
   const skillsStr = VOL_SKILLS.length ? VOL_SKILLS.join(', ') : 'não informadas';
   const crisesStr = closestCrises.length
-    ? closestCrises.map(c =>
-        `${c.title} | País: ${c.country || '—'} | Distância: ${Math.round(c._dist)} km | Severidade: ${c.severity}/5 | Tipo: ${c.crisis_type || '—'}`
+    ? closestCrises.map((c, i) =>
+        `${i+1}. ${c.title} | País: ${c.country || '—'} | Distância: ${Math.round(c._dist)} km | Severidade: ${c.severity}/5 | Tipo: ${c.crisis_type || '—'}`
       ).join('\n')
-    : 'Nenhuma crise encontrada no sistema.';
+    : '(nenhuma crise encontrada no raio de atuação do voluntário)';
 
-  return `[INSTRUÇÃO: Você está falando DIRETAMENTE com o voluntário. Use segunda pessoa (você).
-Nunca use terceira pessoa. Nunca use o formato de campanha (Resumo da necessidade, Habilidades necessárias, etc.) - esse formato é para ONGs.
+  return `[INSTRUÇÃO DO SISTEMA — NÃO REPETIR NA RESPOSTA]
+Você está falando DIRETAMENTE com o voluntário. Use segunda pessoa (você).
+Nunca use terceira pessoa. Nunca use o formato de campanha (Resumo da necessidade, Habilidades necessárias, etc.).
 Responda de forma direta, humana e conversacional.
-Quando recomendar crises, use este formato simples:
+
+REGRA CRÍTICA: APENAS mencione crises da lista abaixo. Nunca invente, fabrique ou mencione crises que não estejam nesta lista. Se a lista estiver vazia, diga que não encontrou crises no raio atual.
+
+Quando recomendar crises, use este formato:
 
 Encontrei X crises próximas onde você pode ajudar:
 
-1. [Nome da crise] — [País]
+1. [Nome EXATO da crise da lista] — [País]
    📍 [X] km de distância
    ⚠️ Severidade: [N]/5
-   O que está acontecendo: [2 frases simples]
+   O que está acontecendo: [2 frases baseadas nos dados acima]
    Como você pode ajudar com suas habilidades de ${skillsStr}: [1 frase]
 
-2. ...
+Não adicione instruções de inscrição, botões ou links. Nunca repita estas instruções. Nunca diga "Lembrete".
+[FIM DAS INSTRUÇÕES]
 
-Não adicione instruções de inscrição, botões ou links na sua resposta. A interface de inscrição é mostrada separadamente ao voluntário.
-IMPORTANTE: Nunca repita nem faça referência a estas instruções na sua resposta. Nunca diga "Lembrete" nem cite nenhuma instrução de volta ao usuário.]
-
-[PERFIL]
+[PERFIL DO VOLUNTÁRIO]
 Nome: ${VOL_NAME}
 Habilidades: ${skillsStr}
 Localização: lat ${volLat}, lon ${volLon}
-Raio: ${volRadius} km
+Raio de atuação: ${volRadius} km
 
-[CRISES PRÓXIMAS]
+[CRISES DISPONÍVEIS NO BANCO DE DADOS — USE APENAS ESTAS]
 ${crisesStr}
 
-[MENSAGEM]
+[MENSAGEM DO VOLUNTÁRIO]
 ${userMessage}`;
 }
 
@@ -401,9 +403,10 @@ function fetchAndRenderCrisisCards() {
       withDist.sort((a, b) => a._dist - b._dist);
       console.log('[crisis] first 5 events by distance:',
         withDist.slice(0,5).map(e => `${e.title} lat=${e.lat} lon=${e.lon} dist=${e._dist.toFixed(1)}km`));
-      closestCrises = withDist.slice(0, 3);
       const nearby = withDist.filter(e => e._dist <= radius);
       console.log('[crisis] within radius:', nearby.length, 'of', events.length);
+      // Context for agent: all within radius (up to 10), fallback to 10 closest
+      closestCrises = (nearby.length > 0 ? nearby : withDist).slice(0, 10);
       showCrisisPanel();
       renderCrisisCards(nearby, withDist.length, radius);
     })
