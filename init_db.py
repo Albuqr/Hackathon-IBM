@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     role TEXT DEFAULT "volunteer",
-    name TEXT, phone TEXT, telegram_id INTEGER,
+    name TEXT, phone TEXT, telegram_id INTEGER, username TEXT,
     skills TEXT DEFAULT "[]",
     languages TEXT DEFAULT "[]",
     lat REAL DEFAULT 0, lon REAL DEFAULT 0,
@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
     org_name TEXT, org_cnpj TEXT,
     available BOOLEAN DEFAULT 1,
     approved BOOLEAN DEFAULT 1,
+    link_code TEXT UNIQUE,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS crises (
@@ -103,6 +104,7 @@ CREATE TABLE IF NOT EXISTS campaign_volunteers (
 # Add columns if they don't exist yet (SQLite doesn't support IF NOT EXISTS for ALTER)
 for _sql in [
     'ALTER TABLE users ADD COLUMN username TEXT',
+    'ALTER TABLE users ADD COLUMN link_code TEXT UNIQUE',
     'ALTER TABLE missions ADD COLUMN crisis_id TEXT',
     'ALTER TABLE missions ADD COLUMN telegram_id INTEGER',
     'ALTER TABLE missions ADD COLUMN user_id INTEGER',

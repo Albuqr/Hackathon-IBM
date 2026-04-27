@@ -117,6 +117,17 @@
           <div class="toggle-thumb"></div>
         </label>
       </div>
+
+      {% if link_code %}
+      <div style="border-top:1px solid #111;padding-top:12px;margin-top:4px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#555;margin-bottom:8px">Conectar Telegram</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+          <span id="linkCodeDisplay" style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;color:#60a5fa;letter-spacing:.1em">{{ link_code }}</span>
+          <button onclick="copyLinkCode()" style="background:none;border:1px solid #2a2a2a;border-radius:4px;color:#555;font-size:10px;padding:2px 7px;cursor:pointer;font-family:inherit" id="copyBtn">Copiar</button>
+        </div>
+        <div style="font-size:10px;color:#444;line-height:1.5">Use <span style="color:#60a5fa;font-family:'JetBrains Mono',monospace">/vincular {{ link_code }}</span> no bot do Telegram</div>
+      </div>
+      {% endif %}
     </div>
 
     <!-- My missions -->
@@ -176,6 +187,22 @@
 <script>
 const USER_ID = {{ session.get('user_id', 0) }};
 let currentSkills = {{ user.skills_list|tojson }};
+
+// ── Link code copy ──
+function copyLinkCode() {
+  const code = document.getElementById('linkCodeDisplay').textContent;
+  navigator.clipboard.writeText(code).then(function() {
+    const btn = document.getElementById('copyBtn');
+    btn.textContent = 'Copiado!';
+    btn.style.color = '#22c55e';
+    btn.style.borderColor = '#22c55e';
+    setTimeout(function() { btn.textContent = 'Copiar'; btn.style.color = ''; btn.style.borderColor = ''; }, 2000);
+  }).catch(function() {
+    const btn = document.getElementById('copyBtn');
+    btn.textContent = 'Erro';
+    setTimeout(function() { btn.textContent = 'Copiar'; }, 2000);
+  });
+}
 
 // ── Availability toggle ──
 function updateAvailability(val) {

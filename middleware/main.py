@@ -73,6 +73,7 @@ def get_db():
     # Add missing columns (SQLite does not support IF NOT EXISTS for ALTER TABLE)
     for sql in [
         "ALTER TABLE users ADD COLUMN username TEXT",
+        "ALTER TABLE users ADD COLUMN link_code TEXT UNIQUE",
         "ALTER TABLE missions ADD COLUMN crisis_id TEXT",
         "ALTER TABLE missions ADD COLUMN telegram_id INTEGER",
         "ALTER TABLE missions ADD COLUMN user_id INTEGER",
@@ -232,6 +233,13 @@ class CampaignVolunteerAdd(BaseModel):
 
 class CampaignVolunteerUpdate(BaseModel):
     status: str
+
+class TelegramLink(BaseModel):
+    telegram_id: int
+    username: str = None
+
+class AssociateCrisisRequest(BaseModel):
+    crisis_id: str
 
 # ── Endpoints ──
 @app.get("/")
@@ -1234,6 +1242,67 @@ def update_campaign_volunteer_status(cv_id: int, upd: CampaignVolunteerUpdate):
     db.commit()
     db.close()
     return {"status": "ok"}
+
+@app.get("/user/by-code/{code}")
+def get_user_by_code(code: str):
+    db = get_db()
+    row = db.execute(
+        "SELECT id, name, email, role, skills, lat, lon, radius_km, available "
+        "FROM users WHERE UPPER(link_code) = UPPER(?)",
+        (code.replace("-", ""),)
+    ).fetchone()
+    db.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Code not found")
+    return dict(row)
+
+@app.post("/user/{user_id}/telegram")
+def link_telegram(user_id: int, req: TelegramLink):
+    db = get_db()
+    db.execute(
+        "UPDATE users SET telegram_id=?, username=? WHERE id=?",
+        (req.telegram_id, req.username, user_id)
+    )
+    db.commit()
+    db.close()
+    return {"ok": True}
+
+@app.post("/user/{user_id}/associate-crisis")
+def associate_crisis_for_user(user_id: int, req: AssociateCrisisRequest):
+    db = get_db()
+    now = datetime.utcnow().isoformat()
+    db.execute(
+        "INSERT OR IGNORE INTO crisis_associations (crisis_id, user_id, role, created_at) "
+        "VALUES (?, ?, 'volunteer', ?)",
+        (req.crisis_id, user_id, now)
+    )
+    db.commit()
+    db.close()
+    return {"ok": True}
+
+@app.get("/user/{user_id}/crises")
+def get_user_crises(user_id: int):
+    db = get_db()
+    rows = db.execute("""
+        SELECT c.id, c.title, c.country, c.severity, c.crisis_type,
+               ca.created_at as enrolled_at
+        FROM crisis_associations ca
+        JOIN crises c ON ca.crisis_id = c.id
+        WHERE ca.user_id = ? AND ca.role = 'volunteer'
+        ORDER BY ca.created_at DESC
+    """, (user_id,)).fetchall()
+    db.close()
+    return [dict(r) for r in rows]
+
+@app.get("/users/with-telegram")
+def users_with_telegram():
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, name, telegram_id, lat, lon, radius_km, skills "
+        "FROM users WHERE telegram_id IS NOT NULL"
+    ).fetchall()
+    db.close()
+    return [dict(r) for r in rows]
 
 @app.get("/predictions")
 def get_predictions():

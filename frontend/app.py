@@ -1,5 +1,5 @@
 # frontend/app.py
-import os, json, hashlib, sqlite3, requests, threading
+import os, json, hashlib, sqlite3, requests, threading, secrets, string
 from functools import wraps
 from flask import (Flask, render_template, request,
                    redirect, session, jsonify)
@@ -37,6 +37,23 @@ def get_events_from_db():
 
 def hash_pw(pw):
     return hashlib.sha256(pw.encode()).hexdigest()
+
+def _generate_link_code():
+    chars = string.ascii_uppercase + string.digits
+    raw = "".join(secrets.choice(chars) for _ in range(8))
+    return raw[:4] + "-" + raw[4:]
+
+def _ensure_link_code(db, user_id):
+    try:
+        row = db.execute("SELECT link_code FROM users WHERE id=?", (user_id,)).fetchone()
+        if row and row["link_code"]:
+            return row["link_code"]
+        code = _generate_link_code()
+        db.execute("UPDATE users SET link_code=? WHERE id=?", (code, user_id))
+        db.commit()
+        return code
+    except Exception:
+        return None
 
 def api_get(path, params=None, timeout=60):
     try:
@@ -136,6 +153,7 @@ def login():
             session["initials"] = (
                 parts[0][0] + (parts[-1][0] if len(parts) > 1 else parts[0][-1])
             ).upper()
+            _ensure_link_code(db, user["id"])
             role = user["role"]
             if role == "volunteer":
                 return redirect("/volunteer/map")
@@ -220,8 +238,12 @@ def volunteer_profile():
         return redirect("/logout")
     user = dict(user)
     user["skills_list"] = json.loads(user.get("skills") or "[]")
+    db2 = get_db()
+    link_code = _ensure_link_code(db2, user["id"])
+    db2.close()
     missions = api_get(f"/users/{session['user_id']}/missions") or []
-    return render_template("volunteer_profile.html", user=user, missions=missions)
+    return render_template("volunteer_profile.html", user=user, missions=missions,
+                           link_code=link_code or "")
 
 @app.route("/volunteer/missions")
 @require_login
