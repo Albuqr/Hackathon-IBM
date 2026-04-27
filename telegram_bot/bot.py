@@ -4,9 +4,9 @@ import math
 import json
 import logging
 import requests
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler,
+    Application, CallbackQueryHandler, CommandHandler, MessageHandler,
     filters, ContextTypes,
 )
 
@@ -152,15 +152,27 @@ async def cmd_crises(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Nenhuma crise ativa no momento.")
         return
 
+    top_crises = crises[:5]
     lines = ["🌍 *Crises ativas (top 5)*\n"]
-    for c in crises[:5]:
+    for c in top_crises:
         sev = int(c.get("severity") or 0)
         lines.append(
             f"*{c.get('title','?')}*\n"
             f"📍 {c.get('country','?')} | ⚠️ Severidade: {sev}/5 | Tipo: {c.get('crisis_type','?')}\n"
             f"ID: `{c.get('id','?')}`\n"
         )
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    keyboard = []
+    for ev in top_crises:
+        title = ev.get('title', '')
+        title = title[:30] + '...' if len(title) > 30 else title
+        keyboard.append([
+            InlineKeyboardButton(
+                f"✋ Inscrever — {title}",
+                callback_data=f"inscrever:{ev.get('id','')}"
+            )
+        ])
+    reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown", reply_markup=reply_markup)
 
 
 async def cmd_meusdados(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -308,9 +320,55 @@ Nunca responda em inglês.
         )
         data = resp.json()
         reply = data.get("reply") or data.get("response") or "Sem resposta disponível."
-        await update.message.reply_text(reply)
+        keyboard = []
+        for ev in nearby[:5]:
+            crisis_id = ev.get('id', '')
+            title = ev.get('title', '')
+            title = title[:30] + '...' if len(title) > 30 else title
+            dist = ev.get('_dist', '?')
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"✋ Inscrever — {title} ({dist}km)",
+                    callback_data=f"inscrever:{crisis_id}"
+                )
+            ])
+        reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+        await update.message.reply_text(reply, reply_markup=reply_markup)
     except Exception:
         await update.message.reply_text("Erro ao conectar com o agente. Tente novamente.")
+
+
+# ── Inline button callbacks ────────────────────────────────────────────────
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    telegram_id = query.from_user.id
+    if telegram_id not in user_sessions:
+        await query.edit_message_text("❌ Você precisa vincular sua conta primeiro. Use /vincular SEU-CODIGO.")
+        return
+
+    data = query.data
+    if data.startswith("inscrever:"):
+        crisis_id = data.replace("inscrever:", "")
+        user = user_sessions[telegram_id]
+        user_id = user["user_id"]
+        try:
+            resp = requests.post(
+                f"{API_URL}/user/{user_id}/associate-crisis",
+                json={"crisis_id": crisis_id},
+                timeout=10,
+            )
+            if resp.ok:
+                await query.edit_message_reply_markup(reply_markup=None)
+                await query.message.reply_text(
+                    f"✅ Você foi inscrito na crise com sucesso!\n\nID: {crisis_id}"
+                )
+            else:
+                await query.message.reply_text("❌ Erro ao se inscrever. Tente novamente.")
+        except Exception as e:
+            await query.message.reply_text(f"❌ Erro: {str(e)}")
 
 
 # ── Alert job ──────────────────────────────────────────────────────────────
@@ -386,6 +444,7 @@ def main():
     application.add_handler(CommandHandler("crises",     cmd_crises))
     application.add_handler(CommandHandler("meusdados",  cmd_meusdados))
     application.add_handler(CommandHandler("inscrever",  cmd_inscrever))
+    application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
