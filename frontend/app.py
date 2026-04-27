@@ -429,9 +429,26 @@ def api_ingest():
 @app.route("/api/events/<crisis_id>/associations")
 @require_login
 def api_associations(crisis_id):
-    params = {"user_id": session.get("user_id")}
-    return jsonify(api_get(f"/events/{crisis_id}/associations", params)
-                   or {"volunteers": 0, "orgs": 0, "user_enrolled": False})
+    user_id = session.get("user_id")
+    db = get_db()
+    try:
+        vols = db.execute(
+            "SELECT COUNT(*) FROM crisis_associations WHERE crisis_id=? AND role='volunteer'",
+            (crisis_id,)
+        ).fetchone()[0]
+        orgs = db.execute(
+            "SELECT COUNT(*) FROM crisis_associations WHERE crisis_id=? AND role='org'",
+            (crisis_id,)
+        ).fetchone()[0]
+        enrolled = bool(db.execute(
+            "SELECT 1 FROM crisis_associations WHERE crisis_id=? AND user_id=?",
+            (crisis_id, user_id)
+        ).fetchone())
+        db.close()
+        return jsonify({"volunteers": vols, "orgs": orgs, "user_enrolled": enrolled})
+    except Exception:
+        db.close()
+        return jsonify({"volunteers": 0, "orgs": 0, "user_enrolled": False})
 
 @app.route("/api/events/<crisis_id>/associate", methods=["POST"])
 @require_login
@@ -439,8 +456,19 @@ def api_associate(crisis_id):
     role = session.get("role")
     if role not in ("volunteer", "org"):
         return jsonify({"error": "invalid role"}), 400
-    return jsonify(api_post(f"/events/{crisis_id}/associate",
-                            {"user_id": session["user_id"], "role": role}))
+    user_id = session["user_id"]
+    db = get_db()
+    try:
+        db.execute(
+            "INSERT OR IGNORE INTO crisis_associations (crisis_id, user_id, role) VALUES (?,?,?)",
+            (crisis_id, user_id, role)
+        )
+        db.commit()
+        db.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        db.close()
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/events/<crisis_id>/disassociate", methods=["POST"])
 @require_login

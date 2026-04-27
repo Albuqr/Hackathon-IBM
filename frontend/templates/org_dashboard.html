@@ -13,7 +13,7 @@
 .skill-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:16px}
 .skill-legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:#888}
 .skill-legend-sq{width:10px;height:10px;border-radius:2px;flex-shrink:0}
-.campaigns-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.campaigns-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;overflow-y:auto;overflow-x:hidden;width:100%}
 .campaign-card{background:#060606;border:1px solid #1a1a1a;border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:10px;text-decoration:none}
 .campaign-card.new-card{align-items:center;justify-content:center;border:1px dashed #222;cursor:pointer;min-height:160px;transition:border-color .15s,background .15s}
 .campaign-card.new-card:hover{border-color:#3b82f6;background:#0a0a0a}
@@ -35,10 +35,10 @@
 .urg-alta{background:#7f1d1d22;border:1px solid #991b1b;color:#f87171}
 .urg-critica{background:#4c0519;border:1px solid #9f1239;color:#fb7185}
 .status-pill{padding:2px 7px;border-radius:3px;font-size:9px;font-weight:600;text-transform:uppercase}
-.status-active{color:#4ade80}
-.status-pendente{color:#eab308}
-.status-paused{color:#6b7280}
-.status-completed{color:#3b82f6}
+.status-pending{color:#eab308}
+.status-active{color:#22c55e}
+.status-monitoring{color:#3b82f6}
+.status-closed{color:#555}
 @media(max-width:900px){
   .metrics-row{grid-template-columns:repeat(2,1fr)}
   .campaigns-grid{grid-template-columns:repeat(2,1fr)}
@@ -119,7 +119,8 @@
       <span class="cc-vols">{{ c.volunteer_count or 0 }} / {{ c.target_volunteers or '?' }} voluntários</span>
       <div style="display:flex;align-items:center;gap:8px">
         {% set st = c.status or 'active' %}
-        <span class="status-{{ st }}">● {{ st }}</span>
+        {% set st_labels = {'pending':'Pendente','active':'Ativo','monitoring':'Monitoramento','closed':'Encerrado'} %}
+        <span class="status-{{ st }}">● {{ st_labels.get(st, st) }}</span>
         <div class="cc-actions">
           <a href="/org/campaigns/{{ c.id }}" class="cc-btn">Gerenciar</a>
           <a href="/org/campaigns/{{ c.id }}" class="cc-btn">Editar</a>
