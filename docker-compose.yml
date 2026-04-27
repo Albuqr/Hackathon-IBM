@@ -38,6 +38,21 @@ services:
       - "traefik.http.services.crisis-frontend.loadbalancer.server.port=5000"
     restart: always
 
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    volumes:
+      - ./data:/app/data
+    env_file: .env
+    environment:
+      - API_URL=http://middleware:8000
+    depends_on:
+      - middleware
+    networks:
+      - crisis-net
+    restart: always
+
 networks:
   crisis-net:
     driver: bridge

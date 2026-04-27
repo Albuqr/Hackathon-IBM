@@ -1,4 +1,5 @@
 import os
+import sys
 import math
 import json
 import logging
@@ -10,7 +11,7 @@ from telegram.ext import (
 )
 
 TG_TOKEN = os.environ.get("TG_TOKEN", "")
-API_URL  = os.environ.get("API_URL", "http://localhost:8000")
+API_URL  = os.environ.get("API_URL", "http://middleware:8000")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -281,7 +282,8 @@ async def alert_job(context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     if not TG_TOKEN:
-        raise RuntimeError("TG_TOKEN environment variable is not set")
+        logger.error("TG_TOKEN environment variable is not set — exiting.")
+        sys.exit(1)
 
     application = Application.builder().token(TG_TOKEN).build()
 
