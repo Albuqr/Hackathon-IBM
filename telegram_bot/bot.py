@@ -17,8 +17,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # In-memory state — reset on restart
-linked_users: dict[int, dict] = {}   # telegram_id -> user dict
-alerted_ids:  set[str]        = set()  # crisis ids already alerted
+linked_users:  dict[int, dict] = {}   # telegram_id -> raw user dict (auth/role checks)
+user_sessions: dict[int, dict] = {}   # telegram_id -> structured volunteer profile
+alerted_ids:   set[str]        = set()  # crisis ids already alerted
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -110,6 +111,15 @@ async def cmd_vincular(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     linked_users[tg.id] = found
+    user_sessions[tg.id] = {
+        "user_id": found["id"],
+        "name": found["name"],
+        "role": found["role"],
+        "skills": parse_skills(found.get("skills") or "[]"),
+        "lat": found.get("lat") or 0,
+        "lon": found.get("lon") or 0,
+        "radius_km": found.get("radius_km") or 500,
+    }
     roles_pt = {"volunteer": "Voluntário", "org": "ONG", "admin": "Admin"}
     role_label = roles_pt.get(found.get("role", ""), found.get("role", ""))
     await update.message.reply_text(
@@ -222,7 +232,8 @@ async def cmd_inscrever(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ── Free text ──────────────────────────────────────────────────────────────
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = get_linked_user(update.effective_user.id)
+    telegram_id = update.effective_user.id
+    user = get_linked_user(telegram_id)
     if not user:
         await update.message.reply_text(
             "Você precisa vincular sua conta primeiro. Use /vincular SEU-CODIGO"
@@ -234,16 +245,68 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    text = update.message.text
-    context_type = "volunteer" if user.get("role") == "volunteer" else "assistant"
+    user_message = update.message.text
+    session = user_sessions.get(telegram_id) or {
+        "user_id": user.get("id"),
+        "name": user.get("name", "?"),
+        "role": user.get("role"),
+        "skills": parse_skills(user.get("skills")),
+        "lat": user.get("lat") or 0,
+        "lon": user.get("lon") or 0,
+        "radius_km": user.get("radius_km") or 500,
+    }
+
     await update.message.chat.send_action("typing")
+
     try:
-        r = requests.post(
+        events_resp = requests.get(f"{API_URL}/events", params={"limit": 100}, timeout=10)
+        events = events_resp.json() if events_resp.ok else []
+    except Exception:
+        events = []
+
+    nearby = []
+    for ev in events:
+        if ev.get('lat') and ev.get('lon'):
+            dist = haversine_km(session['lat'], session['lon'], ev['lat'], ev['lon'])
+            if dist <= (session.get('radius_km') or 2000):
+                ev['_dist'] = round(dist)
+                nearby.append(ev)
+    nearby.sort(key=lambda x: x['_dist'])
+    nearby = nearby[:10]
+
+    crisis_list = "\n".join([
+        f"- {ev.get('title','?')} | País: {ev.get('country','?')} | Severidade: {ev.get('severity','?')}/5 | Tipo: {ev.get('crisis_type','?')} | Distância: {ev['_dist']}km | ID: {ev.get('id','?')}"
+        for ev in nearby
+    ]) or "Nenhuma crise encontrada no seu raio de atuação."
+
+    skills_list = parse_skills(session.get('skills'))
+    full_message = f"""[CONTEXTO DO VOLUNTÁRIO]
+Nome: {session['name']}
+Habilidades: {', '.join(skills_list)}
+Localização: lat {session['lat']}, lon {session['lon']}
+Raio de atuação: {session.get('radius_km', 500)} km
+
+[CRISES NO SEU RAIO DE ATUAÇÃO — use apenas estas para recomendar]
+{crisis_list}
+
+[INSTRUÇÕES]
+Responda SEMPRE em português brasileiro.
+Não peça localização ou habilidades — você já tem essas informações acima.
+Recomende apenas crises da lista acima onde o voluntário possa contribuir com suas habilidades.
+Mantenha a conversa focada em voluntariado humanitário.
+Se o voluntário quiser se inscrever em uma crise, diga para usar /inscrever ID_DA_CRISE.
+Nunca responda em inglês.
+
+[MENSAGEM DO VOLUNTÁRIO]
+{user_message}"""
+
+    try:
+        resp = requests.post(
             f"{API_URL}/chat",
-            json={"text": text, "context_type": context_type, "user_id": user["id"]},
-            timeout=60,
+            json={"text": full_message, "context_type": "volunteer"},
+            timeout=90,
         )
-        data = r.json()
+        data = resp.json()
         reply = data.get("reply") or data.get("response") or "Sem resposta disponível."
         await update.message.reply_text(reply)
     except Exception:
