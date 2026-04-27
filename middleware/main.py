@@ -2,7 +2,9 @@ import os
 import sys
 import json
 import math
+import random
 import sqlite3
+import string
 import time
 import asyncio
 import requests
@@ -85,6 +87,21 @@ def get_db():
         except Exception:
             pass
     return conn
+
+@app.on_event("startup")
+def fix_missing_link_codes():
+    db = get_db()
+    rows = db.execute("SELECT id FROM users WHERE link_code IS NULL AND role='volunteer'").fetchall()
+    for row in rows:
+        raw = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        code = raw[:4] + '-' + raw[4:]
+        try:
+            db.execute("UPDATE users SET link_code=? WHERE id=?", (code, row['id']))
+        except Exception:
+            pass
+    db.commit()
+    db.close()
+
 
 # ── Token cache ──
 _token_cache = {"token": None, "exp": 0}
@@ -1246,14 +1263,15 @@ def update_campaign_volunteer_status(cv_id: int, upd: CampaignVolunteerUpdate):
 @app.get("/user/by-code/{code}")
 def get_user_by_code(code: str):
     db = get_db()
+    code_clean = code.replace('-', '').upper()
     row = db.execute(
         "SELECT id, name, email, role, skills, lat, lon, radius_km, available "
-        "FROM users WHERE UPPER(link_code) = UPPER(?)",
-        (code.replace("-", ""),)
+        "FROM users WHERE REPLACE(UPPER(link_code), '-', '') = ? AND role = 'volunteer'",
+        (code_clean,)
     ).fetchone()
     db.close()
     if not row:
-        raise HTTPException(status_code=404, detail="Code not found")
+        raise HTTPException(status_code=404, detail="Código não encontrado ou usuário não é voluntário")
     return dict(row)
 
 @app.post("/user/{user_id}/telegram")

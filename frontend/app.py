@@ -180,14 +180,15 @@ def register():
         radius   = float(request.form.get("radius", 500))
         try:
             db = get_db()
+            link_code = _generate_link_code() if role == 'volunteer' else None
             db.execute(
                 "INSERT INTO users "
                 "(name, email, password_hash, role, skills, languages, "
-                "lat, lon, radius_km, org_name, available) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "lat, lon, radius_km, org_name, available, link_code) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (name, email, hash_pw(password), role,
                  json.dumps([skill] if skill else []), json.dumps(["pt-BR"]),
-                 -23.55, -46.63, radius, org_name, 1)
+                 -23.55, -46.63, radius, org_name, 1, link_code)
             )
             db.commit()
             return redirect("/login")

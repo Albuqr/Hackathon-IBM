@@ -94,6 +94,11 @@ async def cmd_vincular(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     found = r.json()
+    if found.get('role') != 'volunteer':
+        await update.message.reply_text(
+            "❌ Este bot é exclusivo para voluntários. ONGs devem acessar a plataforma pelo site."
+        )
+        return
     tg = update.effective_user
     try:
         requests.post(
@@ -118,6 +123,11 @@ async def cmd_crises(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user:
         await update.message.reply_text(
             "Você precisa vincular sua conta primeiro. Use /vincular SEU-CODIGO"
+        )
+        return
+    if user.get('role') != 'volunteer':
+        await update.message.reply_text(
+            "❌ Este bot é exclusivo para voluntários. ONGs devem acessar a plataforma pelo site."
         )
         return
 
@@ -150,6 +160,11 @@ async def cmd_meusdados(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Você precisa vincular sua conta primeiro. Use /vincular SEU-CODIGO"
         )
         return
+    if user.get('role') != 'volunteer':
+        await update.message.reply_text(
+            "❌ Este bot é exclusivo para voluntários. ONGs devem acessar a plataforma pelo site."
+        )
+        return
 
     skills = parse_skills(user.get("skills"))
     skills_str = ", ".join(skills) if skills else "Não informadas"
@@ -175,6 +190,11 @@ async def cmd_inscrever(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user:
         await update.message.reply_text(
             "Você precisa vincular sua conta primeiro. Use /vincular SEU-CODIGO"
+        )
+        return
+    if user.get('role') != 'volunteer':
+        await update.message.reply_text(
+            "❌ Este bot é exclusivo para voluntários. ONGs devem acessar a plataforma pelo site."
         )
         return
 
@@ -206,6 +226,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user:
         await update.message.reply_text(
             "Você precisa vincular sua conta primeiro. Use /vincular SEU-CODIGO"
+        )
+        return
+    if user.get('role') != 'volunteer':
+        await update.message.reply_text(
+            "❌ Este bot é exclusivo para voluntários. ONGs devem acessar a plataforma pelo site."
         )
         return
 
