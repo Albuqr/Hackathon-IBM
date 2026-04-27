@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crisis — Humanitarian Intelligence</title>
+
+  <!-- Favicons -->
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='lp/public/favicon.svg') }}">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='lp/public/logo.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='lp/public/logo.png') }}">
+
+  <!-- Landing page compiled CSS (Tailwind + app styles) -->
+  <link rel="stylesheet" crossorigin href="{{ url_for('static', filename='lp/assets/index-BvWYjAPO.css') }}">
+
+  <style>
+    html { scroll-behavior: smooth; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React SPA bundle -->
+  <script type="module" crossorigin src="{{ url_for('static', filename='lp/assets/index-CVCDW_Tp.js') }}"></script>
+
+  <script>
+    // ── Smooth scroll wheel ──────────────────────────────────────────────
+    document.addEventListener('wheel', function(e) {
+      e.preventDefault();
+      window.scrollBy({ top: e.deltaY * 0.6, behavior: 'smooth' });
+    }, { passive: false });
+
+    // ── Navigation patches ───────────────────────────────────────────────
+    // Intercept form submit at document level (fires before React's #root handler)
+    document.addEventListener('submit', function(e) {
+      if (e.target && e.target.closest && e.target.closest('#registration-form')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        window.location.href = '/register';
+      }
+    }, true);
+
+    // After React mounts, patch CTA buttons
+    (function patchButtons() {
+      var buttons = document.querySelectorAll('button');
+      var patched = 0;
+
+      buttons.forEach(function(btn) {
+        if (btn._lp_patched) return;
+        var txt = (btn.innerText || '').trim();
+
+        // Nav "Acesso" button → /login
+        if (txt === 'Acesso') {
+          btn._lp_patched = true;
+          btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            window.location.href = '/login';
+          }, true);
+          patched++;
+        }
+
+        // Hero "Acessar Hub" CTA → /login
+        if (txt.includes('Acessar Hub')) {
+          btn._lp_patched = true;
+          btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            window.location.href = '/login';
+          }, true);
+          patched++;
+        }
+      });
+
+      // Keep retrying until React has rendered the nav buttons
+      if (patched < 2) {
+        setTimeout(patchButtons, 150);
+      }
+    })();
+  </script>
+</body>
+</html>

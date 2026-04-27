@@ -124,6 +124,10 @@ def _get_enrolled_ids(user_id):
 
 # ── Auth routes ───────────────────────────────────────────────────────
 @app.route("/")
+def landing():
+    return render_template("landing.html")
+
+@app.route("/app")
 def index():
     if "user_id" not in session:
         return redirect("/login")
