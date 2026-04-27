@@ -232,9 +232,13 @@ async def alert_job(context: ContextTypes.DEFAULT_TYPE):
         events = requests.get(
             f"{API_URL}/events", params={"min_severity": 4, "limit": 100}, timeout=15
         ).json()
-        users = requests.get(f"{API_URL}/users/with-telegram", timeout=10).json()
+        resp = requests.get(f"{API_URL}/users/with-telegram", timeout=10)
+        users = resp.json()
     except Exception as e:
         logger.error(f"[alerts] fetch error: {e}")
+        return
+
+    if not isinstance(users, list):
         return
 
     for ev in events:
@@ -249,6 +253,8 @@ async def alert_job(context: ContextTypes.DEFAULT_TYPE):
             continue
 
         for u in users:
+            if not isinstance(u, dict):
+                continue
             tg_id = u.get("telegram_id")
             if not tg_id:
                 continue
