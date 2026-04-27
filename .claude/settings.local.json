@@ -18,7 +18,13 @@
       "Bash(grep -i wxo find \"C:/Users/davia/OneDrive/Desktop/projects/Hackathon/\" -name \"wxo_client*\" find \"C:/Users/davia/OneDrive/Desktop/projects/Hackathon/\" -name \"*.py\")",
       "Bash(xargs grep *)",
       "Bash(orchestrate agents *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(grep -oP '.{0,200}\\(ciclo de coordena|OPERACIONAL|heartbeat|pulse\\).{0,200}' \"frontend/static/lp/assets/index-CVCDW_Tp.js\")",
+      "Bash(grep -oE '.{0,150}\\(ciclo|coordena|heartbeat|OPERACIONAL\\).{0,150}' \"frontend/static/lp/assets/index-CVCDW_Tp.js\")",
+      "Bash(grep -oE '.{0,300}coordena.{0,1000}' \"frontend/static/lp/assets/index-CVCDW_Tp.js\")",
+      "Bash(grep -oE 'O ciclo.{0,2000}')",
+      "Bash(grep -oE '.{0,300}coordena.{0,5000}' \"frontend/static/lp/assets/index-CVCDW_Tp.js\")",
+      "Bash(grep -oE 'coordena.{0,5000}')"
     ]
   }
 }
