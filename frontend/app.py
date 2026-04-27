@@ -247,13 +247,12 @@ def volunteer_profile():
     user["skills_list"] = json.loads(user.get("skills") or "[]")
     link_code = user.get("link_code") or ""
     if not link_code:
-        raw = "".join(_random.choices(string.ascii_uppercase + string.digits, k=8))
-        link_code = raw[:4] + "-" + raw[4:]
+        link_code = _generate_link_code()
         try:
             db.execute("UPDATE users SET link_code=? WHERE id=?", (link_code, user["id"]))
             db.commit()
         except Exception:
-            link_code = ""
+            pass  # show code even if DB save failed
     db.close()
     missions = api_get(f"/users/{session['user_id']}/missions") or []
     return render_template("volunteer_profile.html", user=user, missions=missions,
