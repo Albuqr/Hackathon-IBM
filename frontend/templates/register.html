@@ -2,8 +2,8 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"><title>Cadastro — Crisis Monitor</title>
-<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='lp/public/favicon.svg') }}">
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='lp/public/logo.png') }}">
+<link rel="shortcut icon" href="{{ url_for('static', filename='lp/public/logo.png') }}">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='lp/public/logo.png') }}">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -43,7 +43,7 @@ input::placeholder{color:#2a2a2a}
       <button type="button" class="role-tab org" onclick="setRole('org')">🏢 ONG</button>
     </div>
     <label>Nome completo</label>
-    <input type="text" name="name" placeholder="Seu nome" required>
+    <input type="text" name="name" id="name-input" placeholder="Seu nome" required>
     <label>Email</label>
     <input type="email" name="email" placeholder="seu@email.com" required>
     <label>Senha</label>
@@ -51,7 +51,7 @@ input::placeholder{color:#2a2a2a}
 
     <div class="vol-fields show" id="volFields">
       <label>Habilidade principal</label>
-      <select name="skill">
+      <select name="skill" id="skill-select">
         <option value="medical">Médico / Saúde</option>
         <option value="logistics">Logística</option>
         <option value="SAR">Busca e Resgate</option>
@@ -91,6 +91,25 @@ function setRole(role){
   document.getElementById('volFields').classList.toggle('show',role==='volunteer');
   document.getElementById('orgFields').classList.toggle('show',role==='org');
 }
+// Pre-fill from URL params (passed from landing page)
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var nome  = params.get('nome');
+  var skill = params.get('skill');
+  var tipo  = params.get('tipo');
+
+  if (tipo === 'org') setRole('org');
+
+  if (nome) {
+    var nameInput = document.getElementById('name-input');
+    if (nameInput) nameInput.value = nome;
+  }
+  if (skill) {
+    var skillSel = document.getElementById('skill-select');
+    if (skillSel) skillSel.value = skill;
+  }
+})();
+
 const c=document.getElementById('c'),x=c.getContext('2d');
 let m={x:-999,y:-999};
 function r(){c.width=innerWidth;c.height=innerHeight}

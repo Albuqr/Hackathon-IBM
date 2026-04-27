@@ -5,12 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Crisis — Humanitarian Intelligence</title>
 
-  <!-- Favicons -->
-  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='lp/public/favicon.svg') }}">
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='lp/public/logo.png') }}">
+  <link rel="shortcut icon" href="{{ url_for('static', filename='lp/public/logo.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='lp/public/logo.png') }}">
 
-  <!-- Landing page compiled CSS (Tailwind + app styles) -->
   <link rel="stylesheet" crossorigin href="{{ url_for('static', filename='lp/assets/index-BvWYjAPO.css') }}">
 
   <style>
@@ -20,36 +18,70 @@
 <body>
   <div id="root"></div>
 
-  <!-- React SPA bundle -->
   <script type="module" crossorigin src="{{ url_for('static', filename='lp/assets/index-CVCDW_Tp.js') }}"></script>
 
   <script>
-    // ── Smooth scroll wheel ──────────────────────────────────────────────
-    document.addEventListener('wheel', function(e) {
-      e.preventDefault();
-      window.scrollBy({ top: e.deltaY * 0.6, behavior: 'smooth' });
-    }, { passive: false });
+    // ── Smooth wheel scroll (desktop only) ──────────────────────────────
+    var isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ||
+                   window.matchMedia('(pointer: coarse)').matches;
+    if (!isMobile) {
+      document.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        window.scrollBy({ top: e.deltaY * 0.85, behavior: 'smooth' });
+      }, { passive: false });
+    }
 
-    // ── Navigation patches ───────────────────────────────────────────────
-    // Intercept form submit at document level (fires before React's #root handler)
+    // ── Skill map: landing dropdown text → register.html option values ──
+    var SKILL_MAP = {
+      'Médico / Saúde':       'medical',
+      'Resgate e Campo':      'SAR',
+      'Logística de Suporte': 'logistics',
+      'Arquitetura de Dados': 'engineering',
+      'Engenharia':           'engineering',
+      'Logística':            'logistics',
+      'Tecnologia':           'general',
+      'Educação':             'general',
+      'Comunicação':          'communication',
+      'Jurídico':             'general',
+      'Outros':               'general'
+    };
+
+    function readFormFields() {
+      var section = document.getElementById('registration-form');
+      var form    = section ? section.querySelector('form') : null;
+      var nome    = '';
+      var skill   = '';
+      if (form) {
+        var nameInput  = form.querySelector('input[type="text"]');
+        var skillField = form.querySelector('select');
+        nome  = nameInput  ? nameInput.value.trim()  : '';
+        skill = skillField ? (SKILL_MAP[skillField.value] || skillField.value) : '';
+      }
+      return { nome: nome, skill: skill };
+    }
+
+    // ── Intercept form submit (capture phase, before React's handler) ───
     document.addEventListener('submit', function(e) {
       if (e.target && e.target.closest && e.target.closest('#registration-form')) {
         e.preventDefault();
         e.stopImmediatePropagation();
-        window.location.href = '/register';
+        var f = readFormFields();
+        var params = [];
+        if (f.nome)  params.push('nome='  + encodeURIComponent(f.nome));
+        if (f.skill) params.push('skill=' + encodeURIComponent(f.skill));
+        window.location.href = '/register' + (params.length ? '?' + params.join('&') : '');
       }
     }, true);
 
-    // After React mounts, patch CTA buttons
+    // ── Patch buttons after React mounts ────────────────────────────────
     (function patchButtons() {
-      var buttons = document.querySelectorAll('button');
-      var patched = 0;
+      var found = { acesso: false, acessarHub: false, acessoInstitucional: false };
 
-      buttons.forEach(function(btn) {
+      document.querySelectorAll('button').forEach(function(btn) {
         if (btn._lp_patched) return;
         var txt = (btn.innerText || '').trim();
 
-        // Nav "Acesso" button → /login
+        // Nav "Acesso" → /login
         if (txt === 'Acesso') {
           btn._lp_patched = true;
           btn.addEventListener('click', function(e) {
@@ -57,7 +89,7 @@
             e.preventDefault();
             window.location.href = '/login';
           }, true);
-          patched++;
+          found.acesso = true;
         }
 
         // Hero "Acessar Hub" CTA → /login
@@ -68,12 +100,25 @@
             e.preventDefault();
             window.location.href = '/login';
           }, true);
-          patched++;
+          found.acessarHub = true;
+        }
+
+        // Registration "Acesso Institucional" tab → /register?tipo=org&nome=...
+        if (txt.includes('Acesso Institucional')) {
+          btn._lp_patched = true;
+          btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            var f = readFormFields();
+            var url = '/register?tipo=org';
+            if (f.nome) url += '&nome=' + encodeURIComponent(f.nome);
+            window.location.href = url;
+          }, true);
+          found.acessoInstitucional = true;
         }
       });
 
-      // Keep retrying until React has rendered the nav buttons
-      if (patched < 2) {
+      if (!found.acesso || !found.acessarHub || !found.acessoInstitucional) {
         setTimeout(patchButtons, 150);
       }
     })();
