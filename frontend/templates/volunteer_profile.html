@@ -64,6 +64,14 @@
 .unenroll-btn{background:none;border:1px solid #2a2a2a;color:#555;border-radius:4px;font-size:10px;padding:3px 8px;cursor:pointer;font-family:inherit;flex-shrink:0}
 .unenroll-btn:hover{border-color:#555;color:#ccc}
 .empty-state{text-align:center;color:#333;font-size:13px;padding:24px 0}
+/* Telegram link code */
+.profile-section{border-top:1px solid #111;padding-top:12px;margin-top:4px}
+.section-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#555;margin-bottom:8px}
+.link-code-display{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;color:#60a5fa;letter-spacing:.1em;margin-bottom:6px}
+.copy-btn{background:none;border:1px solid #2a2a2a;border-radius:4px;color:#555;font-size:10px;padding:2px 7px;cursor:pointer;font-family:inherit;margin-left:8px;transition:color .15s,border-color .15s}
+.copy-btn:hover{color:#ccc;border-color:#555}
+.link-hint{font-size:10px;color:#444;line-height:1.5}
+.link-hint span{color:#60a5fa;font-family:'JetBrains Mono',monospace}
 </style>
 {% endblock %}
 
@@ -119,13 +127,13 @@
       </div>
 
       {% if link_code %}
-      <div style="border-top:1px solid #111;padding-top:12px;margin-top:4px">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#555;margin-bottom:8px">Conectar Telegram</div>
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-          <span id="linkCodeDisplay" style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;color:#60a5fa;letter-spacing:.1em">{{ link_code }}</span>
-          <button onclick="copyLinkCode()" style="background:none;border:1px solid #2a2a2a;border-radius:4px;color:#555;font-size:10px;padding:2px 7px;cursor:pointer;font-family:inherit" id="copyBtn">Copiar</button>
+      <div class="profile-section">
+        <div class="section-label">Conectar Telegram</div>
+        <div>
+          <span class="link-code-display">{{ link_code }}</span>
+          <button class="copy-btn" onclick="navigator.clipboard.writeText('{{ link_code }}'); this.textContent='Copiado!'; this.style.color='#22c55e'; this.style.borderColor='#22c55e'; setTimeout(()=>{this.textContent='Copiar código';this.style.color='';this.style.borderColor='';},1500)">Copiar código</button>
         </div>
-        <div style="font-size:10px;color:#444;line-height:1.5">Use <span style="color:#60a5fa;font-family:'JetBrains Mono',monospace">/vincular {{ link_code }}</span> no bot do Telegram</div>
+        <div class="link-hint">Use <span>/vincular {{ link_code }}</span> no bot do Telegram</div>
       </div>
       {% endif %}
     </div>
@@ -187,22 +195,6 @@
 <script>
 const USER_ID = {{ session.get('user_id', 0) }};
 let currentSkills = {{ user.skills_list|tojson }};
-
-// ── Link code copy ──
-function copyLinkCode() {
-  const code = document.getElementById('linkCodeDisplay').textContent;
-  navigator.clipboard.writeText(code).then(function() {
-    const btn = document.getElementById('copyBtn');
-    btn.textContent = 'Copiado!';
-    btn.style.color = '#22c55e';
-    btn.style.borderColor = '#22c55e';
-    setTimeout(function() { btn.textContent = 'Copiar'; btn.style.color = ''; btn.style.borderColor = ''; }, 2000);
-  }).catch(function() {
-    const btn = document.getElementById('copyBtn');
-    btn.textContent = 'Erro';
-    setTimeout(function() { btn.textContent = 'Copiar'; }, 2000);
-  });
-}
 
 // ── Availability toggle ──
 function updateAvailability(val) {
@@ -273,18 +265,16 @@ const volId      = {{ user.id or 0 }};
 let closestCrises = [];
 let conversationHistory = []; // in-memory only — reset on every page load
 
-function haversineKm(lat1, lon1, lat2, lon2) {
-  const R = 6371; // km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLon = (lon2-lon1) * Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.asin(Math.sqrt(a));
 }
 // Sanity check: SP→Rio ~360km, SP→Buenos Aires ~1700km
-console.log('[haversine] SP→Rio:', haversineKm(-23.55,-46.63,-22.91,-43.17).toFixed(0),'km (expect ~360)');
-console.log('[haversine] SP→BuenosAires:', haversineKm(-23.55,-46.63,-34.60,-58.38).toFixed(0),'km (expect ~1700)');
+console.log('[haversine] SP→Rio:', haversine(-23.55,-46.63,-22.91,-43.17).toFixed(0),'km (expect ~360)');
+console.log('[haversine] SP→BuenosAires:', haversine(-23.55,-46.63,-34.60,-58.38).toFixed(0),'km (expect ~1700)');
 
 function buildMessage(userMessage) {
   const skillsStr = VOL_SKILLS.length ? VOL_SKILLS.join(', ') : 'não informadas';
@@ -338,7 +328,7 @@ function renderCrisisCards(crises, totalChecked, radius) {
     container.innerHTML = html;
     return;
   }
-  container.innerHTML = crises.slice(0, 5).map(c => {
+  container.innerHTML = crises.slice(0, 10).map(c => {
     const sev = Math.min(parseInt(c.severity) || 1, 5);
     const color = SEV_COLORS[sev];
     const typePt = TYPE_PT[(c.crisis_type || '').toLowerCase()] || c.crisis_type || '—';
@@ -441,11 +431,13 @@ function fetchAndRenderCrisisCards() {
         return;
       }
       const radius = volRadius > 0 ? volRadius : 5000;
-      const withDist = allEvents
-        .filter(e => e.lat != null && e.lon != null && !(parseFloat(e.lat) === 0 && parseFloat(e.lon) === 0))
-        .map(e => ({ ...e, _dist: haversineKm(volLat, volLon, parseFloat(e.lat), parseFloat(e.lon)) }));
-      withDist.sort((a, b) => a._dist - b._dist);
-      const nearby = withDist.filter(e => e._dist <= radius);
+      const nearby = allEvents.filter(ev => {
+        if (!ev.lat || !ev.lon) return false;
+        const dist = haversine(volLat, volLon, parseFloat(ev.lat), parseFloat(ev.lon));
+        ev._dist = Math.round(dist);
+        return dist <= radius;
+      });
+      nearby.sort((a, b) => a._dist - b._dist);
 
       console.log('[debug] volLat:', volLat, 'volLon:', volLon, 'volRadius:', volRadius);
       console.log('[debug] total events from API:', allEvents.length);
@@ -453,15 +445,10 @@ function fetchAndRenderCrisisCards() {
       if (nearby.length > 0) {
         console.log('[debug] first nearby event:', nearby[0]);
       }
-      const container = document.getElementById('crisisCards');
-      console.log('[debug] container found:', !!container);
 
-      // Context for agent: all within radius (up to 10), fallback to 10 closest
-      closestCrises = (nearby.length > 0 ? nearby : withDist).slice(0, 10);
+      closestCrises = nearby.slice(0, 10);
       showCrisisPanel();
-      // If nothing within radius, show the 5 closest events as fallback
-      const toRender = nearby.length > 0 ? nearby : withDist.slice(0, 5);
-      renderCrisisCards(toRender, withDist.length, radius);
+      renderCrisisCards(nearby.slice(0, 10), allEvents.length, radius);
     })
     .catch(err => {
       console.log('[crisis] fetch error:', err);

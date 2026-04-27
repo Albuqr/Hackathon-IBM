@@ -230,20 +230,34 @@ def volunteer_map():
 def volunteer_profile():
     if session.get("role") not in ("volunteer", "admin"):
         return redirect("/org/dashboard")
+    import random as _random
     db = get_db()
+    # Ensure column exists for older DBs
+    try:
+        db.execute("ALTER TABLE users ADD COLUMN link_code TEXT UNIQUE")
+        db.commit()
+    except Exception:
+        pass
     user = db.execute("SELECT * FROM users WHERE id=?",
                       (session["user_id"],)).fetchone()
-    db.close()
     if not user:
+        db.close()
         return redirect("/logout")
     user = dict(user)
     user["skills_list"] = json.loads(user.get("skills") or "[]")
-    db2 = get_db()
-    link_code = _ensure_link_code(db2, user["id"])
-    db2.close()
+    link_code = user.get("link_code") or ""
+    if not link_code:
+        raw = "".join(_random.choices(string.ascii_uppercase + string.digits, k=8))
+        link_code = raw[:4] + "-" + raw[4:]
+        try:
+            db.execute("UPDATE users SET link_code=? WHERE id=?", (link_code, user["id"]))
+            db.commit()
+        except Exception:
+            link_code = ""
+    db.close()
     missions = api_get(f"/users/{session['user_id']}/missions") or []
     return render_template("volunteer_profile.html", user=user, missions=missions,
-                           link_code=link_code or "")
+                           link_code=link_code)
 
 @app.route("/volunteer/missions")
 @require_login
