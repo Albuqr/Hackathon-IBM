@@ -5,8 +5,6 @@ WORKDIR /app
 COPY middleware/ middleware/
 COPY tools/ tools/
 COPY agents/ agents/
-COPY data/ data/
-COPY .env .env
 
 RUN pip install --no-cache-dir -r middleware/requirements.txt
 
