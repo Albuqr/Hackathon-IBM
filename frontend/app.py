@@ -405,7 +405,8 @@ def org_campaign_detail(campaign_id):
     campaign = api_get(f"/campaigns/{campaign_id}")
     if not campaign or isinstance(campaign, list):
         return redirect("/org/dashboard")
-    return render_template("org_campaign_detail.html", campaign=campaign)
+    return render_template("org_campaign_detail.html", campaign=campaign,
+                           stadia_key=STADIA_KEY)
 
 @app.route("/org/missions/new", methods=["GET", "POST"])
 @require_login
