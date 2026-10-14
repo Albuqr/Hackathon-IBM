@@ -108,12 +108,12 @@ input[type=range]{width:100%;accent-color:#3b82f6}
 #dotgrid{
   position:absolute;
   top:0;left:0;
-  z-index:2;
   pointer-events:none;
 }
 
 /* ── TILE FILTER ── */
 .leaflet-tile-pane{filter:none !important}
+.base-dim{filter:invert(1) brightness(.2)}
 
 /* ── STATUSBAR ── */
 #statusbar{
@@ -331,10 +331,10 @@ map.on('zoomend', function() {
   }
 });
 
-// Base dark tile — no noWrap so it fills wide screens
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; CARTO',
-  subdomains: 'abcd',
+// Base tile — CARTO now requires an API key, so use Stadia (white land / black sea) dimmed to dark via CSS
+L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_toner_background/{z}/{x}/{y}{r}.png?api_key={{ stadia_key }}', {
+  attribution: '&copy; Stadia Maps &copy; Stamen Design &copy; OpenStreetMap',
+  className: 'base-dim',
   maxZoom: 12,
   minZoom: 2
 }).addTo(map);
@@ -582,13 +582,19 @@ const cvs  = document.getElementById('dotgrid');
 const cctx = cvs.getContext('2d');
 let mouse  = { x: -999, y: -999 };
 
+// Own pane between tiles (200) and markers/overlays (400+): dots sit above the map, below crisis dots + popups
+map.createPane('dots').style.zIndex = 250;
+map.getPane('dots').appendChild(cvs);
+
 document.addEventListener('mousemove', function(e) {
-  const rect = cvs.getBoundingClientRect();
+  const rect = mapWrap.getBoundingClientRect();
   mouse.x = e.clientX - rect.left;
   mouse.y = e.clientY - rect.top;
 });
 
 function drawDotGrid() {
+  // pane pans with the map; pin the canvas back to the viewport
+  L.DomUtil.setPosition(cvs, map.containerPointToLayerPoint([0, 0]));
   cctx.clearRect(0, 0, cvs.width, cvs.height);
   const GRID = 24;
   for (let x = GRID/2; x < cvs.width; x += GRID) {
