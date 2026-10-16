@@ -43,7 +43,10 @@
   CRISES = CRISES || []; VOL = VOL || {};
   let INSCRITO = new Set((INSC || []).map((i) => i.id));
 
-  const estado = { ind: "severidade", sel: null, busca: "", f: { uf: "", sev: 1, tipo: "", fonte: "", verif: "" }, pontos: true };
+  // padrões vêm dos controles da página: severidade ≥ 3 e sem pontos, para o mapa abrir limpo
+  const estado = { ind: "severidade", sel: null, busca: "", limite: 10,
+    f: { uf: "", sev: Number(document.getElementById("f-sev").value), tipo: "", fonte: "", verif: "" },
+    pontos: document.getElementById("f-pontos").checked };
 
   // por município: severidade máxima e nº de crises, só com as crises que passam nos filtros
   let VISIVEIS = [], POR_MUN = new Map();
@@ -112,7 +115,7 @@
   function estilo(f) {
     const sel = estado.sel === f.properties.id;
     return { fillColor: cor(f.properties), fillOpacity: 1, color: sel ? COR.destaque : COR.traco,
-             weight: sel ? 2.5 : 0.4, opacity: sel ? 1 : 0.8 };
+             weight: sel ? 2.5 : 0.25, opacity: sel ? 1 : 0.55 };
   }
   const camada = L.geoJSON(M.geojson, {
     renderer: render, style: estilo,
@@ -159,7 +162,8 @@
     if (I.discreta) {
       box.replaceChildren(titulo,
         el("div", { class: "legenda-escala", "aria-hidden": "true" }, [COR.vazio, ...SEV].map((c) => el("span", { style: `background:${c}` }))),
-        el("div", { class: "legenda-rotulos uniforme" }, ["sem", "1", "2", "3", "4", "5"].map((r) => el("span", { texto: r }))));
+        el("div", { class: "legenda-rotulos uniforme" }, ["sem", "1", "2", "3", "4", "5"].map((r) => el("span", { texto: r }))),
+        estado.f.sev > 1 ? el("p", { class: "legenda-nota", texto: `mostrando severidade ${estado.f.sev} ou mais · mude em Filtros` }) : null);
       return;
     }
     box.replaceChildren(titulo,
@@ -212,10 +216,9 @@
   function ficha(animar) {
     const box = document.getElementById("ficha");
     const p = POR_ID.get(estado.sel);
+    box.hidden = !p && CRISES.length > 0;  // sem seleção, a ficha some e o painel fica só com a lista
     if (!p) {
-      box.replaceChildren(el("p", { class: "vazio", texto: CRISES.length
-        ? "Clique num município no mapa ou na lista para ver as crises dele."
-        : "Ainda não há crises carregadas. Um admin precisa clicar em \"Atualizar dados\"." }));
+      box.replaceChildren(el("p", { class: "vazio", texto: "Ainda não há crises carregadas. Um admin precisa clicar em \"Atualizar dados\"." }));
       return;
     }
     const a = POR_MUN.get(p.id);
@@ -231,16 +234,16 @@
     if (animar) { box.classList.remove("entrando"); void box.offsetWidth; box.classList.add("entrando"); }
   }
 
-  const LIMITE = 150;
   const semAcento = (t) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   const CHAVE = new Map(MUNS.map((p) => [p.id, semAcento(`${p.nome} ${p.uf}`)]));
   function ranking() {
     const q = semAcento(estado.busca.trim());
     const base = q ? MUNS.filter((p) => CHAVE.get(p.id).includes(q) || p.uf.toLowerCase() === q).sort((a, b) => I.valor(b) - I.valor(a)) : ORDEM;
-    const ord = base.slice(0, LIMITE);
-    document.getElementById("ranking-pe").textContent = base.length > LIMITE
-      ? `Mostrando ${LIMITE} de ${nf0.format(base.length)}. Busque para achar os outros.`
-      : base.length ? "" : (q ? "Nenhum município encontrado." : "Nenhum município com valor neste indicador.");
+    const ord = base.slice(0, estado.limite);
+    document.getElementById("ranking-pe").textContent = base.length
+      ? `${nf0.format(ord.length)} de ${nf0.format(base.length)}`
+      : (q ? "Nenhum município encontrado." : "Nenhum município com valor neste indicador.");
+    document.getElementById("ranking-mais").hidden = base.length <= estado.limite;
     document.getElementById("ranking").replaceChildren(...ord.map((p) => el("li", {}, el("button", {
       type: "button", "data-id": p.id, "aria-current": estado.sel === p.id ? "true" : "false",
     }, [
@@ -257,8 +260,9 @@
   let tBusca;
   document.getElementById("busca").addEventListener("input", (e) => {
     clearTimeout(tBusca);
-    tBusca = setTimeout(() => { estado.busca = e.target.value; ranking(); }, 120);
+    tBusca = setTimeout(() => { estado.busca = e.target.value; estado.limite = 10; ranking(); }, 120);
   });
+  document.getElementById("ranking-mais").addEventListener("click", () => { estado.limite += 20; ranking(); });
 
   function selecionar(id, { centralizar }) {
     estado.sel = estado.sel === id && !centralizar ? null : id;
@@ -268,6 +272,8 @@
   }
 
   function atualizarTudo() {
+    estado.limite = 10;
+    contarFiltros();
     filtrar(); escolher(estado.ind); ordenar(); pintar(); legenda(); ficha(false); ranking(); desenharPontos(); atualizarPixels();
   }
 
@@ -289,7 +295,17 @@
   for (const [id, k, num] of [["f-uf", "uf"], ["f-sev", "sev", true], ["f-tipo", "tipo"], ["f-fonte", "fonte"], ["f-verif", "verif"]]) {
     document.getElementById(id).addEventListener("change", (e) => { estado.f[k] = num ? Number(e.target.value) : e.target.value; atualizarTudo(); });
   }
-  document.getElementById("f-pontos").addEventListener("change", (e) => { estado.pontos = e.target.checked; desenharPontos(); });
+  document.getElementById("f-pontos").addEventListener("change", (e) => { estado.pontos = e.target.checked; desenharPontos(); contarFiltros(); });
+  const painelFiltros = document.getElementById("filtros");
+  document.getElementById("mais-filtros").addEventListener("click", (e) => {
+    painelFiltros.hidden = !painelFiltros.hidden;
+    e.currentTarget.setAttribute("aria-expanded", String(!painelFiltros.hidden));
+  });
+  function contarFiltros() {  // quantos filtros fora do padrão estão ligados (no botão "Filtros")
+    const f = estado.f;
+    const n = [f.sev !== 3, f.tipo, f.fonte, f.verif, estado.pontos].filter(Boolean).length;
+    document.getElementById("filtros-conta").textContent = n ? String(n) : "";
+  }
 
   // =====================================================================
   // ABERTURA: Brasil em pixels
@@ -429,7 +445,7 @@
   });
 
   // ---------- início ----------
-  filtrar(); escolher(estado.ind); ordenar(); pintar(); legenda(); ficha(false); ranking(); desenharPontos();
+  contarFiltros(); filtrar(); escolher(estado.ind); ordenar(); pintar(); legenda(); ficha(false); ranking(); desenharPontos();
   montarCidade();
   inicio = performance.now();
   iniciarLaco();

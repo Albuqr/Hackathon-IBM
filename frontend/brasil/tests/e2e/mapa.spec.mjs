@@ -14,6 +14,12 @@ let browser;
 before(async () => { browser = await chromium.launch(); });
 after(async () => { await browser?.close(); });
 
+async function mostrarTudo(page) {  // abre "Filtros", severidade ≥ 1 e pontos ligados
+  await page.click("#mais-filtros");
+  await page.selectOption("#f-sev", "1");
+  await page.check("#f-pontos");
+}
+
 async function abrirMapa(viewport = { width: 1440, height: 900 }) {
   const page = await (await browser.newContext({ viewport })).newPage();
   const t0 = Date.now();
@@ -45,6 +51,7 @@ test("AC-007.1 trocar para Voluntários repinta o mapa e muda a legenda", async 
 
 test("AC-008.1 filtro UF = RS e tipo = meteorológico deixa só os pontos do RS desse tipo", async () => {
   const { page } = await abrirMapa();
+  await mostrarTudo(page);
   await page.selectOption("#f-uf", "RS");
   await page.selectOption("#f-tipo", "meteorological");
   const titulos = await page.evaluate(() => Object.values(window.__brasilMapa._layers)
@@ -105,6 +112,7 @@ test("AC-012.1 AC-013.1 AC-011.1 ONG cria campanha pelo mapa, convida e o volunt
 
 test("AC-026.1 crise não verificada tem contorno tracejado e a dica diz \"não verificada\"", async () => {
   const { page } = await abrirMapa();
+  await mostrarTudo(page);
   const ponto = await page.evaluate(() => {
     const l = Object.values(window.__brasilMapa._layers).find((l) => l.options?.radius && /notícia alagamento Recife/.test(l.getTooltip()?.getContent() || ""));
     return l && { dash: l.options.dashArray, dica: l.getTooltip().getContent() };
@@ -114,4 +122,12 @@ test("AC-026.1 crise não verificada tem contorno tracejado e a dica diz \"não 
   assert.match(ponto.dica, /não verificada/);
   await page.selectOption("#f-verif", "nao_verificada");
   assert.match(await page.locator("#contagem").textContent(), /^1 crises/);
+});
+
+test("mapa abre limpo: sem pontos, severidade ≥ 3, filtros recolhidos e ranking com 10", async () => {
+  const { page } = await abrirMapa();
+  assert.equal(await page.isHidden("#filtros"), true);
+  assert.equal(await page.evaluate(() => Object.values(window.__brasilMapa._layers).filter((l) => l.options?.radius).length), 0);
+  assert.ok((await page.locator("#ranking li").count()) <= 10);
+  assert.equal(await page.isHidden("#ficha"), true);
 });

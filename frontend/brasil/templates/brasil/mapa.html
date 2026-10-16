@@ -28,21 +28,24 @@
   </div>
 
   <div class="barra-ferramentas" role="toolbar" aria-label="Controles do mapa">
-    <div class="segmentado" id="ctl-indicador" role="group" aria-label="Indicador">
+    <div class="segmentado" id="ctl-indicador" role="group" aria-label="O que pintar">
       <button type="button" data-v="severidade" aria-pressed="true">Severidade</button>
       <button type="button" data-v="crises" aria-pressed="false">Nº de crises</button>
       <button type="button" data-v="voluntarios" aria-pressed="false">Voluntários</button>
       <button type="button" data-v="densidade" aria-pressed="false">Densidade</button>
       <button type="button" data-v="populacao" aria-pressed="false">População</button>
     </div>
-    <div class="filtros" id="filtros">
-      <label>UF <select id="f-uf"><option value="">todas</option></select></label>
-      <label>Severidade mín. <select id="f-sev"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
-      <label>Tipo <select id="f-tipo"><option value="">todos</option></select></label>
-      <label>Fonte <select id="f-fonte"><option value="">todas</option></select></label>
-      <label>Verificação <select id="f-verif"><option value="">todas</option><option value="verificada">verificadas</option><option value="nao_verificada">não verificadas</option></select></label>
-      <label class="marcar"><input type="checkbox" id="f-pontos" checked> pontos</label>
+    <div class="filtros-rapidos">
+      <label class="campo-uf"><span class="visually-hidden">UF</span><select id="f-uf"><option value="">Todas as UFs</option></select></label>
+      <button class="botao botao-neutro" type="button" id="mais-filtros" aria-expanded="false" aria-controls="filtros">Filtros<span class="filtros-conta" id="filtros-conta"></span></button>
     </div>
+  </div>
+  <div class="filtros" id="filtros" hidden>
+    <label>Severidade mínima <select id="f-sev"><option value="1">1 — todas</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option></select></label>
+    <label>Tipo <select id="f-tipo"><option value="">todos</option></select></label>
+    <label>Fonte <select id="f-fonte"><option value="">todas</option></select></label>
+    <label>Verificação <select id="f-verif"><option value="">todas</option><option value="verificada">verificadas</option><option value="nao_verificada">não verificadas</option></select></label>
+    <label class="marcar"><input type="checkbox" id="f-pontos"> mostrar pontos das crises</label>
   </div>
 
   <div class="mapa-grade">
@@ -51,12 +54,12 @@
       <div class="legenda" id="legenda" aria-live="polite"></div>
     </div>
     <aside class="painel">
-      <article class="cartao ficha" id="ficha" aria-live="polite"></article>
+      <article class="cartao ficha" id="ficha" aria-live="polite" hidden></article>
       <div class="cartao">
-        <p class="cartao-titulo">Ranking · <span class="contagem" id="contagem"></span></p>
+        <p class="cartao-titulo">Municípios mais afetados · <span class="contagem" id="contagem"></span></p>
         <label class="busca"><span class="visually-hidden">Buscar município</span><input type="search" id="busca" placeholder="Buscar município ou UF" autocomplete="off"></label>
         <ol class="ranking" id="ranking"></ol>
-        <p class="ranking-pe" id="ranking-pe"></p>
+        <div class="ranking-pe"><span id="ranking-pe"></span><button class="link-botao" type="button" id="ranking-mais" hidden>Mostrar mais</button></div>
       </div>
     </aside>
   </div>
