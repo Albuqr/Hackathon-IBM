@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mapa do Brasil</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#mapa">Pular para o mapa</a>
+
+  <!-- Abertura: Brasil em pixels ("bolinhas") -->
+  <section class="hero">
+    <div class="hero-texto">
+      <p class="rotulo"><span class="rotulo-marca" aria-hidden="true"></span>Censo 2022 · 5.570 municípios</p>
+      <h1 class="hero-titulo"><span class="linha"><span>Brasil</span></span><span class="linha"><span>em pixels</span></span></h1>
+      <div class="hero-pe">
+        <p class="hero-lede">Cada pixel é um pedaço do país. Quanto maior e mais claro, maior a densidade demográfica do município.</p>
+        <div class="hero-acoes">
+          <a class="botao botao-claro" href="#mapa"><span class="botao-icone" aria-hidden="true">+</span>Explorar o mapa</a>
+        </div>
+      </div>
+    </div>
+    <figure class="hero-cidade" aria-label="Brasil desenhado em pixels: quanto maior e mais claro o pixel, maior o indicador do município">
+      <canvas id="cidade" role="img" aria-label="Mapa em pixels dos municípios do Brasil"></canvas>
+      <div class="cidade-tag" id="cidade-tag" hidden></div>
+      <figcaption class="hero-legenda">
+        <span class="px px-p" aria-hidden="true"></span>valor baixo
+        <span class="px px-g" aria-hidden="true"></span>valor alto
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- Explorador: mapa coroplético -->
+  <section class="explorar" id="mapa" aria-labelledby="mapa-titulo">
+    <div class="secao-cabeca">
+      <h2 id="mapa-titulo">Mapa dos municípios</h2>
+      <p class="secao-nota">Escolha o que pintar no mapa. Clique num município para ver os números dele.</p>
+    </div>
+
+    <div class="controles" role="toolbar" aria-label="Controles do mapa">
+      <div class="segmentado" id="ctl-indicador" role="group" aria-label="Indicador">
+        <button type="button" data-v="densidade" aria-pressed="true">Densidade</button>
+        <button type="button" data-v="populacao" aria-pressed="false">População</button>
+        <button type="button" data-v="area" aria-pressed="false">Área</button>
+      </div>
+    </div>
+
+    <div class="explorar-grade">
+      <div class="mapa-caixa">
+        <div id="mapa-leaflet" class="mapa" aria-label="Mapa coroplético dos municípios"></div>
+        <div class="legenda" id="legenda" aria-live="polite"></div>
+      </div>
+      <aside class="painel">
+        <article class="ficha" id="ficha" aria-live="polite"></article>
+        <div class="ranking-caixa">
+          <label class="busca"><span class="visually-hidden">Buscar município</span><input type="search" id="busca" placeholder="Buscar município ou UF" autocomplete="off"></label>
+          <ol class="ranking" id="ranking"></ol>
+          <p class="ranking-pe" id="ranking-pe"></p>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <footer class="rodape">
+    <p>Fonte: IBGE, Censo Demográfico 2022 (tabela 4714) e malhas territoriais dos municípios e UFs. Mapa com <a href="https://leafletjs.com" rel="noopener">Leaflet</a>.</p>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
