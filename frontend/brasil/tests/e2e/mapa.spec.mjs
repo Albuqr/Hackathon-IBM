@@ -56,6 +56,7 @@ test("AC-008.1 filtro UF = RS e tipo = meteorológico deixa só os pontos do RS 
 test("AC-009.1 Quero ajudar inscreve e Cancelar inscrição desfaz, pela interface", async () => {
   const { page } = await abrirMapa();
   await page.fill("#busca", "Caxias do Sul");
+  await page.waitForFunction(() => document.querySelector("#ranking .rk-nome")?.textContent.startsWith("Caxias do Sul"));
   await page.locator("#ranking button").first().click();
   const botao = page.locator(".lista-crises button").first();
   if ((await botao.textContent()) === "Cancelar inscrição") { await botao.click(); await page.waitForTimeout(300); }
@@ -69,4 +70,35 @@ test("AC-009.1 Quero ajudar inscreve e Cancelar inscrição desfaz, pela interfa
 test("NFR-008 sem rolagem horizontal em 390 px", async () => {
   const { page } = await abrirMapa({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+});
+
+test("AC-012.1 AC-013.1 AC-011.1 ONG cria campanha pelo mapa, convida e o voluntário aceita", async () => {
+  const ctxVol = await browser.newContext();
+  const vol = await ctxVol.newPage();
+  await vol.goto(`${BASE}/brasil/dev-login/voluntario`); // garante que a voluntária de teste existe
+
+  const ong = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+  await ong.goto(`${BASE}/brasil/dev-login/ong`);
+  await ong.waitForFunction(() => window.__brasilPronto === true);
+  await ong.fill("#busca", "Caxias do Sul");
+  await ong.waitForFunction(() => document.querySelector("#ranking .rk-nome")?.textContent.startsWith("Caxias do Sul"));
+  await ong.locator("#ranking button").first().click();
+  await ong.locator(".lista-crises a.crise-link").first().click();
+  await ong.waitForURL(/\/brasil\/ong\?crise=/);
+  assert.equal(await ong.locator('select[name="crisis_id"]').inputValue(), "teste-caxias");
+  const titulo = `Campanha E2E ${Date.now()}`;
+  await ong.fill('input[name="title"]', titulo);
+  await ong.fill('input[name="target_volunteers"]', "10");
+  await ong.click('#form-campanha button[type="submit"]');
+  await ong.waitForURL(/\/brasil\/ong\/campanhas\/\d+$/);
+  await ong.locator('button[data-acao="POST"]').first().click();
+  await ong.waitForSelector('button[data-acao="DELETE"]');
+
+  await vol.goto(`${BASE}/brasil/campanhas`);
+  const item = vol.locator(".lista-crises li", { hasText: titulo });
+  await Promise.all([vol.waitForEvent("load"), item.locator('button[data-status="confirmed"]').click()]);
+  assert.match(await vol.locator(".lista-crises li", { hasText: titulo }).locator(".status").textContent(), /confirmado/);
+
+  await ong.reload();
+  assert.match(await ong.locator(".lista-crises .status").first().textContent(), /confirmado/);
 });

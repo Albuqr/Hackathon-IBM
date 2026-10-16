@@ -193,11 +193,14 @@
       el("span", { class: "crise-meta", texto: `${TIPOS[c.crisis_type] || c.crisis_type} · ${c.source.toUpperCase()} · ${nf0.format(c.inscritos || 0)} inscritos` }),
       naoVer ? el("span", { class: "selo", texto: "não verificada" }) : null,
       c.link_fonte ? el("a", { class: "crise-meta", href: c.link_fonte, target: "_blank", rel: "noopener", texto: "fonte ↗" }) : null,
-      PODE_INSCREVER ? el("div", { class: "crise-acoes" }, el("button", {
-        type: "button", class: INSCRITO.has(c.id) ? "cancelar" : null,
-        texto: INSCRITO.has(c.id) ? "Cancelar inscrição" : "Quero ajudar",
-        onclick: (e) => alternar(c, e.currentTarget),
-      })) : null,
+      PODE_INSCREVER ? el("div", { class: "crise-acoes" }, [
+        el("button", {
+          type: "button", class: INSCRITO.has(c.id) ? "cancelar" : null,
+          texto: INSCRITO.has(c.id) ? "Cancelar inscrição" : "Quero ajudar",
+          onclick: (e) => alternar(c, e.currentTarget),
+        }),
+        CFG.nova_campanha ? el("a", { class: "crise-link", href: `${CFG.nova_campanha}?crise=${encodeURIComponent(c.id)}#nova`, texto: "Criar campanha" }) : null,
+      ]) : null,
     ]);
   }
 

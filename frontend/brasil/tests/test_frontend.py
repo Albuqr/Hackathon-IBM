@@ -105,3 +105,41 @@ def test_malha_js_vira_script_e_fica_em_cache(front, monkeypatch):
         r = cli.get("/brasil/malha.js")
         assert r.get_data() == b'window.MALHA={"geojson":{}};'
     assert len(chamadas) == 1
+
+
+# AC-012.1
+def test_ac_012_1_criar_campanha_usa_a_ong_da_sessao(front, logar):
+    cli, api = front
+    logar(cli, "org", uid=3)
+    api.respostas[("POST", "/campanhas")] = (200, {"id": 9})
+    r = cli.post("/brasil/api/campanhas", json={"org_id": 999, "title": "Apoio", "crisis_id": "cemaden-1"})
+    assert r.get_json()["id"] == 9 and api.chamadas[-1][2]["org_id"] == 3
+
+
+def test_fr012_campanha_de_outra_ong_da_404(front, logar):
+    cli, api = front
+    logar(cli, "org", uid=3)
+    api.respostas[("GET", "/campanhas/5")] = (200, {"id": 5, "org_id": 4, "crisis_id": "x"})
+    assert cli.get("/brasil/ong/campanhas/5").status_code == 404
+
+
+# AC-011.1
+def test_ac_011_1_resposta_ao_convite_usa_o_voluntario_da_sessao(front, logar):
+    cli, api = front
+    logar(cli, "volunteer", uid=7)
+    api.respostas[("PUT", "/convites/12")] = (200, {"ok": True, "status": "confirmed"})
+    assert cli.put("/brasil/api/convites/12", json={"status": "confirmed", "user_id": 1}).status_code == 200
+    assert api.chamadas[-1] == ("PUT", "/convites/12", {"user_id": 7, "status": "confirmed"})
+
+
+# AC-014.1
+def test_ac_014_1_painel_da_ong_mostra_os_numeros(front, logar):
+    cli, api = front
+    logar(cli, "org", uid=3)
+    api.respostas[("GET", "/ong/3/painel")] = (200, {"voluntarios_selecionados": 8, "campanhas_ativas": 2, "crises_apoiadas": 2,
+        "habilidades": {"resgate": 7}, "crescimento": {"1": [{"dia": "2026-10-16", "n": 3}]},
+        "campanhas": [{"id": 1, "title": "Apoio POA", "status": "active", "crisis_title": "Chuva", "crisis_uf": "RS",
+                       "urgency": "alta", "selecionados": 3, "target_volunteers": 10}]})
+    api.respostas[("GET", "/crises")] = (200, [])
+    html = cli.get("/brasil/ong").get_data(as_text=True)
+    assert "<b>8</b>" in html and "<b>2</b>" in html and "resgate" in html and "Apoio POA" in html

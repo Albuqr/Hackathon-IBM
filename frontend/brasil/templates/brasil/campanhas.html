@@ -1,0 +1,31 @@
+{% extends "brasil/base.html" %}
+{% block titulo %}Minhas campanhas · Crisis Monitor Brasil{% endblock %}
+{% block corpo %}
+<main class="pagina">
+  <div class="secao-cabeca"><h2>Minhas campanhas</h2>
+    <p class="secao-nota">Convites de ONGs para campanhas em crises brasileiras. Aceite ou recuse cada um.</p></div>
+  <div class="cartao">
+    <p class="aviso" id="msg" role="status" hidden></p>
+    {% if campanhas %}<ul class="lista-crises">{% for c in campanhas %}
+      <li><div class="crise-topo"><span class="crise-titulo">{{ c.title }}</span>
+          <span class="status {{ c.status }}">{{ {'selected': 'convite pendente', 'confirmed': 'confirmado', 'declined': 'recusado'}[c.status] }}</span></div>
+        <span class="crise-meta">{{ c.org_name }} · {{ c.crisis_title }}{{ ' · ' ~ c.crisis_uf if c.crisis_uf else '' }} · urgência {{ c.urgency }}</span>
+        {% if c.description %}<span class="crise-meta">{{ c.description }}</span>{% endif %}
+        {% if c.status == 'selected' %}<div class="crise-acoes">
+          <button type="button" data-cv="{{ c.cv_id }}" data-status="confirmed">Aceitar</button>
+          <button type="button" class="cancelar" data-cv="{{ c.cv_id }}" data-status="declined">Recusar</button></div>{% endif %}
+      </li>{% endfor %}</ul>
+    {% else %}<p class="ficha-vazia">Nenhum convite ainda. Quando uma ONG selecionar você, ele aparece aqui.</p>{% endif %}
+  </div>
+</main>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll("button[data-cv]").forEach((b) => b.addEventListener("click", async () => {
+  const url = "{{ url_for('brasil.api_convite', cv_id=0) }}".replace(/0$/, b.dataset.cv);
+  const r = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: b.dataset.status }) });
+  if (r.ok) return location.reload();
+  const m = document.getElementById("msg"); m.hidden = false; m.textContent = "Não foi possível responder ao convite.";
+}));
+</script>
+{% endblock %}

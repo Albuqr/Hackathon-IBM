@@ -17,6 +17,8 @@
     {% if br_role %}
     <div class="nav-links">
       <a href="{{ url_for('brasil.mapa') }}">Mapa</a>
+      {% if br_role == 'org' %}<a href="{{ url_for('brasil.ong') }}">Painel da ONG</a>{% endif %}
+      {% if br_role == 'volunteer' %}<a href="{{ url_for('brasil.minhas_campanhas') }}">Minhas campanhas</a>{% endif %}
       {% if br_role in ('volunteer', 'org') %}<a href="{{ url_for('brasil.perfil') }}">Meu perfil</a>{% endif %}
       {% if br_role == 'admin' %}<a href="{{ url_for('brasil.admin') }}">Admin</a>{% endif %}
       <span class="nav-quem">{{ br_nome }} · {{ br_papel }}</span>

@@ -7,6 +7,7 @@ no brasil.db. Uma fonte com falha não interrompe as outras (FR-023).
 import json
 import os
 import sys
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -208,3 +209,23 @@ def crises_ativas(cfg: Config, agora: datetime | None = None) -> list[dict]:
         return out
     finally:
         conn.close()
+
+
+def laco_automatico(cfg: Config, parar: threading.Event, executar_fn=None, esperar=None):
+    """FR-016: a cada BRASIL_INGESTAO_AUTO_MIN minutos (a primeira depois do primeiro intervalo)."""
+    executar_fn = executar_fn or executar
+    esperar = esperar or parar.wait
+    while not esperar(cfg.ingestao_auto_min * 60):
+        try:
+            rel = executar_fn(cfg)
+            print(f"[brasil] ingestão automática: {rel.get('gravadas')} crises em {rel.get('segundos')}s")
+        except Exception as e:  # o laço não morre por uma ingestão com erro
+            print(f"[brasil] ingestão automática falhou: {e}")
+
+
+def iniciar_automatico(cfg: Config) -> threading.Event | None:
+    if cfg.ingestao_auto_min <= 0:
+        return None
+    parar = threading.Event()
+    threading.Thread(target=laco_automatico, args=(cfg, parar), daemon=True, name="brasil-ingestao").start()
+    return parar

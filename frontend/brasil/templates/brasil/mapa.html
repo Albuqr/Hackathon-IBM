@@ -65,7 +65,9 @@
   <a class="nav-marca" href="{{ url_for('brasil.inicio') }}"><span class="rotulo-marca" aria-hidden="true"></span>Crisis Monitor Brasil</a>
   <div class="nav-links">
     <a href="{{ url_for('brasil.mapa') }}" aria-current="page">Mapa</a>
-    {% if br_role in ('volunteer', 'org') %}<a href="{{ url_for('brasil.perfil') }}">Meu perfil</a>{% endif %}
+      {% if br_role == 'org' %}<a href="{{ url_for('brasil.ong') }}">Painel da ONG</a>{% endif %}
+      {% if br_role == 'volunteer' %}<a href="{{ url_for('brasil.minhas_campanhas') }}">Minhas campanhas</a>{% endif %}
+      {% if br_role in ('volunteer', 'org') %}<a href="{{ url_for('brasil.perfil') }}">Meu perfil</a>{% endif %}
     {% if br_role == 'admin' %}<a href="{{ url_for('brasil.admin') }}">Admin</a>{% endif %}
     <span class="nav-quem">{{ br_nome }} · {{ br_papel }}</span>
     <a href="{{ url_for('brasil.sair') }}">Sair</a>
@@ -80,6 +82,7 @@
   "crises": url_for('brasil.api_crises'),
   "voluntarios": url_for('brasil.api_voluntarios'),
   "inscricoes": url_for('brasil.api_inscricoes'),
+  "nova_campanha": url_for('brasil.ong') if br_role == 'org' else none,
   "inscrever": url_for('brasil.api_inscricao', crisis_id='__ID__', acao='__ACAO__')
 }|tojson }}</script>
 <script src="{{ url_for('brasil.static', filename='mapa.js') }}"></script>

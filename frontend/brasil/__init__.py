@@ -118,6 +118,36 @@ def admin():
     return render_template("brasil/admin.html")
 
 
+@bp.route("/ong")
+@exige_login("org")
+def ong():
+    st, painel = api("GET", f"/ong/{session['br_user_id']}/painel")
+    _, crises = api("GET", "/crises")
+    crises = sorted(crises if isinstance(crises, list) else [], key=lambda c: (-c["severity"], c["title"]))
+    return render_template("brasil/ong.html", p=painel if st == 200 else {}, crises=crises,
+                           crise_escolhida=request.args.get("crise", ""))
+
+
+@bp.route("/ong/campanhas/<int:cid>")
+@exige_login("org")
+def ong_campanha(cid):
+    st, c = api("GET", f"/campanhas/{cid}")
+    if st != 200 or c.get("org_id") != session["br_user_id"]:
+        abort(404)
+    _, na = api("GET", f"/campanhas/{cid}/voluntarios")
+    _, disp = api("GET", "/voluntarios/disponiveis", params={"crisis_id": c["crisis_id"], "raio_km": 1500})
+    ja = {v["volunteer_id"] for v in na} if isinstance(na, list) else set()
+    disp = [v for v in disp if v["id"] not in ja] if isinstance(disp, list) else []
+    return render_template("brasil/ong_campanha.html", c=c, na_campanha=na if isinstance(na, list) else [], disponiveis=disp)
+
+
+@bp.route("/campanhas")
+@exige_login("volunteer")
+def minhas_campanhas():
+    _, lista = api("GET", f"/voluntario/{session['br_user_id']}/campanhas")
+    return render_template("brasil/campanhas.html", campanhas=lista if isinstance(lista, list) else [])
+
+
 @bp.route("/malha.js")
 def malha_js():
     """Malha IBGE vinda da API, servida como script e guardada em memória (muda só com o deploy)."""
@@ -179,3 +209,33 @@ def api_ingestao():
 @exige_login("admin")
 def api_ingestao_status():
     return _resposta(*api("GET", "/ingestao/status"))
+
+
+# ── campanhas (F2) ────────────────────────────────────────────────────
+@bp.route("/api/campanhas", methods=["POST"])
+@exige_login("org")
+def api_criar_campanha():
+    corpo = (request.get_json(silent=True) or {}) | {"org_id": session["br_user_id"]}
+    return _resposta(*api("POST", "/campanhas", json=corpo))
+
+
+@bp.route("/api/campanhas/<int:cid>", methods=["PUT"])
+@exige_login("org")
+def api_editar_campanha(cid):
+    corpo = (request.get_json(silent=True) or {}) | {"org_id": session["br_user_id"]}
+    return _resposta(*api("PUT", f"/campanhas/{cid}", json=corpo))
+
+
+@bp.route("/api/campanhas/<int:cid>/voluntarios/<int:vid>", methods=["POST", "DELETE"])
+@exige_login("org")
+def api_voluntario_campanha(cid, vid):
+    if request.method == "POST":
+        return _resposta(*api("POST", f"/campanhas/{cid}/voluntarios", json={"org_id": session["br_user_id"], "volunteer_id": vid}))
+    return _resposta(*api("DELETE", f"/campanhas/{cid}/voluntarios/{vid}", params={"org_id": session["br_user_id"]}))
+
+
+@bp.route("/api/convites/<int:cv_id>", methods=["PUT"])
+@exige_login("volunteer")
+def api_convite(cv_id):
+    status = (request.get_json(silent=True) or {}).get("status")
+    return _resposta(*api("PUT", f"/convites/{cv_id}", json={"user_id": session["br_user_id"], "status": status}))

@@ -1,0 +1,48 @@
+{% extends "brasil/base.html" %}
+{% block titulo %}{{ c.title }} · Crisis Monitor Brasil{% endblock %}
+{% block corpo %}
+<main class="pagina">
+  <div class="secao-cabeca"><h2>{{ c.title }}</h2>
+    <p class="secao-nota">{{ c.crisis_title }}{{ ' · ' ~ c.crisis_uf if c.crisis_uf else '' }} · urgência {{ c.urgency }} · {{ c.selecionados }}/{{ c.target_volunteers }} voluntários ({{ c.confirmados }} confirmados)</p></div>
+  <p class="aviso" id="msg" role="status" hidden></p>
+  <div class="grade-2">
+    <div class="cartao">
+      <p class="ficha-sub">Na campanha</p>
+      {% if na_campanha %}<ul class="lista-crises">{% for v in na_campanha %}
+        <li><div class="crise-topo"><span class="crise-titulo">{{ v.name }}</span><span class="status {{ v.status }}">{{ {'selected': 'convidado', 'confirmed': 'confirmado', 'declined': 'recusou'}[v.status] }}</span></div>
+          <span class="crise-meta">{{ (v.skills or [])|join(', ') }}</span>
+          <div class="crise-acoes"><button type="button" class="cancelar" data-acao="DELETE" data-vid="{{ v.volunteer_id }}">Remover</button></div></li>
+      {% endfor %}</ul>{% else %}<p class="ficha-vazia">Nenhum voluntário ainda.</p>{% endif %}
+      <div style="margin-top:22px">
+        {% if c.status == 'active' %}
+        <button class="botao botao-contorno" type="button" id="encerrar"><span class="botao-icone" aria-hidden="true">×</span>Encerrar campanha</button>
+        {% else %}<span class="status closed">campanha encerrada</span>{% endif %}
+      </div>
+    </div>
+    <div class="cartao">
+      <p class="ficha-sub">Voluntários disponíveis perto da crise (até 1.500 km)</p>
+      {% if disponiveis %}<ul class="lista-crises">{% for v in disponiveis[:60] %}
+        <li><div class="crise-topo"><span class="crise-titulo">{{ v.name }}</span><span class="crise-meta">{{ v.distancia_km|round|int if v.distancia_km is not none else '' }} km</span></div>
+          <span class="crise-meta">{{ (v.skills or [])|join(', ') or 'sem habilidades informadas' }}</span>
+          {% if c.status == 'active' %}<div class="crise-acoes"><button type="button" data-acao="POST" data-vid="{{ v.id }}">Adicionar</button></div>{% endif %}</li>
+      {% endfor %}</ul>{% else %}<p class="ficha-vazia">Nenhum voluntário disponível nesse raio.</p>{% endif %}
+    </div>
+  </div>
+</main>
+{% endblock %}
+{% block scripts %}
+<script>
+const msg = document.getElementById("msg");
+const erro = async (r) => { const d = await r.json().catch(() => ({})); msg.hidden = false; msg.textContent = typeof d.detail === "string" ? d.detail : "Não foi possível."; };
+document.querySelectorAll("button[data-vid]").forEach((b) => b.addEventListener("click", async () => {
+  b.disabled = true;
+  const url = "{{ url_for('brasil.api_voluntario_campanha', cid=c.id, vid=0) }}".replace(/0$/, b.dataset.vid);
+  const r = await fetch(url, { method: b.dataset.acao });
+  r.ok ? location.reload() : (erro(r), b.disabled = false);
+}));
+document.getElementById("encerrar")?.addEventListener("click", async () => {
+  const r = await fetch("{{ url_for('brasil.api_editar_campanha', cid=c.id) }}", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "closed" }) });
+  r.ok ? location.reload() : erro(r);
+});
+</script>
+{% endblock %}

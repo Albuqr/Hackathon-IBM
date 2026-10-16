@@ -8,12 +8,14 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from . import db, ingestao, malha
+from . import campanhas, db, ingestao, malha
 from .config import carregar
 
 CFG = carregar()  # falha rápido na subida da API se a configuração for inválida
 
 router = APIRouter(prefix="/brasil", tags=["brasil"])
+router.include_router(campanhas.criar_router(CFG))
+_PARAR_AUTO = ingestao.iniciar_automatico(CFG)  # FR-016; None quando BRASIL_INGESTAO_AUTO_MIN=0
 
 USUARIOS_TESTE = {
     "voluntario": {"email": "voluntario@teste.brasil", "role": "volunteer", "name": "Voluntária de Teste",
