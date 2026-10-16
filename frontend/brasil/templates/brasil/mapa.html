@@ -1,17 +1,30 @@
 {% extends "brasil/base.html" %}
 {% block titulo %}Mapa · Crisis Monitor Brasil{% endblock %}
 {% block corpo %}
-<div class="pagina">
-  <div class="pagina-cabeca">
-    <h1>Crises por município</h1>
-    <p>Escolha o que pintar no mapa. Clique num município ou num ponto para ver as crises e agir.</p>
+<section class="hero" aria-labelledby="hero-titulo">
+  <div class="hero-texto">
+    <p class="rotulo">Crises ativas no Brasil, por município</p>
+    <h1 class="hero-titulo" id="hero-titulo"><span class="linha"><span>Brasil</span></span><span class="linha"><span>em alerta</span></span></h1>
+    <p class="hero-lede">Cada pixel é um pedaço do país. Quanto maior e mais claro, mais grave a crise ativa no município.</p>
+    <div class="hero-numeros" id="kpis" aria-live="polite">
+      <div><b id="k-crises">–</b><span>crises ativas</span></div>
+      <div><b id="k-muns">–</b><span>municípios afetados</span></div>
+      <div><b id="k-graves" class="perigo">–</b><span>severidade 4 ou 5</span></div>
+      <div><b id="k-nv">–</b><span>não verificadas</span></div>
+    </div>
+    <div class="acoes"><a class="botao botao-claro" href="#mapa">Explorar o mapa ↓</a></div>
   </div>
+  <figure class="hero-cidade" aria-label="Brasil desenhado em pixels pelo indicador escolhido">
+    <canvas id="cidade" role="img" aria-label="Mapa em pixels dos municípios do Brasil"></canvas>
+    <div class="cidade-tag" id="cidade-tag" hidden></div>
+    <figcaption class="hero-legenda"><span class="px px-p" aria-hidden="true"></span>sem crise<span class="px px-g" aria-hidden="true"></span>mais grave</figcaption>
+  </figure>
+</section>
 
-  <div class="kpis" id="kpis" aria-live="polite">
-    <div class="kpi"><b id="k-crises">–</b><span>crises ativas</span></div>
-    <div class="kpi"><b id="k-muns">–</b><span>municípios afetados</span></div>
-    <div class="kpi perigo"><b id="k-graves">–</b><span>severidade 4 ou 5</span></div>
-    <div class="kpi"><b id="k-nv">–</b><span>não verificadas</span></div>
+<section class="explorar" id="mapa" aria-labelledby="mapa-titulo">
+  <div class="secao-cabeca">
+    <h2 id="mapa-titulo">Crises por município</h2>
+    <p>Escolha o que pintar no mapa. Clique num município ou num ponto para ver as crises e agir.</p>
   </div>
 
   <div class="barra-ferramentas" role="toolbar" aria-label="Controles do mapa">
@@ -38,21 +51,16 @@
       <div class="legenda" id="legenda" aria-live="polite"></div>
     </div>
     <aside class="painel">
-      <figure class="cartao visao" aria-label="Brasil em pixels pelo indicador escolhido">
-        <figcaption class="cartao-titulo">Visão geral · pixels</figcaption>
-        <div class="visao-tela"><canvas id="cidade" role="img" aria-label="Mapa em pixels dos municípios do Brasil"></canvas>
-          <div class="cidade-tag" id="cidade-tag" hidden></div></div>
-      </figure>
       <article class="cartao ficha" id="ficha" aria-live="polite"></article>
       <div class="cartao">
-        <p class="cartao-titulo">Ranking <span class="contagem" id="contagem"></span></p>
+        <p class="cartao-titulo">Ranking · <span class="contagem" id="contagem"></span></p>
         <label class="busca"><span class="visually-hidden">Buscar município</span><input type="search" id="busca" placeholder="Buscar município ou UF" autocomplete="off"></label>
         <ol class="ranking" id="ranking"></ol>
         <p class="ranking-pe" id="ranking-pe"></p>
       </div>
     </aside>
   </div>
-</div>
+</section>
 {% endblock %}
 {% block rodape %}<footer class="rodape">Fontes: INPE (Programa Queimadas), CEMADEN, INMET, USGS, GDACS, NASA EONET, ReliefWeb, GDELT e notícias de fontes confiáveis. Malha e população: IBGE, Censo 2022. Mapa com Leaflet.</footer>{% endblock %}
 {% block scripts %}

@@ -14,10 +14,10 @@
   const PODE_INSCREVER = CFG.papel === "volunteer" || CFG.papel === "org";
 
   const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-  // escalas validadas para o fundo escuro (ver brasil.css): severidade em laranja, contagens em azul
+  // escalas validadas para o fundo claro (ver brasil.css): severidade em laranja-terra, contagens em verde
   const SEV = ["--sev1", "--sev2", "--sev3", "--sev4", "--sev5"].map(css);
   const RAMPA = ["--seq1", "--seq2", "--seq3", "--seq4", "--seq5", "--seq6"].map(css);
-  const COR = { traco: css("--traco"), uf: css("--uf"), vazio: css("--vazio"), destaque: "#ffffff", alerta: css("--alerta") };
+  const COR = { traco: css("--traco"), uf: css("--uf"), vazio: css("--vazio"), destaque: css("--verde-escuro"), alerta: css("--tinta") };
   const corSev = (s) => SEV[Math.max(1, Math.min(5, Math.round(s))) - 1];
 
   const nf0 = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
@@ -339,11 +339,11 @@
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     tela.width = Math.round(r.width * dpr); tela.height = Math.round(r.height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const lado = r.width < 360 ? 3 : 4;
-    const pad = 12, w = r.width - 2 * pad, h = r.height - 2 * pad - 20;
+    const lado = r.width < 520 ? 5 : 7;
+    const pad = 12, w = r.width - 2 * pad, h = r.height - 2 * pad - 24;
     const esc = Math.min(w / (BB[2] - BB[0]), h / (BB[3] - BB[1]));
     const ox = pad + (w - (BB[2] - BB[0]) * esc) / 2, oy = pad + (h - (BB[3] - BB[1]) * esc) / 2;
-    const centro = { x: r.width * 0.5, y: r.height * 0.4 };
+    const centro = { x: r.width * 0.42, y: r.height * 0.3 };
     const cols = Math.floor(r.width / lado), lins = Math.floor(r.height / lado);
     grade = { lado, cols, lins, ids: new Int32Array(cols * lins).fill(-1) };
     celulas = [];
@@ -380,7 +380,7 @@
       const onda = Math.exp(-(((c.x - varre) / 46) ** 2));
       const tam = foco ? lado - 1 : lado * (0.2 + 0.62 * c.t + 0.22 * onda) * k;
       const alfa = foco ? 1 : Math.min(1, 0.32 + 0.6 * c.t + 0.3 * onda);
-      ctx.fillStyle = c.t > 0 || foco ? `rgba(255,177,136,${alfa})` : `rgba(255,255,255,${alfa * 0.35})`;
+      ctx.fillStyle = `rgba(244,239,226,${c.t > 0 || foco ? alfa : alfa * 0.45})`;
       const off = (lado - tam) / 2;
       ctx.fillRect(c.x + off, c.y + off, tam, tam);
     }
@@ -433,6 +433,7 @@
   montarCidade();
   inicio = performance.now();
   iniciarLaco();
+  requestAnimationFrame(() => document.querySelector(".hero").classList.add("pronto"));
   window.__brasilMapa = mapa;
   window.__brasilPronto = true;
 })();
