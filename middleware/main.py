@@ -1358,3 +1358,4 @@ def get_predictions():
     _predictions_cache["data"] = result
     _predictions_cache["ts"]   = now
     return result
+app.include_router(__import__("middleware.brasil", fromlist=["router"]).router)  # Dash Brasil (ADR 0001)
