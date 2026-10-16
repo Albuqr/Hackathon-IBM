@@ -1,37 +1,41 @@
 {% extends "brasil/base.html" %}
 {% block titulo %}Painel da ONG · Crisis Monitor Brasil{% endblock %}
 {% block corpo %}
-<main class="pagina">
-  <div class="secao-cabeca"><h2>Painel da ONG</h2>
-    <p class="secao-nota">Campanhas da sua ONG em crises brasileiras, voluntários selecionados e habilidades disponíveis.</p></div>
-  <div class="numeros-ong">
-    <div><b>{{ p.voluntarios_selecionados or 0 }}</b><span>voluntários selecionados</span></div>
-    <div><b>{{ p.campanhas_ativas or 0 }}</b><span>campanhas ativas</span></div>
-    <div><b>{{ p.crises_apoiadas or 0 }}</b><span>crises apoiadas</span></div>
+<div class="pagina">
+  <div class="pagina-cabeca"><h1>Painel da ONG</h1>
+    <p>Campanhas da sua ONG em crises brasileiras, voluntários selecionados e habilidades disponíveis.</p></div>
+  <div class="kpis tres">
+    <div class="kpi"><b>{{ p.voluntarios_selecionados or 0 }}</b><span>voluntários selecionados</span></div>
+    <div class="kpi"><b>{{ p.campanhas_ativas or 0 }}</b><span>campanhas ativas</span></div>
+    <div class="kpi"><b>{{ p.crises_apoiadas or 0 }}</b><span>crises apoiadas</span></div>
   </div>
-  <div class="grade-2">
-    <div class="cartao">
-      <p class="ficha-sub">Campanhas</p>
-      {% if p.campanhas %}
-      <ul class="lista-crises">{% for c in p.campanhas %}
-        <li>
-          <div class="crise-topo"><a class="crise-titulo" href="{{ url_for('brasil.ong_campanha', cid=c.id) }}">{{ c.title }}</a>
-            <span class="status {{ c.status }}">{{ 'ativa' if c.status == 'active' else 'encerrada' }}</span></div>
-          <span class="crise-meta">{{ c.crisis_title }} · {{ c.crisis_uf or '' }} · urgência {{ c.urgency }} · {{ c.selecionados }}/{{ c.target_volunteers }} voluntários</span>
-          <div class="cresc" title="voluntários adicionados nos últimos 7 dias" aria-label="crescimento nos últimos 7 dias">
+  <div class="grade-2 secao">
+    <div class="coluna">
+      <div class="cartao">
+        <p class="cartao-titulo">Campanhas</p>
+        {% if p.campanhas %}
+        <ul class="lista">{% for c in p.campanhas %}
+          <li>
+            <div class="item-topo"><a class="item-titulo" href="{{ url_for('brasil.ong_campanha', cid=c.id) }}">{{ c.title }}</a>
+              <span class="selo status {{ c.status }}">{{ 'ativa' if c.status == 'active' else 'encerrada' }}</span></div>
+            <span class="item-meta">{{ c.crisis_title }}{{ ' · ' ~ c.crisis_uf if c.crisis_uf else '' }} · urgência {{ c.urgency }} · {{ c.selecionados }}/{{ c.target_volunteers }} voluntários</span>
             {% set serie = p.crescimento[c.id|string] %}{% set maximo = serie|map(attribute='n')|max %}
-            {% for d in serie %}<i style="height:{{ (d.n / maximo * 100) if maximo else 0 }}%" title="{{ d.dia }}: {{ d.n }}"></i>{% endfor %}
-          </div>
-        </li>{% endfor %}</ul>
-      {% else %}<p class="ficha-vazia">Nenhuma campanha ainda. Crie a primeira ao lado ou pelo mapa ("Criar campanha").</p>{% endif %}
+            <div class="cresc" title="voluntários adicionados nos últimos 7 dias" aria-label="crescimento nos últimos 7 dias">
+              {% for d in serie %}<i style="height:{{ (d.n / maximo * 100) if maximo else 0 }}%" title="{{ d.dia }}: {{ d.n }}"></i>{% endfor %}
+            </div>
+          </li>{% endfor %}</ul>
+        {% else %}<p class="vazio">Nenhuma campanha ainda. Crie a primeira aqui ao lado ou pelo mapa ("Criar campanha").</p>{% endif %}
+      </div>
       {% if p.habilidades %}
-      <p class="ficha-sub" style="margin-top:22px">Habilidades dos voluntários selecionados</p>
-      <div class="barras">{% set top = p.habilidades.values()|max %}{% for h, n in p.habilidades.items() %}
-        <div><span>{{ h }}</span><i style="width:{{ n / top * 100 }}%"></i><em>{{ n }}</em></div>{% endfor %}</div>
+      <div class="cartao">
+        <p class="cartao-titulo">Habilidades dos voluntários selecionados</p>
+        <div class="barras">{% set top = p.habilidades.values()|max %}{% for h, n in p.habilidades.items() %}
+          <div><span title="{{ h }}">{{ h }}</span><i style="width:{{ n / top * 100 }}%"></i><em>{{ n }}</em></div>{% endfor %}</div>
+      </div>
       {% endif %}
     </div>
     <div class="cartao" id="nova">
-      <p class="ficha-sub">Nova campanha</p>
+      <p class="cartao-titulo">Nova campanha</p>
       <form class="form" id="form-campanha">
         <p class="aviso" id="msg" role="status" hidden></p>
         <label>Crise
@@ -42,26 +46,25 @@
         <label>Título <input name="title" required minlength="3" maxlength="200"></label>
         <label>Descrição <textarea name="description" rows="3"></textarea></label>
         <label>Habilidades necessárias (separadas por vírgula) <input name="skills_needed"></label>
-        <div class="linha2">
+        <div class="linha">
           <label>Meta de voluntários <input name="target_volunteers" type="number" min="1" value="10"></label>
           <label>Urgência <select name="urgency"><option value="baixa">baixa</option><option value="media" selected>média</option><option value="alta">alta</option><option value="critica">crítica</option></select></label>
         </div>
-        <div class="linha2">
+        <div class="linha">
           <label>Início <input name="start_date" type="date"></label>
           <label>Fim <input name="end_date" type="date"></label>
         </div>
-        <div><button class="botao botao-cheio" type="submit"><span class="botao-icone" aria-hidden="true">+</span>Criar campanha</button></div>
+        <div><button class="botao botao-primario" type="submit">Criar campanha</button></div>
       </form>
     </div>
   </div>
-</main>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
 document.getElementById("form-campanha").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const f = new FormData(e.target);
-  const corpo = Object.fromEntries(f);
+  const corpo = Object.fromEntries(new FormData(e.target));
   corpo.skills_needed = (corpo.skills_needed || "").split(",").map((s) => s.trim()).filter(Boolean);
   corpo.target_volunteers = Number(corpo.target_volunteers);
   const r = await fetch("{{ url_for('brasil.api_criar_campanha') }}", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });

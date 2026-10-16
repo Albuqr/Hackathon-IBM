@@ -4,32 +4,40 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block titulo %}Crisis Monitor Brasil{% endblock %}</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='lp/public/logo.png') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <link rel="stylesheet" href="{{ url_for('brasil.static', filename='brasil.css') }}">
 </head>
 <body>
-  {% block nav %}
-  <nav class="nav {% block nav_classe %}clara{% endblock %}" aria-label="Dash Brasil">
-    <a class="nav-marca" href="{{ url_for('brasil.inicio') }}"><span class="rotulo-marca" aria-hidden="true"></span>Crisis Monitor Brasil</a>
+  <a class="skip" href="#conteudo">Pular para o conteúdo</a>
+  <header class="topo">
+    <a class="marca" href="{{ url_for('brasil.inicio') }}" aria-label="Crisis Monitor Brasil, início">
+      <span class="marca-ponto" aria-hidden="true"></span><span class="marca-nome">Crisis Monitor</span><span class="marca-selo">BRASIL</span>
+    </a>
     {% if br_role %}
-    <div class="nav-links">
-      <a href="{{ url_for('brasil.mapa') }}">Mapa</a>
-      {% if br_role == 'org' %}<a href="{{ url_for('brasil.ong') }}">Painel da ONG</a>{% endif %}
-      {% if br_role == 'volunteer' %}<a href="{{ url_for('brasil.minhas_campanhas') }}">Minhas campanhas</a>{% endif %}
-      {% if br_role in ('volunteer', 'org') %}<a href="{{ url_for('brasil.perfil') }}">Meu perfil</a>{% endif %}
-      {% if br_role in ('volunteer', 'org') %}<a href="{{ url_for('brasil.chat') }}">Assistente</a>{% endif %}
-      <a href="{{ url_for('brasil.previsoes') }}">Previsões</a>
-      {% if br_role == 'admin' %}<a href="{{ url_for('brasil.admin') }}">Admin</a>{% endif %}
-      <span class="nav-quem">{{ br_nome }} · {{ br_papel }}</span>
+    {% set atual = request.endpoint %}
+    <nav class="menu" id="menu" aria-label="Dash Brasil">
+      <a href="{{ url_for('brasil.mapa') }}" {{ 'aria-current=page' if atual == 'brasil.mapa' }}>Mapa</a>
+      {% if br_role == 'org' %}<a href="{{ url_for('brasil.ong') }}" {{ 'aria-current=page' if atual in ('brasil.ong', 'brasil.ong_campanha') }}>Painel da ONG</a>{% endif %}
+      {% if br_role == 'volunteer' %}<a href="{{ url_for('brasil.minhas_campanhas') }}" {{ 'aria-current=page' if atual == 'brasil.minhas_campanhas' }}>Minhas campanhas</a>{% endif %}
+      {% if br_role in ('volunteer', 'org') %}<a href="{{ url_for('brasil.chat') }}" {{ 'aria-current=page' if atual == 'brasil.chat' }}>Assistente</a>{% endif %}
+      <a href="{{ url_for('brasil.previsoes') }}" {{ 'aria-current=page' if atual == 'brasil.previsoes' }}>Previsões</a>
+      {% if br_role in ('volunteer', 'org') %}<a href="{{ url_for('brasil.perfil') }}" {{ 'aria-current=page' if atual == 'brasil.perfil' }}>Meu perfil</a>{% endif %}
+      {% if br_role == 'admin' %}<a href="{{ url_for('brasil.admin') }}" {{ 'aria-current=page' if atual == 'brasil.admin' }}>Admin</a>{% endif %}
+    </nav>
+    <div class="quem">
+      <button class="menu-botao" type="button" aria-controls="menu" aria-expanded="false" onclick="const m=document.getElementById('menu');const a=m.classList.toggle('aberto');this.setAttribute('aria-expanded',a)">Menu</button>
+      <span class="quem-nome">{{ br_nome }} · {{ br_papel }}</span>
+      <span class="avatar" aria-hidden="true">{{ (br_nome or '?')[:2]|upper }}</span>
       <a href="{{ url_for('brasil.sair') }}">Sair</a>
     </div>
     {% endif %}
-  </nav>
-  {% endblock %}
-  {% block corpo %}{% endblock %}
+  </header>
+  <main id="conteudo">{% block corpo %}{% endblock %}</main>
+  {% block rodape %}{% endblock %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

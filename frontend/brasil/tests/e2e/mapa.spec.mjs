@@ -32,15 +32,15 @@ const cssVar = (page, v) => page.evaluate((v) => getComputedStyle(document.docum
 test("AC-006.1 Porto Alegre com crises sev 2 e 4 fica na cor da severidade 4 · NFR-001 mapa pronto em ≤ 3 s", async () => {
   const { page, ms } = await abrirMapa();
   assert.ok(ms <= 3000, `mapa levou ${ms} ms`);
-  assert.equal(await corDoMunicipio(page, 4314902), await cssVar(page, "--s5")); // sev 4 → s5
+  assert.equal(await corDoMunicipio(page, 4314902), await cssVar(page, "--sev4"));
 });
 
 test("AC-007.1 trocar para Voluntários repinta o mapa e muda a legenda", async () => {
   const { page } = await abrirMapa();
   await page.click('#ctl-indicador button[data-v="voluntarios"]');
   assert.match(await page.locator(".legenda-titulo").textContent(), /Voluntários disponíveis/);
-  assert.notEqual(await corDoMunicipio(page, 4314902), await cssVar(page, "--papel")); // voluntária de teste mora em POA
-  assert.equal(await corDoMunicipio(page, 1500602), await cssVar(page, "--papel"));    // Altamira sem voluntários
+  assert.notEqual(await corDoMunicipio(page, 4314902), await cssVar(page, "--vazio")); // voluntária de teste mora em POA
+  assert.equal(await corDoMunicipio(page, 1500602), await cssVar(page, "--vazio"));    // Altamira sem voluntários
 });
 
 test("AC-008.1 filtro UF = RS e tipo = meteorológico deixa só os pontos do RS desse tipo", async () => {
@@ -58,13 +58,13 @@ test("AC-009.1 Quero ajudar inscreve e Cancelar inscrição desfaz, pela interfa
   await page.fill("#busca", "Caxias do Sul");
   await page.waitForFunction(() => document.querySelector("#ranking .rk-nome")?.textContent.startsWith("Caxias do Sul"));
   await page.locator("#ranking button").first().click();
-  const botao = page.locator(".lista-crises button").first();
+  const botao = page.locator(".lista-crises button.inscricao").first();
   if ((await botao.textContent()) === "Cancelar inscrição") { await botao.click(); await page.waitForTimeout(300); }
-  await page.locator(".lista-crises button").first().click();
-  await page.waitForFunction(() => document.querySelector(".lista-crises button")?.textContent === "Cancelar inscrição");
+  await page.locator(".lista-crises button.inscricao").first().click();
+  await page.waitForFunction(() => document.querySelector(".lista-crises button.inscricao")?.textContent === "Cancelar inscrição");
   assert.match(await page.locator(".lista-crises .crise-meta").first().textContent(), /1 inscritos/);
-  await page.locator(".lista-crises button").first().click();
-  await page.waitForFunction(() => document.querySelector(".lista-crises button")?.textContent === "Quero ajudar");
+  await page.locator(".lista-crises button.inscricao").first().click();
+  await page.waitForFunction(() => document.querySelector(".lista-crises button.inscricao")?.textContent === "Quero ajudar");
 });
 
 test("NFR-008 sem rolagem horizontal em 390 px", async () => {
@@ -83,7 +83,7 @@ test("AC-012.1 AC-013.1 AC-011.1 ONG cria campanha pelo mapa, convida e o volunt
   await ong.fill("#busca", "Caxias do Sul");
   await ong.waitForFunction(() => document.querySelector("#ranking .rk-nome")?.textContent.startsWith("Caxias do Sul"));
   await ong.locator("#ranking button").first().click();
-  await ong.locator(".lista-crises a.crise-link").first().click();
+  await ong.locator(".lista-crises a.criar-campanha").first().click();
   await ong.waitForURL(/\/brasil\/ong\?crise=/);
   assert.equal(await ong.locator('select[name="crisis_id"]').inputValue(), "teste-caxias");
   const titulo = `Campanha E2E ${Date.now()}`;
@@ -95,12 +95,12 @@ test("AC-012.1 AC-013.1 AC-011.1 ONG cria campanha pelo mapa, convida e o volunt
   await ong.waitForSelector('button[data-acao="DELETE"]');
 
   await vol.goto(`${BASE}/brasil/campanhas`);
-  const item = vol.locator(".lista-crises li", { hasText: titulo });
+  const item = vol.locator(".lista li", { hasText: titulo });
   await Promise.all([vol.waitForEvent("load"), item.locator('button[data-status="confirmed"]').click()]);
-  assert.match(await vol.locator(".lista-crises li", { hasText: titulo }).locator(".status").textContent(), /confirmado/);
+  assert.match(await vol.locator(".lista li", { hasText: titulo }).locator(".status").textContent(), /confirmado/);
 
   await ong.reload();
-  assert.match(await ong.locator(".lista-crises .status").first().textContent(), /confirmado/);
+  assert.match(await ong.locator(".lista .status").first().textContent(), /confirmado/);
 });
 
 test("AC-026.1 crise não verificada tem contorno tracejado e a dica diz \"não verificada\"", async () => {

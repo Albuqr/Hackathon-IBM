@@ -14,9 +14,11 @@
   const PODE_INSCREVER = CFG.papel === "volunteer" || CFG.papel === "org";
 
   const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-  const RAMPA = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6"].map(css);
-  const COR = { escuro: css("--cobalto-escuro"), branco: "#ffffff", vazio: css("--papel"), perda: css("--perda") };
-  const corSev = (s) => RAMPA[Math.max(1, Math.min(5, Math.round(s)))]; // severidade 1–5 → s2…s6
+  // escalas validadas para o fundo escuro (ver brasil.css): severidade em laranja, contagens em azul
+  const SEV = ["--sev1", "--sev2", "--sev3", "--sev4", "--sev5"].map(css);
+  const RAMPA = ["--seq1", "--seq2", "--seq3", "--seq4", "--seq5", "--seq6"].map(css);
+  const COR = { traco: css("--traco"), uf: css("--uf"), vazio: css("--vazio"), destaque: "#ffffff", alerta: css("--alerta") };
+  const corSev = (s) => SEV[Math.max(1, Math.min(5, Math.round(s))) - 1];
 
   const nf0 = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
   const nf1 = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
@@ -60,7 +62,10 @@
       }
     }
     document.getElementById("contagem").textContent = `${nf0.format(VISIVEIS.length)} crises · ${nf0.format(POR_MUN.size)} municípios`;
-    document.getElementById("rotulo-total").textContent = `${nf0.format(CRISES.length)} crises ativas no Brasil`;
+    document.getElementById("k-crises").textContent = nf0.format(VISIVEIS.length);
+    document.getElementById("k-muns").textContent = nf0.format(POR_MUN.size);
+    document.getElementById("k-graves").textContent = nf0.format(VISIVEIS.filter((c) => c.severity >= 4).length);
+    document.getElementById("k-nv").textContent = nf0.format(VISIVEIS.filter((c) => c.verificacao === "nao_verificada").length);
   }
 
   // ---------- indicadores ----------
@@ -106,8 +111,8 @@
 
   function estilo(f) {
     const sel = estado.sel === f.properties.id;
-    return { fillColor: cor(f.properties), fillOpacity: 0.9, color: sel ? COR.escuro : COR.branco,
-             weight: sel ? 3 : 0.35, opacity: sel ? 1 : 0.7 };
+    return { fillColor: cor(f.properties), fillOpacity: 1, color: sel ? COR.destaque : COR.traco,
+             weight: sel ? 2.5 : 0.4, opacity: sel ? 1 : 0.8 };
   }
   const camada = L.geoJSON(M.geojson, {
     renderer: render, style: estilo,
@@ -115,14 +120,14 @@
       layer.bindTooltip(() => `<b>${f.properties.nome} – ${f.properties.uf}</b><span>${I.texto(f.properties)}</span>`,
         { sticky: true, direction: "top", offset: [0, -8], className: "dica-mapa" });
       layer.on({
-        mouseover: () => { if (estado.sel !== f.properties.id) layer.setStyle({ weight: 2.2, color: COR.escuro }); },
+        mouseover: () => { if (estado.sel !== f.properties.id) layer.setStyle({ weight: 2, color: COR.destaque }); },
         mouseout: () => { camada.resetStyle(layer); if (estado.sel === f.properties.id) layer.bringToFront(); },
         click: () => selecionar(f.properties.id, { centralizar: false }),
       });
     },
   }).addTo(mapa);
   const ufs = L.geoJSON(M.estados, { renderer: render, interactive: false,
-    style: { fill: false, color: COR.escuro, weight: 1.1, opacity: 0.55 } }).addTo(mapa);
+    style: { fill: false, color: COR.uf, weight: 1, opacity: 0.9 } }).addTo(mapa);
   mapa.fitBounds(camada.getBounds(), { padding: [12, 12] });
   mapa.setMaxBounds(camada.getBounds().pad(0.3));
   const camadaSel = () => camada.getLayers().find((l) => l.feature.properties.id === estado.sel);
@@ -133,8 +138,8 @@
     if (!estado.pontos) return;
     for (const c of VISIVEIS) {
       const naoVer = c.verificacao === "nao_verificada";
-      L.circleMarker([c.lat, c.lon], { renderer: render, radius: 2.5 + c.severity, fillColor: corSev(c.severity), fillOpacity: 0.95,
-        color: naoVer ? COR.perda : COR.branco, weight: naoVer ? 1.6 : 1, dashArray: naoVer ? "3 2" : null })
+      L.circleMarker([c.lat, c.lon], { renderer: render, radius: 2.5 + c.severity, fillColor: corSev(c.severity), fillOpacity: 1,
+        color: naoVer ? COR.alerta : COR.traco, weight: naoVer ? 1.6 : 2, dashArray: naoVer ? "3 2" : null })
         .bindTooltip(`<b>${c.title}</b><span>sev. ${c.severity}${naoVer ? " · não verificada" : ""}</span>`, { direction: "top", className: "dica-mapa" })
         .on("click", () => c.municipio_ibge && selecionar(c.municipio_ibge, { centralizar: false }))
         .addTo(pontos);
@@ -153,8 +158,8 @@
     const titulo = el("p", { class: "legenda-titulo", texto: I.legenda });
     if (I.discreta) {
       box.replaceChildren(titulo,
-        el("div", { class: "legenda-escala", "aria-hidden": "true" }, [COR.vazio, ...[1, 2, 3, 4, 5].map(corSev)].map((c) => el("span", { style: `background:${c}` }))),
-        el("div", { class: "legenda-rotulos" }, ["sem", "1", "2", "3", "4", "5"].map((r) => el("span", { texto: r }))));
+        el("div", { class: "legenda-escala", "aria-hidden": "true" }, [COR.vazio, ...SEV].map((c) => el("span", { style: `background:${c}` }))),
+        el("div", { class: "legenda-rotulos uniforme" }, ["sem", "1", "2", "3", "4", "5"].map((r) => el("span", { texto: r }))));
       return;
     }
     box.replaceChildren(titulo,
@@ -185,21 +190,21 @@
 
   function itemCrise(c) {
     const naoVer = c.verificacao === "nao_verificada";
-    return el("li", {}, [
-      el("div", { class: "crise-topo" }, [
-        el("span", { class: "crise-titulo", texto: c.title }),
-        el("span", { class: "sev", style: `background:${corSev(c.severity)}`, texto: String(c.severity), title: "severidade" }),
+    return el("li", { class: "crise" }, [
+      el("div", { class: "item-topo" }, [
+        el("span", { class: "item-titulo", texto: c.title }),
+        el("span", { class: "sev", style: `background:${corSev(c.severity)}`, texto: String(Math.round(c.severity)), title: "severidade" }),
       ]),
-      el("span", { class: "crise-meta", texto: `${TIPOS[c.crisis_type] || c.crisis_type} · ${c.source.toUpperCase()} · ${nf0.format(c.inscritos || 0)} inscritos` }),
-      naoVer ? el("span", { class: "selo", texto: "não verificada" }) : null,
-      c.link_fonte ? el("a", { class: "crise-meta", href: c.link_fonte, target: "_blank", rel: "noopener", texto: "fonte ↗" }) : null,
-      PODE_INSCREVER ? el("div", { class: "crise-acoes" }, [
+      el("span", { class: "item-meta crise-meta", texto: `${TIPOS[c.crisis_type] || c.crisis_type} · ${c.source.toUpperCase()} · ${nf0.format(c.inscritos || 0)} inscritos` }),
+      naoVer ? el("span", {}, el("span", { class: "selo selo-nv", texto: "não verificada" })) : null,
+      c.link_fonte ? el("a", { class: "item-meta", href: c.link_fonte, target: "_blank", rel: "noopener", texto: "fonte ↗" }) : null,
+      PODE_INSCREVER ? el("div", { class: "acoes" }, [
         el("button", {
-          type: "button", class: INSCRITO.has(c.id) ? "cancelar" : null,
+          type: "button", class: `botao botao-pequeno ${INSCRITO.has(c.id) ? "botao-neutro" : "botao-primario"} inscricao`,
           texto: INSCRITO.has(c.id) ? "Cancelar inscrição" : "Quero ajudar",
           onclick: (e) => alternar(c, e.currentTarget),
         }),
-        CFG.nova_campanha ? el("a", { class: "crise-link", href: `${CFG.nova_campanha}?crise=${encodeURIComponent(c.id)}#nova`, texto: "Criar campanha" }) : null,
+        CFG.nova_campanha ? el("a", { class: "botao botao-secundario botao-pequeno criar-campanha", href: `${CFG.nova_campanha}?crise=${encodeURIComponent(c.id)}#nova`, texto: "Criar campanha" }) : null,
       ]) : null,
     ]);
   }
@@ -208,20 +213,20 @@
     const box = document.getElementById("ficha");
     const p = POR_ID.get(estado.sel);
     if (!p) {
-      box.replaceChildren(el("p", { class: "ficha-vazia", texto: CRISES.length
+      box.replaceChildren(el("p", { class: "vazio", texto: CRISES.length
         ? "Clique num município no mapa ou na lista para ver as crises dele."
         : "Ainda não há crises carregadas. Um admin precisa clicar em \"Atualizar dados\"." }));
       return;
     }
     const a = POR_MUN.get(p.id);
     box.replaceChildren(
-      el("p", { class: "ficha-sub", texto: `${p.uf} · Região ${p.regiao} · ${nf0.format(p.pop_2022)} hab.` }),
+      el("p", { class: "ficha-local", texto: `${p.uf} · Região ${p.regiao} · ${nf0.format(p.pop_2022)} hab.` }),
       el("h3", { texto: p.nome }),
-      el("div", { class: "ficha-topo" }, [
-        el("p", { class: "ficha-indice" }, [a ? String(a.sev) : "–", el("small", { texto: "sev. máx." })]),
-        el("p", { class: "ficha-pos", texto: a ? `${a.n} crise${a.n > 1 ? "s" : ""} ativa${a.n > 1 ? "s" : ""}` : "Sem crise ativa com os filtros atuais" }),
+      el("div", { class: "ficha-numero" }, [
+        el("b", { style: a ? `color:${corSev(a.sev)}` : null, texto: a ? String(Math.round(a.sev)) : "–" }),
+        el("span", { texto: a ? `severidade máxima · ${a.n} crise${a.n > 1 ? "s" : ""} ativa${a.n > 1 ? "s" : ""}` : "Sem crise ativa com os filtros atuais" }),
       ]),
-      a ? el("ul", { class: "lista-crises" }, a.crises.sort((x, y) => y.severity - x.severity).map(itemCrise)) : null,
+      a ? el("ul", { class: "lista lista-crises" }, a.crises.sort((x, y) => y.severity - x.severity).map(itemCrise)) : null,
     );
     if (animar) { box.classList.remove("entrando"); void box.offsetWidth; box.classList.add("entrando"); }
   }
@@ -241,7 +246,7 @@
     }, [
       el("span", { class: "rk-pos", texto: POS.has(p.id) ? String(POS.get(p.id)).padStart(2, "0") : "–" }),
       el("span", { class: "rk-nome", texto: `${p.nome} – ${p.uf}` }),
-      el("span", { class: "rk-barra", "aria-hidden": "true" }, el("i", { style: `width:${nota(p).toFixed(1)}%` })),
+      el("span", { class: "rk-barra", "aria-hidden": "true" }, el("i", { style: `width:${nota(p).toFixed(1)}%;background:${cor(p)}` })),
       el("span", { class: "rk-valor", texto: I.texto(p) }),
     ]))));
   }
@@ -334,11 +339,11 @@
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     tela.width = Math.round(r.width * dpr); tela.height = Math.round(r.height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const lado = r.width < 520 ? 5 : 7;
-    const pad = 12, w = r.width - 2 * pad, h = r.height - 2 * pad - 24;
+    const lado = r.width < 360 ? 3 : 4;
+    const pad = 12, w = r.width - 2 * pad, h = r.height - 2 * pad - 20;
     const esc = Math.min(w / (BB[2] - BB[0]), h / (BB[3] - BB[1]));
     const ox = pad + (w - (BB[2] - BB[0]) * esc) / 2, oy = pad + (h - (BB[3] - BB[1]) * esc) / 2;
-    const centro = { x: r.width * 0.42, y: r.height * 0.3 };
+    const centro = { x: r.width * 0.5, y: r.height * 0.4 };
     const cols = Math.floor(r.width / lado), lins = Math.floor(r.height / lado);
     grade = { lado, cols, lins, ids: new Int32Array(cols * lins).fill(-1) };
     celulas = [];
@@ -375,7 +380,7 @@
       const onda = Math.exp(-(((c.x - varre) / 46) ** 2));
       const tam = foco ? lado - 1 : lado * (0.2 + 0.62 * c.t + 0.22 * onda) * k;
       const alfa = foco ? 1 : Math.min(1, 0.32 + 0.6 * c.t + 0.3 * onda);
-      ctx.fillStyle = `rgba(255,255,255,${alfa})`;
+      ctx.fillStyle = c.t > 0 || foco ? `rgba(255,177,136,${alfa})` : `rgba(255,255,255,${alfa * 0.35})`;
       const off = (lado - tam) / 2;
       ctx.fillRect(c.x + off, c.y + off, tam, tam);
     }
@@ -411,7 +416,11 @@
     selecionar(emFoco, { centralizar: true });
     document.getElementById("mapa").scrollIntoView();
   });
-  new IntersectionObserver((ents) => { visivel = ents[0].isIntersecting; if (visivel) iniciarLaco(); }).observe(tela);
+  new IntersectionObserver((ents) => {
+    visivel = ents[0].isIntersecting;
+    if (visivel) iniciarLaco();
+    else if (grade) desenharCidade(inicio + 1e6);  // fora da tela: deixa o quadro final pronto, sem animar
+  }).observe(tela);
 
   let tRedim;
   window.addEventListener("resize", () => {
@@ -424,7 +433,6 @@
   montarCidade();
   inicio = performance.now();
   iniciarLaco();
-  requestAnimationFrame(() => document.querySelector(".hero").classList.add("pronto"));
   window.__brasilMapa = mapa;
   window.__brasilPronto = true;
 })();

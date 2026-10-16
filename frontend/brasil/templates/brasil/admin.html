@@ -1,30 +1,37 @@
 {% extends "brasil/base.html" %}
 {% block titulo %}Admin · Crisis Monitor Brasil{% endblock %}
 {% block corpo %}
-<main class="pagina">
-  <div class="secao-cabeca"><h2>Ingestão de dados</h2>
-    <p class="secao-nota">Coleta INPE, CEMADEN, INMET e as fontes globais filtradas para o Brasil. Uma fonte com falha não interrompe as outras.</p></div>
+<div class="pagina">
+  <div class="pagina-cabeca"><h1>Admin</h1>
+    <p>Ingestão de dados, crises de notícia, distribuição de voluntários e fila de notificações.</p></div>
+
   <div class="cartao">
-    <button class="botao botao-cheio" id="atualizar" type="button"><span class="botao-icone" aria-hidden="true">↻</span>Atualizar dados</button>
-    <p class="aviso ok" id="msg" role="status" hidden style="margin-top:14px"></p>
+    <div class="item-topo" style="align-items:center;margin-bottom:10px">
+      <p class="cartao-titulo" style="margin:0">Fontes de dados</p>
+      <button class="botao botao-primario" id="atualizar" type="button">Atualizar dados</button>
+    </div>
+    <p class="aviso ok" id="msg" role="status" hidden style="margin-bottom:10px"></p>
     <div class="tabela-caixa"><table class="tabela">
       <thead><tr><th>Fonte</th><th>Última coleta</th><th>Situação</th><th>Eventos</th><th>Último sucesso</th></tr></thead>
       <tbody id="status"></tbody>
     </table></div>
   </div>
 
-  <div class="secao-cabeca" style="margin-top:56px"><h2>Crises de notícia</h2>
-    <p class="secao-nota">Vindas do agente de notícias, de fontes confiáveis. Ficam marcadas como não verificadas até você confirmar ou descartar; sem decisão, saem em 7 dias.</p></div>
-  <div class="cartao"><ul class="lista-crises" id="nao-verificadas"></ul></div>
+  <div class="grade-2 secao">
+    <div class="cartao">
+      <p class="cartao-titulo">Crises de notícia</p>
+      <p class="item-meta" style="margin-bottom:10px">Ficam não verificadas até você confirmar ou descartar; sem decisão, saem em 7 dias.</p>
+      <ul class="lista" id="nao-verificadas"></ul>
+    </div>
+    <div class="cartao" id="distribuicao"><p class="cartao-titulo">Distribuição de voluntários</p></div>
+  </div>
 
-  <div class="secao-cabeca" style="margin-top:56px"><h2>Distribuição de voluntários</h2>
-    <p class="secao-nota">Lacunas (crises graves sem gente), redundâncias (mais de 150% da meta) e sugestões de realocação.</p></div>
-  <div class="cartao" id="distribuicao"></div>
-
-  <div class="secao-cabeca" style="margin-top:56px"><h2>Fila de notificações</h2>
-    <p class="secao-nota">Com <code>BRASIL_NOTIFICACOES=fila</code>, nenhuma mensagem sai: elas ficam aqui até o Telegram voltar.</p></div>
-  <div class="cartao"><div class="tabela-caixa"><table class="tabela"><thead><tr><th>Quando</th><th>Canal</th><th>Voluntário</th><th>Crise</th></tr></thead><tbody id="fila"></tbody></table></div></div>
-</main>
+  <div class="cartao secao">
+    <p class="cartao-titulo">Fila de notificações</p>
+    <p class="item-meta" style="margin-bottom:10px">Com BRASIL_NOTIFICACOES=fila, nenhuma mensagem sai: elas ficam aqui até o Telegram voltar.</p>
+    <div class="tabela-caixa"><table class="tabela"><thead><tr><th>Quando</th><th>Canal</th><th>Voluntário</th><th>Crise</th></tr></thead><tbody id="fila"></tbody></table></div>
+  </div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -34,7 +41,7 @@ async function carregar() {
   const tb = document.getElementById("status");
   tb.replaceChildren(...linhas.map((s) => {
     const tr = document.createElement("tr");
-    for (const [t, cls] of [[s.fonte.toUpperCase()], [fmt(s.tentativa_em)], [s.ok ? "ok" : "falha: " + (s.erro || "").slice(0, 160), s.ok ? "ok-sim" : "ok-nao"], [s.eventos, "num"], [fmt(s.ultimo_ok_em)]]) {
+    for (const [t, cls] of [[s.fonte.toUpperCase()], [fmt(s.tentativa_em)], [s.ok ? "ok" : "falha: " + (s.erro || "").slice(0, 160), s.ok ? "ok" : "erro"], [s.eventos, "num"], [fmt(s.ultimo_ok_em)]]) {
       const td = document.createElement("td"); td.textContent = t; if (cls) td.className = cls; tr.append(td);
     }
     return tr;
@@ -63,21 +70,21 @@ async function naoVerificadas() {
     naoVerificadas();
   };
   ul.replaceChildren(...lista.map((c) => mk("li", {}, [
-    mk("div", { class: "crise-topo" }, [mk("span", { class: "crise-titulo", texto: c.title }), mk("span", { class: "selo", texto: "não verificada" })]),
-    mk("span", { class: "crise-meta", texto: `${c.uf || ""} · ${c.crisis_type} · severidade ${c.severity} · expira ${fmt(c.expira_em)}` }),
-    mk("a", { class: "crise-meta", href: c.link_fonte, target: "_blank", rel: "noopener", texto: "ler a notícia ↗" }),
-    mk("div", { class: "crise-acoes" }, [mk("button", { type: "button", texto: "Confirmar", onclick: () => decidir(c.id, "confirmar") }),
-                                         mk("button", { type: "button", class: "cancelar", texto: "Descartar", onclick: () => decidir(c.id, "descartar") })]),
+    mk("div", { class: "item-topo" }, [mk("span", { class: "item-titulo", texto: c.title }), mk("span", { class: "selo selo-nv", texto: "não verificada" })]),
+    mk("span", { class: "item-meta", texto: `${c.uf || ""} · ${c.crisis_type} · severidade ${c.severity} · expira ${fmt(c.expira_em)}` }),
+    mk("a", { class: "item-meta", href: c.link_fonte, target: "_blank", rel: "noopener", texto: "ler a notícia ↗" }),
+    mk("div", { class: "acoes" }, [mk("button", { type: "button", class: "botao botao-primario botao-pequeno", texto: "Confirmar", onclick: () => decidir(c.id, "confirmar") }),
+                                    mk("button", { type: "button", class: "botao botao-neutro botao-pequeno", texto: "Descartar", onclick: () => decidir(c.id, "descartar") })]),
   ])));
-  if (!lista.length) ul.replaceChildren(mk("li", { class: "ficha-vazia", texto: "Nenhuma crise de notícia esperando decisão." }));
+  if (!lista.length) ul.replaceChildren(mk("li", { class: "vazio", texto: "Nenhuma crise de notícia esperando decisão." }));
 }
 async function distribuicao() {
   const r = await fetch("{{ url_for('brasil.api_admin', parte='distribuicao') }}"), d = r.ok ? await r.json() : null, box = document.getElementById("distribuicao");
-  if (!d) return box.replaceChildren(mk("p", { class: "ficha-vazia", texto: "Não foi possível calcular." }));
-  const lista = (titulo, itens, f) => [mk("p", { class: "ficha-sub", texto: titulo }),
-    itens.length ? mk("ul", { class: "lista-crises" }, itens.slice(0, 15).map((x) => mk("li", { texto: f(x) }))) : mk("p", { class: "ficha-vazia", texto: "nenhuma" })];
-  box.replaceChildren(
-    mk("p", { class: "ficha-indice" }, [String(Math.round(d.cobertura * 100)) + "%", mk("small", { texto: "das crises ativas com alguém" })]),
+  if (!d) return box.append(mk("p", { class: "vazio", texto: "Não foi possível calcular." }));
+  const lista = (titulo, itens, f) => [mk("p", { class: "item-titulo", style: "margin-top:14px", texto: titulo }),
+    itens.length ? mk("ul", { class: "lista" }, itens.slice(0, 10).map((x) => mk("li", { class: "item-meta", texto: f(x) }))) : mk("p", { class: "vazio", texto: "nenhuma" })];
+  box.replaceChildren(mk("p", { class: "cartao-titulo", texto: "Distribuição de voluntários" }),
+    mk("div", { class: "ficha-numero" }, [mk("b", { texto: Math.round(d.cobertura * 100) + "%" }), mk("span", { texto: "das crises ativas têm alguém" })]),
     ...lista("Sugestões de realocação", d.sugestoes, (s) => `${s.texto} (${s.distancia_km} km)`),
     ...lista("Lacunas", d.lacunas, (l) => `${l.title} — severidade ${l.severity}, ${l.voluntarios}/${l.meta} voluntários`),
     ...lista("Redundâncias", d.redundancias, (x) => `${x.title} — ${x.voluntarios} para meta ${x.meta}`));

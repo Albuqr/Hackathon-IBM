@@ -1,31 +1,20 @@
 {% extends "brasil/base.html" %}
 {% block titulo %}Mapa · Crisis Monitor Brasil{% endblock %}
-{% block nav %}{% endblock %}
 {% block corpo %}
-<a class="skip" href="#mapa">Pular para o mapa</a>
-<section class="hero">
-  {{ self.nav_escura() }}
-  <div class="hero-texto">
-    <p class="rotulo"><span class="rotulo-marca" aria-hidden="true"></span><span id="rotulo-total">Crises ativas no Brasil</span></p>
-    <h1 class="hero-titulo"><span class="linha"><span>Brasil</span></span><span class="linha"><span>em crise</span></span></h1>
-    <div class="hero-pe">
-      <p class="hero-lede">Cada pixel é um pedaço do país. Quanto maior e mais claro, mais grave a crise ativa no município.</p>
-      <div class="hero-acoes"><a class="botao botao-claro" href="#mapa"><span class="botao-icone" aria-hidden="true">+</span>Explorar o mapa</a></div>
-    </div>
+<div class="pagina">
+  <div class="pagina-cabeca">
+    <h1>Crises por município</h1>
+    <p>Escolha o que pintar no mapa. Clique num município ou num ponto para ver as crises e agir.</p>
   </div>
-  <figure class="hero-cidade" aria-label="Brasil desenhado em pixels pelo indicador escolhido">
-    <canvas id="cidade" role="img" aria-label="Mapa em pixels dos municípios do Brasil"></canvas>
-    <div class="cidade-tag" id="cidade-tag" hidden></div>
-    <figcaption class="hero-legenda"><span class="px px-p" aria-hidden="true"></span>sem crise<span class="px px-g" aria-hidden="true"></span>mais grave</figcaption>
-  </figure>
-</section>
 
-<section class="explorar" id="mapa" aria-labelledby="mapa-titulo">
-  <div class="secao-cabeca">
-    <h2 id="mapa-titulo">Crises por município</h2>
-    <p class="secao-nota">Escolha o que pintar no mapa. Clique num município ou num ponto para ver as crises e se inscrever.</p>
+  <div class="kpis" id="kpis" aria-live="polite">
+    <div class="kpi"><b id="k-crises">–</b><span>crises ativas</span></div>
+    <div class="kpi"><b id="k-muns">–</b><span>municípios afetados</span></div>
+    <div class="kpi perigo"><b id="k-graves">–</b><span>severidade 4 ou 5</span></div>
+    <div class="kpi"><b id="k-nv">–</b><span>não verificadas</span></div>
   </div>
-  <div class="controles" role="toolbar" aria-label="Controles do mapa">
+
+  <div class="barra-ferramentas" role="toolbar" aria-label="Controles do mapa">
     <div class="segmentado" id="ctl-indicador" role="group" aria-label="Indicador">
       <button type="button" data-v="severidade" aria-pressed="true">Severidade</button>
       <button type="button" data-v="crises" aria-pressed="false">Nº de crises</button>
@@ -35,47 +24,37 @@
     </div>
     <div class="filtros" id="filtros">
       <label>UF <select id="f-uf"><option value="">todas</option></select></label>
-      <label>Severidade ≥ <select id="f-sev"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
+      <label>Severidade mín. <select id="f-sev"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
       <label>Tipo <select id="f-tipo"><option value="">todos</option></select></label>
       <label>Fonte <select id="f-fonte"><option value="">todas</option></select></label>
       <label>Verificação <select id="f-verif"><option value="">todas</option><option value="verificada">verificadas</option><option value="nao_verificada">não verificadas</option></select></label>
-      <label><input type="checkbox" id="f-pontos" checked> pontos</label>
-      <span class="contagem" id="contagem" aria-live="polite"></span>
+      <label class="marcar"><input type="checkbox" id="f-pontos" checked> pontos</label>
     </div>
   </div>
-  <div class="explorar-grade">
+
+  <div class="mapa-grade">
     <div class="mapa-caixa">
       <div id="mapa-leaflet" class="mapa" aria-label="Mapa coroplético dos municípios"></div>
       <div class="legenda" id="legenda" aria-live="polite"></div>
     </div>
     <aside class="painel">
-      <article class="ficha" id="ficha" aria-live="polite"></article>
-      <div class="ranking-caixa">
+      <figure class="cartao visao" aria-label="Brasil em pixels pelo indicador escolhido">
+        <figcaption class="cartao-titulo">Visão geral · pixels</figcaption>
+        <div class="visao-tela"><canvas id="cidade" role="img" aria-label="Mapa em pixels dos municípios do Brasil"></canvas>
+          <div class="cidade-tag" id="cidade-tag" hidden></div></div>
+      </figure>
+      <article class="cartao ficha" id="ficha" aria-live="polite"></article>
+      <div class="cartao">
+        <p class="cartao-titulo">Ranking <span class="contagem" id="contagem"></span></p>
         <label class="busca"><span class="visually-hidden">Buscar município</span><input type="search" id="busca" placeholder="Buscar município ou UF" autocomplete="off"></label>
         <ol class="ranking" id="ranking"></ol>
         <p class="ranking-pe" id="ranking-pe"></p>
       </div>
     </aside>
   </div>
-</section>
-<footer class="rodape"><p>Fontes: INPE (Programa Queimadas), CEMADEN, INMET, USGS, GDACS, NASA EONET, ReliefWeb, GDELT. Malha e população: IBGE, Censo 2022. Mapa com <a href="https://leafletjs.com" rel="noopener">Leaflet</a>.</p></footer>
+</div>
 {% endblock %}
-{% block nav_escura %}
-<nav class="nav" aria-label="Dash Brasil">
-  <a class="nav-marca" href="{{ url_for('brasil.inicio') }}"><span class="rotulo-marca" aria-hidden="true"></span>Crisis Monitor Brasil</a>
-  <div class="nav-links">
-    <a href="{{ url_for('brasil.mapa') }}" aria-current="page">Mapa</a>
-      {% if br_role == 'org' %}<a href="{{ url_for('brasil.ong') }}">Painel da ONG</a>{% endif %}
-      {% if br_role == 'volunteer' %}<a href="{{ url_for('brasil.minhas_campanhas') }}">Minhas campanhas</a>{% endif %}
-      {% if br_role in ('volunteer', 'org') %}<a href="{{ url_for('brasil.perfil') }}">Meu perfil</a>{% endif %}
-    {% if br_role in ('volunteer', 'org') %}<a href="{{ url_for('brasil.chat') }}">Assistente</a>{% endif %}
-    <a href="{{ url_for('brasil.previsoes') }}">Previsões</a>
-    {% if br_role == 'admin' %}<a href="{{ url_for('brasil.admin') }}">Admin</a>{% endif %}
-    <span class="nav-quem">{{ br_nome }} · {{ br_papel }}</span>
-    <a href="{{ url_for('brasil.sair') }}">Sair</a>
-  </div>
-</nav>
-{% endblock %}
+{% block rodape %}<footer class="rodape">Fontes: INPE (Programa Queimadas), CEMADEN, INMET, USGS, GDACS, NASA EONET, ReliefWeb, GDELT e notícias de fontes confiáveis. Malha e população: IBGE, Censo 2022. Mapa com Leaflet.</footer>{% endblock %}
 {% block scripts %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="{{ url_for('brasil.malha_js') }}"></script>
