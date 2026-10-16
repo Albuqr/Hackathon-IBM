@@ -27,6 +27,7 @@ No Admin, "Atualizar dados" faz a primeira ingestão (≈ 15 s).
 |---|---|---|
 | `BRASIL_DB_PATH` | `brasil.db` ao lado de `DB_PATH` | caminho; não pode ser igual a `DB_PATH` |
 | `BRASIL_DEV_LOGIN` | desligado | `1` liga `/brasil/dev-login/<voluntario/ong/admin>`. Nunca em produção. |
+| `BRASIL_SENHA_TESTE` | — | segredo, 12+ caracteres. Cria/atualiza os 3 usuários de teste (`voluntario@`, `ong@`, `admin@teste.brasil`) com essa senha, para entrar pelo formulário sem ligar `BRASIL_DEV_LOGIN`. |
 | `BRASIL_ORQUESTRADOR` | `local` | `local`, `watsonx`, `claude` |
 | `BRASIL_INGESTAO_AUTO_MIN` | `0` (só manual) | `0` ou `15`–`1440` |
 | `BRASIL_NOTIFICACOES` | `fila` | `fila` (nada sai; fila visível ao admin), `enviar` |

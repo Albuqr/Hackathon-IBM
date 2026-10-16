@@ -32,3 +32,9 @@ def test_valor_invalido_impede_subida_e_nomeia_a_opcao(tmp_path, nome, valor):
 def test_cfg003_dev_login_so_liga_com_1(tmp_path):
     assert carregar(base(tmp_path, BRASIL_DEV_LOGIN="1")).dev_login
     assert not carregar(base(tmp_path, BRASIL_DEV_LOGIN="true")).dev_login
+
+
+def test_senha_teste_curta_impede_a_subida(tmp_path):
+    with pytest.raises(ConfigInvalida, match="BRASIL_SENHA_TESTE"):
+        carregar(base(tmp_path, BRASIL_SENHA_TESTE="curta"))
+    assert carregar(base(tmp_path)).senha_teste == ""

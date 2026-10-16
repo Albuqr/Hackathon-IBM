@@ -77,27 +77,43 @@ def login(d: Login):
         conn.close()
 
 
+def _garantir_teste(conn, perfil: str) -> int:
+    """Cria (se preciso) o usuário de teste do perfil; com BRASIL_SENHA_TESTE, a senha dele passa a ser essa."""
+    t = USUARIOS_TESTE[perfil]
+    senha = _hash(CFG.senha_teste or secrets.token_hex(16))
+    r = conn.execute("SELECT id FROM users WHERE email=?", (t["email"],)).fetchone()
+    if r:
+        if CFG.senha_teste:
+            conn.execute("UPDATE users SET password_hash=? WHERE id=?", (senha, r["id"]))
+            conn.commit()
+        return r["id"]
+    cur = conn.execute(
+        """INSERT INTO users (email, password_hash, role, name, skills, lat, lon, radius_km, org_name, link_code)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (t["email"], senha, t["role"], t["name"], json.dumps(t.get("skills", [])),
+         t["lat"], t["lon"], 300, t.get("org_name"), _link_code() if t["role"] == "volunteer" else None),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+if CFG.senha_teste:  # entrar com e-mail e senha em produção, sem os links de teste
+    _c = db.conectar(CFG)
+    try:
+        for _p in USUARIOS_TESTE:
+            _garantir_teste(_c, _p)
+    finally:
+        _c.close()
+
+
 @router.post("/dev/usuario/{perfil}")
 def dev_usuario(perfil: str):
     """FR-005: cria (se preciso) e devolve o usuário de teste do perfil. Só com BRASIL_DEV_LOGIN=1."""
     if not CFG.dev_login or perfil not in USUARIOS_TESTE:
         raise HTTPException(404, "Não encontrado")
-    t = USUARIOS_TESTE[perfil]
     conn = db.conectar(CFG)
     try:
-        r = conn.execute("SELECT id FROM users WHERE email=?", (t["email"],)).fetchone()
-        if r:
-            uid = r["id"]
-        else:
-            cur = conn.execute(
-                """INSERT INTO users (email, password_hash, role, name, skills, lat, lon, radius_km, org_name, link_code)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                (t["email"], _hash(secrets.token_hex(16)), t["role"], t["name"], json.dumps(t.get("skills", [])),
-                 t["lat"], t["lon"], 300, t.get("org_name"), _link_code() if t["role"] == "volunteer" else None),
-            )
-            conn.commit()
-            uid = cur.lastrowid
-        return _usuario(conn, uid)
+        return _usuario(conn, _garantir_teste(conn, perfil))
     finally:
         conn.close()
 
