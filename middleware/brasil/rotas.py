@@ -8,13 +8,15 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from . import campanhas, db, ingestao, malha
+from . import campanhas, db, ingestao, inteligencia, malha, noticias
 from .config import carregar
 
 CFG = carregar()  # falha rápido na subida da API se a configuração for inválida
+noticias.carregar_fontes()  # CFG-008: lista de fontes de notícia inválida também impede a subida
 
 router = APIRouter(prefix="/brasil", tags=["brasil"])
 router.include_router(campanhas.criar_router(CFG))
+router.include_router(inteligencia.criar_router(CFG))
 _PARAR_AUTO = ingestao.iniciar_automatico(CFG)  # FR-016; None quando BRASIL_INGESTAO_AUTO_MIN=0
 
 USUARIOS_TESTE = {
@@ -215,11 +217,6 @@ def inscricoes(uid: int):
 
 
 # ── ingestão ──────────────────────────────────────────────────────────
-@router.post("/ingestao")
-def disparar_ingestao():
-    return ingestao.executar(CFG)
-
-
 @router.get("/ingestao/status")
 def status_ingestao():
     return ingestao.status(CFG)

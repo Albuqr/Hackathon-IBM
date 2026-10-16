@@ -1,0 +1,24 @@
+# Fontes confiáveis que o brasil_news_agent pode ler (spec CFG-008, decisão Q11).
+# Mudanças nesta lista passam por revisão em PR.
+# `feeds`: RSS lidos a cada coleta. `dominios`: links aceitos; "*" vale para um único rótulo (ex.: a sigla da UF).
+feeds:
+  - nome: Agência Brasil (EBC)
+    url: https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml
+  - nome: G1
+    url: https://g1.globo.com/rss/g1/
+  - nome: Folha (Cotidiano)
+    url: https://feeds.folha.uol.com.br/cotidiano/rss091.xml
+  - nome: gov.br — Ministério da Integração (MDR)
+    url: https://www.gov.br/mdr/pt-br/ultimas-noticias/RSS
+dominios:
+  - agenciabrasil.ebc.com.br
+  - g1.globo.com
+  - "*.folha.uol.com.br"
+  - folha.uol.com.br
+  - www.gov.br
+  - defesacivil.*.gov.br
+  - www.defesacivil.*.gov.br
+  - cemaden.gov.br
+  - www.cemaden.gov.br
+  - portal.inmet.gov.br
+  - alertas2.inmet.gov.br

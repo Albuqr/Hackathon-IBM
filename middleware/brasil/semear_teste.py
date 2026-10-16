@@ -21,6 +21,10 @@ CRISES = [
      "crisis_type": "wildfire", "source": "inpe", "municipio_ibge": 1500602},
     {"id": "teste-caxias", "title": "Teste Caxias do Sul chuva", "lat": -29.17, "lon": -51.18, "severity": 3,
      "crisis_type": "meteorological", "source": "cemaden", "municipio_ibge": 4305108},
+    # AC-026.1: crise de notícia não verificada
+    {"id": "teste-noticia-recife", "title": "Teste notícia alagamento Recife", "lat": -8.05, "lon": -34.9, "severity": 3,
+     "crisis_type": "meteorological", "source": "noticias", "municipio_ibge": 2611606, "verificacao": "nao_verificada",
+     "link_fonte": "https://agenciabrasil.ebc.com.br/teste"},
 ]
 
 

@@ -296,3 +296,9 @@ button.botao { font-family: var(--mono); }
 .status { font-family: var(--mono); font-size: 11px; padding: 2px 6px; border-radius: 2px; background: var(--papel); color: var(--tinta-2); }
 .status.confirmed { background: #e8f3ee; color: #0f5c40; } .status.declined { background: #fdecea; color: #8a1c10; } .status.closed { background: var(--neutro); }
 @media (max-width: 820px) { .numeros-ong, .grade-2 { grid-template-columns: 1fr; } .barras div { grid-template-columns: 100px 1fr 28px; } }
+.conversa { display: grid; gap: 10px; margin-bottom: 18px; max-height: 60vh; overflow-y: auto; }
+.fala { max-width: 80%; padding: 10px 12px; border-radius: var(--raio); background: var(--papel); }
+.fala p { white-space: pre-line; font-size: 14px; }
+.fala small { display: block; margin-top: 6px; font-family: var(--mono); font-size: 10px; color: var(--tinta-3); }
+.fala.eu { justify-self: end; background: var(--cobalto); color: var(--branco); }
+.pagina code { font-family: var(--mono); font-size: 12px; }

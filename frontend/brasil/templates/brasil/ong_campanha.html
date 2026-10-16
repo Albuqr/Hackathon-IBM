@@ -28,6 +28,15 @@
       {% endfor %}</ul>{% else %}<p class="ficha-vazia">Nenhum voluntário disponível nesse raio.</p>{% endif %}
     </div>
   </div>
+  <div class="cartao" style="margin-top:20px">
+    <p class="ficha-sub">Matching para a crise (voluntários no Brasil, por compatibilidade)</p>
+    <div class="crise-acoes" style="margin:10px 0">
+      <button type="button" id="ver-matching">Ver matching</button>
+      <button type="button" class="cancelar" id="notificar">Notificar os 10 melhores</button>
+    </div>
+    <p class="crise-meta" id="notif-msg"></p>
+    <ul class="lista-crises" id="matching"></ul>
+  </div>
 </main>
 {% endblock %}
 {% block scripts %}
@@ -40,6 +49,18 @@ document.querySelectorAll("button[data-vid]").forEach((b) => b.addEventListener(
   const r = await fetch(url, { method: b.dataset.acao });
   r.ok ? location.reload() : (erro(r), b.disabled = false);
 }));
+document.getElementById("ver-matching").addEventListener("click", async () => {
+  const r = await fetch("{{ url_for('brasil.api_matching', crisis_id=c.crisis_id) }}"), lista = r.ok ? await r.json() : [];
+  const ul = document.getElementById("matching");
+  ul.replaceChildren(...lista.map((m) => { const li = document.createElement("li");
+    li.textContent = `${m.name} — score ${m.score.toFixed(2)} · ${Math.round(m.distancia_km)} km`; return li; }));
+  if (!lista.length) ul.innerHTML = '<li class="ficha-vazia">Nenhum voluntário compatível no raio.</li>';
+});
+document.getElementById("notificar").addEventListener("click", async () => {
+  const r = await fetch("{{ url_for('brasil.api_notificar', crisis_id=c.crisis_id) }}", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ limite: 10 }) });
+  const d = await r.json(), m = document.getElementById("notif-msg");
+  m.textContent = r.ok ? (d.modo === "fila" ? `${d.enfileiradas} mensagens na fila (Telegram fora do ar; o admin vê a fila).` : `${d.enviadas} enviadas, ${d.falhas} falhas.`) : "Não foi possível notificar.";
+});
 document.getElementById("encerrar")?.addEventListener("click", async () => {
   const r = await fetch("{{ url_for('brasil.api_editar_campanha', cid=c.id) }}", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "closed" }) });
   r.ok ? location.reload() : erro(r);

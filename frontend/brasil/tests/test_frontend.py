@@ -143,3 +143,45 @@ def test_ac_014_1_painel_da_ong_mostra_os_numeros(front, logar):
     api.respostas[("GET", "/crises")] = (200, [])
     html = cli.get("/brasil/ong").get_data(as_text=True)
     assert "<b>8</b>" in html and "<b>2</b>" in html and "resgate" in html and "Apoio POA" in html
+
+
+# AC-030.1
+def test_ac_030_1_chat_usa_o_usuario_da_sessao(front, logar):
+    cli, api = front
+    logar(cli, "volunteer", uid=7)
+    api.respostas[("POST", "/chat")] = (200, {"texto": "Encontrei 2 crises", "dados": {}, "provedor": "local", "avisos": []})
+    r = cli.post("/brasil/api/chat", json={"mensagem": "onde posso ajudar?", "user_id": 1})
+    assert r.get_json()["texto"] == "Encontrei 2 crises"
+    assert api.chamadas[-1][2] == {"user_id": 7, "mensagem": "onde posso ajudar?", "crisis_id": None}
+
+
+# AC-025.1
+def test_ac_025_1_so_admin_confirma_noticia(front, logar):
+    cli, api = front
+    logar(cli, "org", uid=3)
+    assert cli.put("/brasil/api/crises/noticia-1/verificacao", json={"acao": "confirmar"}).status_code == 403
+    logar(cli, "admin", uid=1)
+    api.respostas[("PUT", "/crises/noticia-1/verificacao")] = (200, {"id": "noticia-1", "verificacao": "verificada"})
+    assert cli.put("/brasil/api/crises/noticia-1/verificacao", json={"acao": "confirmar"}).get_json()["verificacao"] == "verificada"
+    assert api.chamadas[-1][2]["user_id"] == 1
+
+
+# AC-034.1
+def test_ac_034_1_pagina_de_previsoes(front, logar):
+    cli, api = front
+    logar(cli, "volunteer")
+    api.respostas[("GET", "/previsoes")] = (200, {"texto": "1 município", "provedor": "local", "avisos": [], "dados": [
+        {"municipio": "Altamira", "uf": "PA", "tipo": "wildfire", "dias_com_crise": 4, "severidade_max": 4,
+         "probabilidade": "baixa", "acao": "Preparar resposta"}]})
+    html = cli.get("/brasil/previsoes").get_data(as_text=True)
+    assert "Altamira – PA" in html and "Previsões de risco" in html
+
+
+# AC-035.1
+def test_ac_035_1_notificar_so_ong_ou_admin(front, logar):
+    cli, api = front
+    logar(cli, "volunteer")
+    assert cli.post("/brasil/api/crises/x/notificar").status_code == 403
+    logar(cli, "org", uid=3)
+    api.respostas[("POST", "/crises/x/notificar")] = (200, {"modo": "fila", "enfileiradas": 3})
+    assert cli.post("/brasil/api/crises/x/notificar", json={"limite": 3}).get_json()["enfileiradas"] == 3

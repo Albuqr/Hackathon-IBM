@@ -102,3 +102,16 @@ test("AC-012.1 AC-013.1 AC-011.1 ONG cria campanha pelo mapa, convida e o volunt
   await ong.reload();
   assert.match(await ong.locator(".lista-crises .status").first().textContent(), /confirmado/);
 });
+
+test("AC-026.1 crise não verificada tem contorno tracejado e a dica diz \"não verificada\"", async () => {
+  const { page } = await abrirMapa();
+  const ponto = await page.evaluate(() => {
+    const l = Object.values(window.__brasilMapa._layers).find((l) => l.options?.radius && /notícia alagamento Recife/.test(l.getTooltip()?.getContent() || ""));
+    return l && { dash: l.options.dashArray, dica: l.getTooltip().getContent() };
+  });
+  assert.ok(ponto, "ponto da notícia não apareceu");
+  assert.equal(ponto.dash, "3 2");
+  assert.match(ponto.dica, /não verificada/);
+  await page.selectOption("#f-verif", "nao_verificada");
+  assert.match(await page.locator("#contagem").textContent(), /^1 crises/);
+});

@@ -12,6 +12,18 @@
       <tbody id="status"></tbody>
     </table></div>
   </div>
+
+  <div class="secao-cabeca" style="margin-top:56px"><h2>Crises de notícia</h2>
+    <p class="secao-nota">Vindas do agente de notícias, de fontes confiáveis. Ficam marcadas como não verificadas até você confirmar ou descartar; sem decisão, saem em 7 dias.</p></div>
+  <div class="cartao"><ul class="lista-crises" id="nao-verificadas"></ul></div>
+
+  <div class="secao-cabeca" style="margin-top:56px"><h2>Distribuição de voluntários</h2>
+    <p class="secao-nota">Lacunas (crises graves sem gente), redundâncias (mais de 150% da meta) e sugestões de realocação.</p></div>
+  <div class="cartao" id="distribuicao"></div>
+
+  <div class="secao-cabeca" style="margin-top:56px"><h2>Fila de notificações</h2>
+    <p class="secao-nota">Com <code>BRASIL_NOTIFICACOES=fila</code>, nenhuma mensagem sai: elas ficam aqui até o Telegram voltar.</p></div>
+  <div class="cartao"><div class="tabela-caixa"><table class="tabela"><thead><tr><th>Quando</th><th>Canal</th><th>Voluntário</th><th>Crise</th></tr></thead><tbody id="fila"></tbody></table></div></div>
 </main>
 {% endblock %}
 {% block scripts %}
@@ -34,9 +46,49 @@ document.getElementById("atualizar").addEventListener("click", async (e) => {
   b.disabled = true; msg.hidden = false; msg.className = "aviso ok"; msg.textContent = "Coletando… pode levar até 2 minutos.";
   const r = await fetch("{{ url_for('brasil.api_ingestao') }}", { method: "POST" }), d = await r.json();
   msg.className = r.ok ? "aviso ok" : "aviso";
-  msg.textContent = r.ok ? `Pronto: ${d.gravadas} crises gravadas em ${d.segundos}s.` : (d.detail || "Falha na ingestão");
+  msg.textContent = r.ok ? `Pronto: ${d.gravadas} crises gravadas em ${d.segundos}s (orquestrador: ${d.provedor}${d.avisos?.length ? " — " + d.avisos.join("; ") : ""}).` : (d.detail || "Falha na ingestão");
   b.disabled = false; carregar();
 });
 carregar();
+
+const mk = (tag, attrs = {}, filhos = []) => { const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k === "texto" ? (n.textContent = v) : k.startsWith("on") ? n.addEventListener(k.slice(2), v) : n.setAttribute(k, v);
+  n.append(...filhos); return n; };
+async function naoVerificadas() {
+  const r = await fetch("{{ url_for('brasil.api_admin', parte='nao-verificadas') }}"), lista = r.ok ? await r.json() : [];
+  const ul = document.getElementById("nao-verificadas");
+  const decidir = async (id, acao) => {
+    await fetch("{{ url_for('brasil.api_verificacao', crisis_id='__ID__') }}".replace("__ID__", encodeURIComponent(id)),
+      { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao }) });
+    naoVerificadas();
+  };
+  ul.replaceChildren(...lista.map((c) => mk("li", {}, [
+    mk("div", { class: "crise-topo" }, [mk("span", { class: "crise-titulo", texto: c.title }), mk("span", { class: "selo", texto: "não verificada" })]),
+    mk("span", { class: "crise-meta", texto: `${c.uf || ""} · ${c.crisis_type} · severidade ${c.severity} · expira ${fmt(c.expira_em)}` }),
+    mk("a", { class: "crise-meta", href: c.link_fonte, target: "_blank", rel: "noopener", texto: "ler a notícia ↗" }),
+    mk("div", { class: "crise-acoes" }, [mk("button", { type: "button", texto: "Confirmar", onclick: () => decidir(c.id, "confirmar") }),
+                                         mk("button", { type: "button", class: "cancelar", texto: "Descartar", onclick: () => decidir(c.id, "descartar") })]),
+  ])));
+  if (!lista.length) ul.replaceChildren(mk("li", { class: "ficha-vazia", texto: "Nenhuma crise de notícia esperando decisão." }));
+}
+async function distribuicao() {
+  const r = await fetch("{{ url_for('brasil.api_admin', parte='distribuicao') }}"), d = r.ok ? await r.json() : null, box = document.getElementById("distribuicao");
+  if (!d) return box.replaceChildren(mk("p", { class: "ficha-vazia", texto: "Não foi possível calcular." }));
+  const lista = (titulo, itens, f) => [mk("p", { class: "ficha-sub", texto: titulo }),
+    itens.length ? mk("ul", { class: "lista-crises" }, itens.slice(0, 15).map((x) => mk("li", { texto: f(x) }))) : mk("p", { class: "ficha-vazia", texto: "nenhuma" })];
+  box.replaceChildren(
+    mk("p", { class: "ficha-indice" }, [String(Math.round(d.cobertura * 100)) + "%", mk("small", { texto: "das crises ativas com alguém" })]),
+    ...lista("Sugestões de realocação", d.sugestoes, (s) => `${s.texto} (${s.distancia_km} km)`),
+    ...lista("Lacunas", d.lacunas, (l) => `${l.title} — severidade ${l.severity}, ${l.voluntarios}/${l.meta} voluntários`),
+    ...lista("Redundâncias", d.redundancias, (x) => `${x.title} — ${x.voluntarios} para meta ${x.meta}`));
+}
+async function fila() {
+  const r = await fetch("{{ url_for('brasil.api_admin', parte='notificacoes') }}"), linhas = r.ok ? await r.json() : [];
+  const tb = document.getElementById("fila");
+  tb.replaceChildren(...linhas.map((n) => mk("tr", {}, [mk("td", { texto: fmt(n.criada_em) }), mk("td", { texto: n.canal }),
+    mk("td", { texto: n.nome || n.user_id }), mk("td", { texto: n.crisis_id })])));
+  if (!linhas.length) tb.replaceChildren(mk("tr", {}, [mk("td", { colspan: "4", texto: "Fila vazia." })]));
+}
+naoVerificadas(); distribuicao(); fila();
 </script>
 {% endblock %}

@@ -68,6 +68,8 @@
       {% if br_role == 'org' %}<a href="{{ url_for('brasil.ong') }}">Painel da ONG</a>{% endif %}
       {% if br_role == 'volunteer' %}<a href="{{ url_for('brasil.minhas_campanhas') }}">Minhas campanhas</a>{% endif %}
       {% if br_role in ('volunteer', 'org') %}<a href="{{ url_for('brasil.perfil') }}">Meu perfil</a>{% endif %}
+    {% if br_role in ('volunteer', 'org') %}<a href="{{ url_for('brasil.chat') }}">Assistente</a>{% endif %}
+    <a href="{{ url_for('brasil.previsoes') }}">Previsões</a>
     {% if br_role == 'admin' %}<a href="{{ url_for('brasil.admin') }}">Admin</a>{% endif %}
     <span class="nav-quem">{{ br_nome }} · {{ br_papel }}</span>
     <a href="{{ url_for('brasil.sair') }}">Sair</a>

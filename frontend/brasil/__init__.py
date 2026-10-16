@@ -239,3 +239,59 @@ def api_voluntario_campanha(cid, vid):
 def api_convite(cv_id):
     status = (request.get_json(silent=True) or {}).get("status")
     return _resposta(*api("PUT", f"/convites/{cv_id}", json={"user_id": session["br_user_id"], "status": status}))
+
+
+# ── IA, notícias, previsões e notificações (F3) ───────────────────────
+@bp.route("/chat")
+@exige_login("volunteer", "org")
+def chat():
+    crises = []
+    if session.get("br_role") == "org":
+        _, crises = api("GET", "/crises")
+        crises = sorted(crises if isinstance(crises, list) else [], key=lambda c: (-c["severity"], c["title"]))[:400]
+    return render_template("brasil/chat.html", crises=crises, crise_escolhida=request.args.get("crise", ""))
+
+
+@bp.route("/previsoes")
+@exige_login()
+def previsoes():
+    st, r = api("GET", "/previsoes", timeout=120)
+    return render_template("brasil/previsoes.html", r=r if st == 200 else {"dados": [], "texto": r.get("detail", ""), "avisos": []})
+
+
+@bp.route("/api/chat", methods=["POST"])
+@exige_login("volunteer", "org")
+def api_chat():
+    corpo = request.get_json(silent=True) or {}
+    return _resposta(*api("POST", "/chat", timeout=120, json={
+        "user_id": session["br_user_id"], "mensagem": corpo.get("mensagem", ""), "crisis_id": corpo.get("crisis_id") or None}))
+
+
+@bp.route("/api/admin/<parte>")
+@exige_login("admin")
+def api_admin(parte):
+    caminhos = {"nao-verificadas": "/crises/nao-verificadas", "distribuicao": "/distribuicao", "notificacoes": "/notificacoes"}
+    if parte not in caminhos:
+        abort(404)
+    return _resposta(*api("GET", caminhos[parte]))
+
+
+@bp.route("/api/crises/<crisis_id>/verificacao", methods=["PUT"])
+@exige_login("admin")
+def api_verificacao(crisis_id):
+    corpo = request.get_json(silent=True) or {}
+    return _resposta(*api("PUT", f"/crises/{crisis_id}/verificacao", json={
+        "user_id": session["br_user_id"], "acao": corpo.get("acao"), "severity": corpo.get("severity")}))
+
+
+@bp.route("/api/crises/<crisis_id>/matching")
+@exige_login("org", "admin")
+def api_matching(crisis_id):
+    return _resposta(*api("GET", f"/crises/{crisis_id}/matching"))
+
+
+@bp.route("/api/crises/<crisis_id>/notificar", methods=["POST"])
+@exige_login("org", "admin")
+def api_notificar(crisis_id):
+    limite = int((request.get_json(silent=True) or {}).get("limite", 10))
+    return _resposta(*api("POST", f"/crises/{crisis_id}/notificar", json={"user_id": session["br_user_id"], "limite": limite}))

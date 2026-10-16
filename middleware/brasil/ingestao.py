@@ -16,7 +16,7 @@ from .config import Config
 
 _TOOLS = os.path.join(os.path.dirname(__file__), "..", "..", "tools")
 
-FONTES_BR = ("inpe", "cemaden", "inmet")
+FONTES_BR = ("inpe", "cemaden", "inmet", "noticias")
 FONTES_GLOBAIS = ("usgs", "gdacs", "eonet", "reliefweb", "gdelt")
 
 QUEIMADA_SEM_FOCO = timedelta(hours=48)
@@ -92,23 +92,38 @@ def _gravar(conn, ev: dict, cod, uf, agora: datetime):
         expira = utc(ev["expira_em"], agora + timedelta(days=1))
     else:
         expira = None  # sai quando some da fonte (ver _expirar_ausentes)
+    noticia = ev.get("verificacao") == "nao_verificada"
+    sev = float(ev.get("severity") or 1)
+    if noticia:
+        sev = min(sev, 3)  # FR-024: crise de notícia não verificada tem teto 3
+    # Decisão do admin sobre notícia (FR-025) é preservada: confirmada não expira nem perde a severidade
+    # que o admin deu; descartada continua descartada.
     conn.execute(
         """INSERT INTO crises (id, title, country, country_iso3, lat, lon, severity, urgency, crisis_type,
                source, people_affected, created_at, updated_at, municipio_ibge, uf, link_fonte,
-               municipios_afetados, visto_em, expira_em)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               municipios_afetados, visto_em, expira_em, verificacao)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(id) DO UPDATE SET title=excluded.title, lat=excluded.lat, lon=excluded.lon,
-               severity=excluded.severity, urgency=excluded.urgency, crisis_type=excluded.crisis_type,
+               severity=CASE WHEN crises.source='noticias' AND crises.verificacao!='nao_verificada'
+                             THEN crises.severity ELSE excluded.severity END,
+               urgency=excluded.urgency, crisis_type=excluded.crisis_type,
                people_affected=excluded.people_affected, updated_at=excluded.updated_at,
                municipio_ibge=excluded.municipio_ibge, uf=excluded.uf, link_fonte=excluded.link_fonte,
                municipios_afetados=excluded.municipios_afetados, visto_em=excluded.visto_em,
-               expira_em=excluded.expira_em""",
+               expira_em=CASE WHEN crises.source='noticias' AND crises.verificacao='verificada'
+                              THEN NULL ELSE excluded.expira_em END""",
         (ev["id"], ev.get("title", ""), "Brasil", "BRA", float(ev["lat"]), float(ev["lon"]),
-         float(ev.get("severity") or 1), ev.get("urgency") or "monitoring", ev.get("crisis_type") or "humanitarian",
+         sev, ev.get("urgency") or "monitoring", ev.get("crisis_type") or "humanitarian",
          ev["source"], int(ev.get("people_affected") or 0), iso(agora), iso(agora), cod, uf,
          ev.get("link_fonte"), json.dumps(ev.get("municipios_afetados") or ([cod] if cod else [])),
-         iso(visto), iso(expira) if expira else None),
+         iso(visto), iso(expira) if expira else None, "nao_verificada" if noticia else "verificada"),
     )
+    # histórico diário por crise (FR-034: previsões por recorrência)
+    dia = iso(agora)[:10]
+    if not conn.execute("SELECT 1 FROM classifications_log WHERE crisis_id=? AND substr(classified_at,1,10)=?",
+                        (ev["id"], dia)).fetchone():
+        conn.execute("INSERT INTO classifications_log (crisis_id, severity, crisis_type, classified_at) VALUES (?,?,?,?)",
+                     (ev["id"], sev, ev.get("crisis_type"), iso(agora)))
 
 
 def _expirar_ausentes(conn, fonte: str, ids: set, agora: datetime):
@@ -160,7 +175,7 @@ def executar(cfg: Config, fontes: dict | None = None, agora: datetime | None = N
                 ev["id"] = ev["id"] if nome in FONTES_BR else f"br-{ev['id']}"
                 _gravar(conn, ev, cod, info["uf"] if info else None, agora)
                 ids.add(ev["id"])
-            if nome not in ("inpe", "inmet"):
+            if nome not in ("inpe", "inmet", "noticias"):  # essas expiram por data
                 _expirar_ausentes(conn, ev_fonte(nome, eventos), ids, agora)
             conn.execute(
                 """INSERT INTO fontes_status (fonte, ok, eventos, erro, tentativa_em, ultimo_ok_em) VALUES (?,1,?,NULL,?,?)

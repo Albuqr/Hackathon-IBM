@@ -29,9 +29,22 @@ No Admin, "Atualizar dados" faz a primeira ingestão (≈ 15 s).
 | `BRASIL_DEV_LOGIN` | desligado | `1` liga `/brasil/dev-login/<voluntario/ong/admin>`. Nunca em produção. |
 | `BRASIL_ORQUESTRADOR` | `local` | `local`, `watsonx`, `claude` |
 | `BRASIL_INGESTAO_AUTO_MIN` | `0` (só manual) | `0` ou `15`–`1440` |
-| `BRASIL_NOTIFICACOES` | `fila` | `fila`, `enviar` |
+| `BRASIL_NOTIFICACOES` | `fila` | `fila` (nada sai; fila visível ao admin), `enviar` |
 | `BRASIL_CLAUDE_MODELO` | `claude-sonnet-5-5` | id de modelo Claude |
 | `ANTHROPIC_API_KEY` | — | segredo; só para `BRASIL_ORQUESTRADOR=claude` |
+| `BRASIL_ORCHESTRATOR_AGENT_ID`, `BRASIL_PREDICTION_AGENT_ID` | — | IDs dos agentes `brasil_orchestrator` e `prediction_agent` publicados no watsonx (provedor `watsonx`) |
+| `BRASIL_API_URL` | `http://localhost:8000` | URL da API que o `br_salvar_eventos` usa (provedor `watsonx`) |
+
+Sem a credencial do provedor escolhido, tudo roda no `local` (regras, sem IA generativa) e o motivo aparece no log
+e na resposta. O provedor `claude` precisa do pacote `anthropic` (`pip install anthropic`), que ainda não está em
+`middleware/requirements.txt`.
+
+## Orquestração e agentes
+- `middleware/brasil/orquestracao/`: interface `Provedor` com `local`, `watsonx` e `claude`. Provedor novo = uma classe
+  com `disponivel()` e `executar()`, registrada em `PROVEDORES` e em `config.ORQUESTRADORES`.
+- Agentes novos: `agents/brasil_orchestrator.yaml` e `agents/brasil_news_agent.yaml` (os existentes não mudaram).
+- Notícias: só os feeds e domínios de `fontes_noticias.yaml`. Crise de notícia entra como "não verificada", com
+  severidade máxima 3, e sai em 7 dias se o admin não confirmar.
 
 Valor inválido impede a API de subir, com mensagem que nomeia a variável.
 
