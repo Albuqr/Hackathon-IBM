@@ -1,0 +1,24 @@
+{% extends "brasil/base.html" %}
+{% block titulo %}Entrar · Crisis Monitor Brasil{% endblock %}
+{% block corpo %}
+<main class="pagina">
+  <div class="secao-cabeca"><h2>Entrar no Dash Brasil</h2>
+    <p class="secao-nota">Crises brasileiras por município: INPE, CEMADEN, INMET e fontes globais filtradas para o Brasil.</p></div>
+  <div class="cartao">
+    <form class="form" method="post">
+      {% if erro %}<p class="aviso" role="alert">{{ erro }}</p>{% endif %}
+      <label>E-mail <input type="email" name="email" required autocomplete="email"></label>
+      <label>Senha <input type="password" name="senha" required autocomplete="current-password"></label>
+      <div><button class="botao botao-cheio" type="submit"><span class="botao-icone" aria-hidden="true">→</span>Entrar</button></div>
+    </form>
+    {% if dev_login %}
+    <p class="secao-nota" style="margin-top:22px">Logins de teste (só com <code>BRASIL_DEV_LOGIN=1</code>):</p>
+    <div class="devlogins">
+      <a class="botao botao-contorno" href="{{ url_for('brasil.dev_login', perfil='voluntario') }}"><span class="botao-icone" aria-hidden="true">V</span>Voluntário</a>
+      <a class="botao botao-contorno" href="{{ url_for('brasil.dev_login', perfil='ong') }}"><span class="botao-icone" aria-hidden="true">O</span>ONG</a>
+      <a class="botao botao-contorno" href="{{ url_for('brasil.dev_login', perfil='admin') }}"><span class="botao-icone" aria-hidden="true">A</span>Admin</a>
+    </div>
+    {% endif %}
+  </div>
+</main>
+{% endblock %}

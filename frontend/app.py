@@ -584,6 +584,7 @@ def api_chat():
     }, timeout=60)
     return jsonify(result)
 
+app.register_blueprint(__import__("brasil").bp)  # Dash Brasil (ADR 0001)
 # ── Run ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

@@ -1,0 +1,42 @@
+{% extends "brasil/base.html" %}
+{% block titulo %}Admin · Crisis Monitor Brasil{% endblock %}
+{% block corpo %}
+<main class="pagina">
+  <div class="secao-cabeca"><h2>Ingestão de dados</h2>
+    <p class="secao-nota">Coleta INPE, CEMADEN, INMET e as fontes globais filtradas para o Brasil. Uma fonte com falha não interrompe as outras.</p></div>
+  <div class="cartao">
+    <button class="botao botao-cheio" id="atualizar" type="button"><span class="botao-icone" aria-hidden="true">↻</span>Atualizar dados</button>
+    <p class="aviso ok" id="msg" role="status" hidden style="margin-top:14px"></p>
+    <div class="tabela-caixa"><table class="tabela">
+      <thead><tr><th>Fonte</th><th>Última coleta</th><th>Situação</th><th>Eventos</th><th>Último sucesso</th></tr></thead>
+      <tbody id="status"></tbody>
+    </table></div>
+  </div>
+</main>
+{% endblock %}
+{% block scripts %}
+<script>
+const fmt = (s) => s ? new Date(s).toLocaleString("pt-BR") : "—";
+async function carregar() {
+  const r = await fetch("{{ url_for('brasil.api_ingestao_status') }}"), linhas = r.ok ? await r.json() : [];
+  const tb = document.getElementById("status");
+  tb.replaceChildren(...linhas.map((s) => {
+    const tr = document.createElement("tr");
+    for (const [t, cls] of [[s.fonte.toUpperCase()], [fmt(s.tentativa_em)], [s.ok ? "ok" : "falha: " + (s.erro || "").slice(0, 160), s.ok ? "ok-sim" : "ok-nao"], [s.eventos, "num"], [fmt(s.ultimo_ok_em)]]) {
+      const td = document.createElement("td"); td.textContent = t; if (cls) td.className = cls; tr.append(td);
+    }
+    return tr;
+  }));
+  if (!linhas.length) tb.innerHTML = '<tr><td colspan="5">Nenhuma coleta ainda. Clique em "Atualizar dados".</td></tr>';
+}
+document.getElementById("atualizar").addEventListener("click", async (e) => {
+  const b = e.currentTarget, msg = document.getElementById("msg");
+  b.disabled = true; msg.hidden = false; msg.className = "aviso ok"; msg.textContent = "Coletando… pode levar até 2 minutos.";
+  const r = await fetch("{{ url_for('brasil.api_ingestao') }}", { method: "POST" }), d = await r.json();
+  msg.className = r.ok ? "aviso ok" : "aviso";
+  msg.textContent = r.ok ? `Pronto: ${d.gravadas} crises gravadas em ${d.segundos}s.` : (d.detail || "Falha na ingestão");
+  b.disabled = false; carregar();
+});
+carregar();
+</script>
+{% endblock %}
