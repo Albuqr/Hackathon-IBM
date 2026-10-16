@@ -1,0 +1,42 @@
+{% extends "brasil/base.html" %}
+{% block titulo %}Assistente · Crisis Monitor Brasil{% endblock %}
+{% block corpo %}
+<div class="pagina">
+  <div class="pagina-cabeca"><h1>Assistente</h1>
+    <p>{% if br_role == 'org' %}Escolha uma crise e peça um plano de campanha.{% else %}Pergunte onde suas habilidades ajudam mais. As respostas usam só crises brasileiras ativas.{% endif %}</p></div>
+  <div class="cartao">
+    <div class="conversa" id="conversa" aria-live="polite"></div>
+    <form class="form" id="form-chat">
+      {% if br_role == 'org' %}
+      <label>Crise
+        <select name="crisis_id" required><option value="">escolha uma crise do mapa</option>
+          {% for cr in crises %}<option value="{{ cr.id }}" {{ 'selected' if cr.id == crise_escolhida else '' }}>[{{ cr.severity|int }}] {{ cr.title }}{{ ' · ' ~ cr.uf if cr.uf else '' }}</option>{% endfor %}
+        </select></label>
+      {% endif %}
+      <label>Mensagem <textarea name="mensagem" rows="2" required>{{ 'Monte um plano de campanha para esta crise.' if br_role == 'org' else 'Onde posso ajudar?' }}</textarea></label>
+      <div><button class="botao botao-primario" type="submit">Enviar</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const conversa = document.getElementById("conversa");
+function fala(quem, texto, extra) {
+  const d = document.createElement("div"); d.className = "fala " + quem;
+  const p = document.createElement("p"); p.textContent = texto; d.append(p);
+  if (extra) { const s = document.createElement("small"); s.textContent = extra; d.append(s); }
+  conversa.append(d); d.scrollIntoView({ block: "nearest" });
+}
+document.getElementById("form-chat").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target), b = e.target.querySelector("button");
+  fala("eu", f.get("mensagem")); b.disabled = true;
+  const r = await fetch("{{ url_for('brasil.api_chat') }}", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mensagem: f.get("mensagem"), crisis_id: f.get("crisis_id") }) });
+  const d = await r.json(); b.disabled = false;
+  if (!r.ok) return fala("ia", typeof d.detail === "string" ? d.detail : "Não foi possível responder agora.");
+  fala("ia", d.texto, `respondido por: ${d.provedor}${d.avisos?.length ? " · " + d.avisos.join("; ") : ""}${d.provedor === "local" ? " (regras, sem IA generativa)" : ""}`);
+});
+</script>
+{% endblock %}

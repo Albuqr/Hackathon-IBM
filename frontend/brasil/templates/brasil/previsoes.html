@@ -1,0 +1,18 @@
+{% extends "brasil/base.html" %}
+{% block titulo %}Previsões · Crisis Monitor Brasil{% endblock %}
+{% block corpo %}
+<div class="pagina">
+  <div class="pagina-cabeca"><h1>Previsões de risco</h1>
+    <p>Municípios com risco de nova crise nos próximos 7–30 dias. {{ r.texto }}</p></div>
+  <div class="cartao">
+    <p class="item-meta" style="margin-bottom:10px">gerado por: {{ r.provedor }}{% for a in r.avisos %} · {{ a }}{% endfor %}{% if r.provedor == 'local' %} · regra: crises do mesmo tipo em 3 ou mais dias dos últimos 30{% endif %}</p>
+    {% if r.dados %}
+    <div class="tabela-caixa"><table class="tabela">
+      <thead><tr><th>Município</th><th>Tipo</th><th>Dias com crise</th><th>Sev. máx.</th><th>Probabilidade</th><th>Ação preventiva</th></tr></thead>
+      <tbody>{% for p in r.dados %}<tr><td>{{ p.municipio }} – {{ p.uf }}</td><td>{{ p.tipo }}</td><td class="num">{{ p.dias_com_crise }}</td>
+        <td class="num">{{ p.severidade_max|int }}</td><td>{{ p.probabilidade }}</td><td>{{ p.acao }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% else %}<p class="vazio">Ainda não há histórico suficiente. As previsões aparecem depois de alguns dias de ingestão.</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,81 @@
+{% extends "brasil/base.html" %}
+{% block titulo %}Mapa · Crisis Monitor Brasil{% endblock %}
+{% block corpo %}
+<section class="hero" aria-labelledby="hero-titulo">
+  <div class="hero-texto">
+    <p class="rotulo">Crises ativas no Brasil, por município</p>
+    <h1 class="hero-titulo" id="hero-titulo"><span class="linha"><span>Brasil</span></span><span class="linha"><span>em alerta</span></span></h1>
+    <p class="hero-lede">Cada pixel é um pedaço do país. Quanto maior e mais claro, mais grave a crise ativa no município.</p>
+    <div class="hero-numeros" id="kpis" aria-live="polite">
+      <div><b id="k-crises">–</b><span>crises ativas</span></div>
+      <div><b id="k-muns">–</b><span>municípios afetados</span></div>
+      <div><b id="k-graves" class="perigo">–</b><span>severidade 4 ou 5</span></div>
+      <div><b id="k-nv">–</b><span>não verificadas</span></div>
+    </div>
+    <div class="acoes"><a class="botao botao-claro" href="#mapa">Explorar o mapa ↓</a></div>
+  </div>
+  <figure class="hero-cidade" aria-label="Brasil desenhado em pixels pelo indicador escolhido">
+    <canvas id="cidade" role="img" aria-label="Mapa em pixels dos municípios do Brasil"></canvas>
+    <div class="cidade-tag" id="cidade-tag" hidden></div>
+    <figcaption class="hero-legenda"><span class="px px-p" aria-hidden="true"></span>sem crise<span class="px px-g" aria-hidden="true"></span>mais grave</figcaption>
+  </figure>
+</section>
+
+<section class="explorar" id="mapa" aria-labelledby="mapa-titulo">
+  <div class="secao-cabeca">
+    <h2 id="mapa-titulo">Crises por município</h2>
+    <p>Escolha o que pintar no mapa. Clique num município ou num ponto para ver as crises e agir.</p>
+  </div>
+
+  <div class="barra-ferramentas" role="toolbar" aria-label="Controles do mapa">
+    <div class="segmentado" id="ctl-indicador" role="group" aria-label="O que pintar">
+      <button type="button" data-v="severidade" aria-pressed="true">Severidade</button>
+      <button type="button" data-v="crises" aria-pressed="false">Nº de crises</button>
+      <button type="button" data-v="voluntarios" aria-pressed="false">Voluntários</button>
+      <button type="button" data-v="densidade" aria-pressed="false">Densidade</button>
+      <button type="button" data-v="populacao" aria-pressed="false">População</button>
+    </div>
+    <div class="filtros-rapidos">
+      <label class="campo-uf"><span class="visually-hidden">UF</span><select id="f-uf"><option value="">Todas as UFs</option></select></label>
+      <button class="botao botao-neutro" type="button" id="mais-filtros" aria-expanded="false" aria-controls="filtros">Filtros<span class="filtros-conta" id="filtros-conta"></span></button>
+    </div>
+  </div>
+  <div class="filtros" id="filtros" hidden>
+    <label>Severidade mínima <select id="f-sev"><option value="1">1 — todas</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option></select></label>
+    <label>Tipo <select id="f-tipo"><option value="">todos</option></select></label>
+    <label>Fonte <select id="f-fonte"><option value="">todas</option></select></label>
+    <label>Verificação <select id="f-verif"><option value="">todas</option><option value="verificada">verificadas</option><option value="nao_verificada">não verificadas</option></select></label>
+    <label class="marcar"><input type="checkbox" id="f-pontos"> mostrar pontos das crises</label>
+  </div>
+
+  <div class="mapa-grade">
+    <div class="mapa-caixa">
+      <div id="mapa-leaflet" class="mapa" aria-label="Mapa coroplético dos municípios"></div>
+      <div class="legenda" id="legenda" aria-live="polite"></div>
+    </div>
+    <aside class="painel">
+      <article class="cartao ficha" id="ficha" aria-live="polite" hidden></article>
+      <div class="cartao">
+        <p class="cartao-titulo">Municípios mais afetados · <span class="contagem" id="contagem"></span></p>
+        <label class="busca"><span class="visually-hidden">Buscar município</span><input type="search" id="busca" placeholder="Buscar município ou UF" autocomplete="off"></label>
+        <ol class="ranking" id="ranking"></ol>
+        <div class="ranking-pe"><span id="ranking-pe"></span><button class="link-botao" type="button" id="ranking-mais" hidden>Mostrar mais</button></div>
+      </div>
+    </aside>
+  </div>
+</section>
+{% endblock %}
+{% block rodape %}<footer class="rodape">Fontes: INPE (Programa Queimadas), CEMADEN, INMET, USGS, GDACS, NASA EONET, ReliefWeb, GDELT e notícias de fontes confiáveis. Malha e população: IBGE, Censo 2022. Mapa com Leaflet.</footer>{% endblock %}
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="{{ url_for('brasil.malha_js') }}"></script>
+<script id="br-config" type="application/json">{{ {
+  "papel": br_role,
+  "crises": url_for('brasil.api_crises'),
+  "voluntarios": url_for('brasil.api_voluntarios'),
+  "inscricoes": url_for('brasil.api_inscricoes'),
+  "nova_campanha": url_for('brasil.ong') if br_role == 'org' else none,
+  "inscrever": url_for('brasil.api_inscricao', crisis_id='__ID__', acao='__ACAO__')
+}|tojson }}</script>
+<script src="{{ url_for('brasil.static', filename='mapa.js') }}"></script>
+{% endblock %}

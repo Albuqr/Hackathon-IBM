@@ -1,0 +1,68 @@
+{% extends "brasil/base.html" %}
+{% block titulo %}{{ c.title }} · Crisis Monitor Brasil{% endblock %}
+{% block corpo %}
+<div class="pagina">
+  <div class="pagina-cabeca"><h1>{{ c.title }}</h1>
+    <p>{{ c.crisis_title }}{{ ' · ' ~ c.crisis_uf if c.crisis_uf else '' }} · urgência {{ c.urgency }} · {{ c.selecionados }}/{{ c.target_volunteers }} voluntários ({{ c.confirmados }} confirmados)</p></div>
+  <p class="aviso" id="msg" role="status" hidden></p>
+  <div class="grade-2">
+    <div class="cartao">
+      <p class="cartao-titulo">Na campanha</p>
+      {% if na_campanha %}<ul class="lista">{% for v in na_campanha %}
+        <li><div class="item-topo"><span class="item-titulo">{{ v.name }}</span><span class="selo status {{ v.status }}">{{ {'selected': 'convidado', 'confirmed': 'confirmado', 'declined': 'recusou'}[v.status] }}</span></div>
+          <span class="item-meta">{{ (v.skills or [])|join(', ') or 'sem habilidades informadas' }}</span>
+          <div class="acoes"><button class="botao botao-neutro botao-pequeno" type="button" data-acao="DELETE" data-vid="{{ v.volunteer_id }}">Remover</button></div></li>
+      {% endfor %}</ul>{% else %}<p class="vazio">Nenhum voluntário ainda.</p>{% endif %}
+      <div class="acoes" style="margin-top:16px">
+        {% if c.status == 'active' %}<button class="botao botao-neutro" type="button" id="encerrar">Encerrar campanha</button>
+        {% else %}<span class="selo status">campanha encerrada</span>{% endif %}
+      </div>
+    </div>
+    <div class="cartao">
+      <p class="cartao-titulo">Voluntários disponíveis perto da crise (até 1.500 km)</p>
+      {% if disponiveis %}<ul class="lista">{% for v in disponiveis[:60] %}
+        <li><div class="item-topo"><span class="item-titulo">{{ v.name }}</span><span class="item-meta">{{ v.distancia_km|round|int if v.distancia_km is not none else '' }} km</span></div>
+          <span class="item-meta">{{ (v.skills or [])|join(', ') or 'sem habilidades informadas' }}</span>
+          {% if c.status == 'active' %}<div class="acoes"><button class="botao botao-secundario botao-pequeno" type="button" data-acao="POST" data-vid="{{ v.id }}">Adicionar</button></div>{% endif %}</li>
+      {% endfor %}</ul>{% else %}<p class="vazio">Nenhum voluntário disponível nesse raio.</p>{% endif %}
+    </div>
+  </div>
+  <div class="cartao secao">
+    <p class="cartao-titulo">Matching para a crise (voluntários no Brasil, por compatibilidade)</p>
+    <div class="acoes">
+      <button class="botao botao-secundario botao-pequeno" type="button" id="ver-matching">Ver matching</button>
+      <button class="botao botao-neutro botao-pequeno" type="button" id="notificar">Notificar os 10 melhores</button>
+      <span class="item-meta" id="notif-msg"></span>
+    </div>
+    <ul class="lista" id="matching" style="margin-top:12px"></ul>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const msg = document.getElementById("msg");
+const erro = async (r) => { const d = await r.json().catch(() => ({})); msg.hidden = false; msg.textContent = typeof d.detail === "string" ? d.detail : "Não foi possível."; };
+document.querySelectorAll("button[data-vid]").forEach((b) => b.addEventListener("click", async () => {
+  b.disabled = true;
+  const url = "{{ url_for('brasil.api_voluntario_campanha', cid=c.id, vid=0) }}".replace(/0$/, b.dataset.vid);
+  const r = await fetch(url, { method: b.dataset.acao });
+  r.ok ? location.reload() : (erro(r), b.disabled = false);
+}));
+document.getElementById("ver-matching").addEventListener("click", async () => {
+  const r = await fetch("{{ url_for('brasil.api_matching', crisis_id=c.crisis_id) }}"), lista = r.ok ? await r.json() : [];
+  const ul = document.getElementById("matching");
+  ul.replaceChildren(...lista.map((m) => { const li = document.createElement("li"); li.className = "item-meta";
+    li.textContent = `${m.name} — score ${m.score.toFixed(2)} · ${Math.round(m.distancia_km)} km`; return li; }));
+  if (!lista.length) ul.innerHTML = '<li class="vazio">Nenhum voluntário compatível no raio.</li>';
+});
+document.getElementById("notificar").addEventListener("click", async () => {
+  const r = await fetch("{{ url_for('brasil.api_notificar', crisis_id=c.crisis_id) }}", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ limite: 10 }) });
+  const d = await r.json(), m = document.getElementById("notif-msg");
+  m.textContent = r.ok ? (d.modo === "fila" ? `${d.enfileiradas} mensagens na fila (Telegram fora do ar; o admin vê a fila).` : `${d.enviadas} enviadas, ${d.falhas} falhas.`) : "Não foi possível notificar.";
+});
+document.getElementById("encerrar")?.addEventListener("click", async () => {
+  const r = await fetch("{{ url_for('brasil.api_editar_campanha', cid=c.id) }}", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "closed" }) });
+  r.ok ? location.reload() : erro(r);
+});
+</script>
+{% endblock %}

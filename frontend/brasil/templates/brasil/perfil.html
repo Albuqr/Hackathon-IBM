@@ -1,0 +1,54 @@
+{% extends "brasil/base.html" %}
+{% block titulo %}Meu perfil · Crisis Monitor Brasil{% endblock %}
+{% block corpo %}
+<div class="pagina">
+  <div class="pagina-cabeca"><h1>Meu perfil</h1>
+    <p>Sua localização precisa estar no Brasil. O matching usa habilidades, localização e raio de atuação.</p></div>
+  <div class="grade-lateral">
+    <div class="cartao">
+      <form class="form" id="form-perfil">
+        <p class="aviso" id="msg" role="status" hidden></p>
+        <div class="linha">
+          <label>Nome <input name="name" value="{{ u.name or '' }}"></label>
+          <label>Telefone (WhatsApp) <input name="phone" value="{{ u.phone or '' }}" inputmode="tel"></label>
+        </div>
+        <label>Habilidades (separadas por vírgula) <input name="skills" value="{{ (u.skills or [])|join(', ') }}"></label>
+        <label>Idiomas (separados por vírgula) <input name="languages" value="{{ (u.languages or [])|join(', ') }}"></label>
+        <div class="linha">
+          <label>Latitude <input name="lat" type="number" step="any" value="{{ u.lat }}"></label>
+          <label>Longitude <input name="lon" type="number" step="any" value="{{ u.lon }}"></label>
+        </div>
+        <div class="linha">
+          <label>Raio de atuação (km) <input name="radius_km" type="number" min="1" max="5000" value="{{ u.radius_km }}"></label>
+          <label>Disponível <select name="available"><option value="1" {{ 'selected' if u.available else '' }}>Sim</option><option value="0" {{ '' if u.available else 'selected' }}>Não</option></select></label>
+        </div>
+        <div><button class="botao botao-primario" type="submit">Salvar</button></div>
+      </form>
+    </div>
+    <aside class="painel">
+      {% if u.link_code %}<div class="cartao"><p class="cartao-titulo">Telegram</p>
+        <p class="mono" style="font-size:20px;font-weight:600;color:var(--acento-texto)">{{ u.link_code }}</p>
+        <p class="item-meta">Envie este código ao bot para vincular sua conta.</p></div>{% endif %}
+      <div class="cartao"><p class="cartao-titulo">Minhas crises</p>
+        {% if inscricoes %}<ul class="lista">{% for c in inscricoes %}
+          <li><span class="item-titulo">{{ c.title }}</span><span class="item-meta">{{ c.uf or '' }} · severidade {{ c.severity|int }}</span></li>
+        {% endfor %}</ul>{% else %}<p class="vazio">Você ainda não se inscreveu em nenhuma crise.</p>{% endif %}
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById("form-perfil").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target), lista = (k) => f.get(k).split(",").map((s) => s.trim()).filter(Boolean);
+  const corpo = { name: f.get("name"), phone: f.get("phone"), skills: lista("skills"), languages: lista("languages"),
+    lat: Number(f.get("lat")), lon: Number(f.get("lon")), radius_km: Number(f.get("radius_km")), available: f.get("available") === "1" };
+  const r = await fetch("{{ url_for('brasil.api_perfil') }}", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
+  const d = await r.json(), msg = document.getElementById("msg");
+  msg.hidden = false; msg.className = r.ok ? "aviso ok" : "aviso";
+  msg.textContent = r.ok ? "Perfil salvo." : (typeof d.detail === "string" ? d.detail : "Confira os campos.");
+});
+</script>
+{% endblock %}
