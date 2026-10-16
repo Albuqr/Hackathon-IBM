@@ -22,6 +22,7 @@ class Config:
     ingestao_auto_min: int
     notificacoes: str
     claude_modelo: str
+    senha_teste: str = ""
 
 
 def _db_padrao(crisis_db: str) -> str:
@@ -59,6 +60,10 @@ def carregar(env=None) -> Config:
     if notif not in NOTIFICACOES:
         raise ConfigInvalida(f"BRASIL_NOTIFICACOES={notif}; válidos: {', '.join(NOTIFICACOES)}")
 
+    senha_teste = env.get("BRASIL_SENHA_TESTE", "")
+    if senha_teste and len(senha_teste) < 12:
+        raise ConfigInvalida("BRASIL_SENHA_TESTE tem menos de 12 caracteres")
+
     return Config(
         db_path=db_path,
         orquestrador=orq,
@@ -66,4 +71,5 @@ def carregar(env=None) -> Config:
         ingestao_auto_min=auto_min,
         notificacoes=notif,
         claude_modelo=env.get("BRASIL_CLAUDE_MODELO", "claude-sonnet-5-5"),
+        senha_teste=senha_teste,
     )

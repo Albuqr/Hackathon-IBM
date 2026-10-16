@@ -156,3 +156,20 @@ def test_fr007_voluntarios_por_municipio(api):
     cli, _ = api
     cli.post("/brasil/dev/usuario/voluntario")
     assert cli.get("/brasil/voluntarios/por-municipio").json() == {"4314902": 1}  # Porto Alegre
+
+
+def test_senha_teste_permite_entrar_com_email_e_senha_sem_dev_login(api, monkeypatch):
+    import importlib
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    monkeypatch.delenv("BRASIL_DEV_LOGIN")
+    monkeypatch.setenv("BRASIL_SENHA_TESTE", "senha-de-teste-123")
+    _, rotas = api
+    importlib.reload(rotas)
+    app = FastAPI()
+    app.include_router(rotas.router)
+    cli = TestClient(app)
+    r = cli.post("/brasil/login", json={"email": "admin@teste.brasil", "senha": "senha-de-teste-123"})
+    assert r.status_code == 200 and r.json()["role"] == "admin"
+    assert cli.post("/brasil/login", json={"email": "ong@teste.brasil", "senha": "errada-errada"}).status_code == 401
+    assert cli.post("/brasil/dev/usuario/admin").status_code == 404
