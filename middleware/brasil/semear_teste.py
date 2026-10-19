@@ -49,8 +49,34 @@ def main():
     for c in CRISES:
         por_fonte.setdefault(c["source"], []).append({**c, "visto_em": visto})
     rel = ingestao.executar(cfg, fontes={k: (lambda v=v: v) for k, v in por_fonte.items()}, agora=agora)
+    voluntarios(cfg)
     convites(cfg, agora)
     print(f"semeado: {rel['gravadas']} crises em {cfg.db_path}")
+
+
+VOLUNTARIOS = [  # campanha guiada: matching com habilidades em comum perto das crises do RS
+    ("Bruno Matos", ["resgate", "motorista", "logística"], -30.0, -51.2),
+    ("Elisa Moura", ["resgate", "primeiros socorros"], -29.9, -51.1),
+    ("Carla Nunes", ["logística", "abrigo", "cozinha"], -30.1, -51.3),
+    ("Rafael Lima", ["abrigo", "logística"], -29.7, -51.1),
+    ("Júlia Campos", ["primeiros socorros", "enfermagem"], -31.7, -52.3),
+    ("Paula Fontes", ["comunicação", "psicologia"], -29.2, -51.2),
+]
+
+
+def voluntarios(cfg):
+    import json
+    conn = db.conectar(cfg)
+    try:
+        semente = "SELECT id FROM users WHERE email LIKE 'semente-%@teste.brasil'"
+        conn.execute(f"DELETE FROM campaign_volunteers WHERE volunteer_id IN ({semente})")
+        conn.execute("DELETE FROM users WHERE email LIKE 'semente-%@teste.brasil'")
+        for i, (nome, habs, lat, lon) in enumerate(VOLUNTARIOS):
+            conn.execute("INSERT INTO users (email, password_hash, role, name, skills, lat, lon, radius_km) VALUES (?,?,?,?,?,?,?,?)",
+                         (f"semente-{i}@teste.brasil", "-", "volunteer", nome, json.dumps(habs, ensure_ascii=False), lat, lon, 500))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def convites(cfg, agora):
@@ -63,9 +89,10 @@ def convites(cfg, agora):
         conn.execute("DELETE FROM campaigns")
         conn.execute("DELETE FROM crisis_associations")
         conn.execute("UPDATE crises SET verificacao='nao_verificada' WHERE id='teste-noticia-recife'")
-        for titulo, crise in (("Teste campanha POA", "teste-poa-4"), ("Teste campanha Caxias", "teste-caxias")):
-            cid = conn.execute("INSERT INTO campaigns (org_id, title, crisis_id, status, created_at) VALUES (?,?,?,'active',?)",
-                               (ong, titulo, crise, agora.isoformat())).lastrowid
+        for titulo, crise, habs in (("Teste campanha POA", "teste-poa-4", '["resgate", "primeiros socorros"]'),
+                                    ("Teste campanha Caxias", "teste-caxias", '["abrigo", "logística"]')):
+            cid = conn.execute("""INSERT INTO campaigns (org_id, title, crisis_id, skills_needed, target_volunteers, status, created_at)
+                                  VALUES (?,?,?,?,5,'active',?)""", (ong, titulo, crise, habs, agora.isoformat())).lastrowid
             conn.execute("INSERT INTO campaign_volunteers (campaign_id, volunteer_id, status, added_at) VALUES (?,?,'selected',?)",
                           (cid, vol, agora.isoformat()))
         conn.commit()

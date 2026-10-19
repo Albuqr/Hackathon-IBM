@@ -2,70 +2,259 @@
 {% block titulo %}Nova campanha · Crisis Monitor Brasil{% endblock %}
 {% block principal %}
 <div class="rolagem"><div class="pagina">
-  <div class="pagina-cabeca"><h1>Nova campanha</h1><p>Escolha a crise e diga do que a campanha precisa.</p></div>
-  <form class="grade-lateral" id="form-campanha">
-    <div class="cartao">
-      <p class="cartao-titulo">Crise</p>
-      <div class="form">
-        <div class="linha">
-          <label>Buscar <input id="busca" type="search" placeholder="título ou município" autocomplete="off"></label>
-          <label>UF <select id="uf"><option value="">Todas</option>{% for s in ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'] %}<option>{{ s }}</option>{% endfor %}</select></label>
-        </div>
-        <ul class="lista" id="crises" role="radiogroup" aria-label="Crise da campanha"></ul>
-      </div>
-    </div>
-    <div class="cartao">
-      <p class="cartao-titulo">Campanha</p>
-      <div class="form">
-        <p class="aviso" id="msg" role="status" hidden></p>
-        <label>Título <input name="title" required minlength="3" maxlength="200"></label>
-        <label>Descrição <textarea name="description" rows="3"></textarea></label>
-        <label>Habilidades necessárias (separadas por vírgula) <input name="skills_needed"></label>
-        <div class="linha">
-          <label>Meta de voluntários <input name="target_volunteers" type="number" min="1" value="10"></label>
-          <label>Urgência <select name="urgency"><option value="baixa">Baixa</option><option value="media" selected>Média</option><option value="alta">Alta</option><option value="critica">Crítica</option></select></label>
-        </div>
-        <div class="linha">
-          <label>Início <input name="start_date" type="date"></label>
-          <label>Fim <input name="end_date" type="date"></label>
-        </div>
-        <div><button class="botao botao-primario" type="submit">Criar campanha</button></div>
-      </div>
-    </div>
-  </form>
+  <p class="aviso" id="msg" role="alert" hidden></p>
+  <div id="etapas"></div>
 </div></div>
 {% endblock %}
 {% block scripts %}
 <script id="br-crise" type="application/json">{{ crise|tojson }}</script>
+<script id="br-local" type="application/json">{{ local|tojson }}</script>
 <script type="module">
-import { el, acao, avisar, selSev, rotulo, TIPOS } from "{{ url_for('brasil.static', filename='cliente.js') }}";
+import { el, acao, avisar, rotulo, TIPOS, FONTES, distanciaKm, montarChat } from "{{ url_for('brasil.static', filename='cliente.js') }}";
+import { checklist, continuar } from "{{ url_for('brasil.static', filename='etapas.js') }}";
+import { HABILIDADES, URGENCIAS, lerPlano, temPlano, motivos, cobertura, preSelecionar } from "{{ url_for('brasil.static', filename='campanha.js') }}";
+import { semAcento, grupoDe } from "{{ url_for('brasil.static', filename='visao.js') }}";
 const $ = (id) => document.getElementById(id);
+const msg = $("msg");
+const LOCAL = JSON.parse($("br-local").textContent);
 const pre = JSON.parse($("br-crise").textContent);
-let escolhida = pre ? pre.id : "";
-const opcao = (c) => el("li", {}, [el("label", { style: "display:flex;gap:10px;align-items:flex-start;cursor:pointer" }, [
-  el("input", { type: "radio", name: "crisis_id", value: c.id, checked: c.id === escolhida, onchange: () => { escolhida = c.id; } }),
-  el("span", { class: "item-titulo" }, [selSev(c.severity), el("span", {}, [c.title, el("br"), el("span", { class: "item-meta", texto: [rotulo(TIPOS, c.crisis_type), c.uf].filter(Boolean).join(" · ") })])]),
-])]);
-let t;
-async function buscar() {
-  // busca no servidor, em todas as crises ativas (sem corte em 400)
-  const r = await acao("crises", { q: { q: $("busca").value, uf: $("uf").value, limite: 30 } });
-  const lista = r.ok ? r.dados : [];
-  if (pre && !lista.some((c) => c.id === pre.id)) lista.unshift(pre);
-  $("crises").replaceChildren(...(lista.length ? lista.map(opcao) : [el("li", { class: "vazio", texto: r.ok ? "Nenhuma crise encontrada." : r.erro })]));
+const URG_NOME = { baixa: "baixa", media: "média", alta: "alta", critica: "crítica" };
+const urgDe = (u) => (URGENCIAS.includes(semAcento(u)) ? semAcento(u) : "media");
+const linhaAcoes = (...f) => el("div", { class: "acoes" }, f);
+const ponto = (tipo) => el("i", { class: "ponto-tipo", style: `background:var(--tipo-${grupoDe(tipo)})` });
+
+const O = { crise: pre, plano: null, planoDe: null, titulo: "", hab: [], meta: 10, urg: "media", desc: "", inicio: "", fim: "",
+  editado: new Set(), ranking: [], rankingDe: "", conv: new Set(), convPronto: false, extras: new Map() };
+function escolher(c) { O.crise = c; O.planoDe = null; O.convPronto = false; }
+const cidade = () => O.plano?.crise?.local?.replace(/ \(.*\)$/, "") || O.crise?.uf || "";
+function aplicarPlano(p) {
+  O.plano = p; O.planoDe = O.crise.id;
+  O.titulo = `Apoio às famílias de ${cidade()}`;
+  O.hab = [...p.habilidades]; O.meta = p.voluntarios; O.urg = urgDe(p.urgencia); O.desc = p.descricao;
+  O.editado.clear(); O.convPronto = false;
 }
-$("busca").addEventListener("input", () => { clearTimeout(t); t = setTimeout(buscar, 200); });
-$("uf").addEventListener("change", buscar);
-$("form-campanha").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  if (!escolhida) return avisar($("msg"), "Escolha a crise da campanha.");
-  const f = Object.fromEntries(new FormData(e.target));
-  const corpo = { ...f, crisis_id: escolhida, target_volunteers: Number(f.target_volunteers),
-    skills_needed: (f.skills_needed || "").split(",").map((s) => s.trim()).filter(Boolean) };
-  const r = await acao("criar_campanha", { corpo });
-  if (r.ok) location.href = `{{ url_for('brasil.ong') }}/campanhas/${r.dados.id}`;
-  else avisar($("msg"), r.erro);
+
+// ---------- 1. crise ----------
+let lacunas = null;
+const opcaoCrise = (c, meta, b) => el("label", { class: "item" }, [
+  el("input", { type: "radio", name: "crise", checked: O.crise?.id === c.id, onchange: () => { escolher(c); b.disabled = false; } }),
+  el("div", { class: "item-texto" }, [el("span", { class: "item-titulo" }, [ponto(c.crisis_type), c.title]), el("span", { class: "item-meta", texto: meta }),
+    c.verificacao === "nao_verificada" ? el("span", { class: "selo selo-nv", texto: "Não verificada" }) : null]),
+]);
+const etapaCrise = {
+  nome: "Crise", editar: "Trocar", pergunta: "Para qual crise?", ajuda: "Primeiro, as crises perto de você que estão sem gente suficiente.",
+  resumo: () => (O.crise ? `${O.crise.title}${O.crise.uf ? " · " + O.crise.uf : ""} · severidade ${Math.round(O.crise.severity)}` : ""),
+  async corpo(c, ok) {
+    const b = continuar("Continuar", () => Boolean(O.crise));
+    const perto = el("ul", { class: "lista" }, [el("li", { class: "vazio", texto: "Procurando crises sem gente…" })]);
+    const busca = el("input", { type: "search", placeholder: "ex.: Porto Alegre", autocomplete: "off", "aria-label": "Buscar crise" });
+    const achadas = el("ul", { class: "lista", hidden: true });
+    c.append(el("div", { class: "rotulo" }, ["Precisam de ajuda perto de você", perto]),
+      el("label", { class: "rotulo" }, ["Ou busque outra crise", busca]), achadas,
+      linhaAcoes(b, el("a", { class: "texto-link seta pequeno", href: "{{ url_for('brasil.mapa') }}?escolher=1", texto: "Escolher no mapa" })));
+    b.addEventListener("click", ok);
+    let t;
+    busca.addEventListener("input", () => { clearTimeout(t); t = setTimeout(async () => {
+      const q = busca.value.trim();
+      achadas.hidden = !q;
+      if (!q) return;
+      const r = await acao("crises", { q: { q, limite: 20 } });
+      achadas.replaceChildren(...(r.ok && r.dados.length ? r.dados.map((x) => opcaoCrise(x,
+        [x.uf, `severidade ${Math.round(x.severity)}`, rotulo(FONTES, x.source)].filter(Boolean).join(" · "), b))
+        : [el("li", { class: "vazio", texto: r.ok ? "Nenhuma crise com esse nome." : r.erro })]));
+    }, 200); });
+    if (!lacunas) {
+      const r = await acao("distribuicao");
+      lacunas = (r.ok ? r.dados.lacunas : []).map((l) => ({ ...l, id: l.crisis_id,
+        distancia: LOCAL.lat != null ? distanciaKm(LOCAL, l) : null }))
+        .sort((a, b) => (a.distancia ?? 1e9) - (b.distancia ?? 1e9) || b.severity - a.severity).slice(0, 5);
+    }
+    perto.replaceChildren(...(lacunas.length ? lacunas.map((l) => opcaoCrise(l,
+      [l.distancia != null ? `${Math.round(l.distancia)} km` : null, `severidade ${l.severity}`, `${l.voluntarios} de ${l.meta} voluntários`].filter(Boolean).join(" · "), b))
+      : [el("li", { class: "vazio", texto: "Nenhuma crise grave sem gente agora. Busque abaixo ou escolha no mapa." })]));
+  },
+};
+
+// ---------- 2. plano ----------
+const etapaPlano = {
+  nome: "Plano", pergunta: "Do que a campanha precisa?", ajuda: "O assistente preencheu pelo tipo e pela severidade da crise. Mude o que quiser.",
+  resumo: () => `${O.meta} pessoas · ${O.hab.join(", ")} · urgência ${URG_NOME[O.urg]}`,
+  async corpo(c, ok) {
+    if (O.planoDe !== O.crise.id) {
+      c.append(el("p", { class: "dica", texto: "O assistente está montando o plano…" }));
+      const r = await acao("plano", { p: { crisis_id: O.crise.id } });
+      c.replaceChildren();
+      if (r.ok) aplicarPlano(r.dados);
+      else { avisar(msg, r.erro); O.planoDe = O.crise.id; O.titulo = O.titulo || "Nova campanha"; }
+    }
+    const tag = (k) => el("span", { class: `sugestao${O.editado.has(k) ? " editado" : ""}`, "data-tag": k,
+      texto: O.editado.has(k) ? "editado por você" : O.plano ? "sugestão do assistente" : "" });
+    const editou = (k) => { O.editado.add(k); const t = c.querySelector(`[data-tag="${k}"]`); if (t) { t.textContent = "editado por você"; t.className = "sugestao editado"; } };
+    const titulo = el("input", { value: O.titulo, maxlength: "200", oninput: (e) => { O.titulo = e.target.value; b.disabled = !pode(); } });
+    const chips = el("div", { class: "chips" });
+    const meta = el("input", { type: "number", min: "1", max: "10000", value: String(O.meta), oninput: (e) => { O.meta = Math.max(1, Number(e.target.value) || 1); editou("meta"); } });
+    const urg = el("div", { class: "segmentado", role: "group", "aria-label": "Urgência" });
+    const desc = el("textarea", { rows: "3", oninput: (e) => { O.desc = e.target.value; editou("desc"); } });
+    const ini = el("input", { type: "date", value: O.inicio, onchange: (e) => { O.inicio = e.target.value; } });
+    const fim = el("input", { type: "date", value: O.fim, onchange: (e) => { O.fim = e.target.value; } });
+    const nova = el("input", { placeholder: "Outra habilidade", "aria-label": "Outra habilidade", style: "flex:1;min-width:180px" });
+    const pode = () => O.hab.length > 0 && O.titulo.trim().length >= 3;
+    const b = continuar("Continuar", pode);
+    function preencher() {
+      titulo.value = O.titulo; meta.value = String(O.meta); desc.value = O.desc;
+      chips.replaceChildren(...[...new Set([...O.hab, ...(O.plano?.habilidades || []), ...HABILIDADES])].map((h) => el("button", {
+        type: "button", class: "chip", "aria-pressed": String(O.hab.includes(h)), texto: h,
+        onclick: (e) => { O.hab = O.hab.includes(h) ? O.hab.filter((x) => x !== h) : [...O.hab, h];
+          e.currentTarget.setAttribute("aria-pressed", String(O.hab.includes(h))); editou("hab"); b.disabled = !pode(); } })));
+      urg.replaceChildren(...URGENCIAS.map((u) => el("button", { type: "button", "aria-pressed": String(O.urg === u), texto: URG_NOME[u],
+        onclick: () => { O.urg = u; editou("urg"); preencherUrg(); } })));
+      for (const k of ["hab", "meta", "urg", "desc"]) c.querySelector(`[data-tag="${k}"]`)?.replaceWith(tag(k));
+      b.disabled = !pode();
+    }
+    const preencherUrg = () => { for (const x of urg.children) x.setAttribute("aria-pressed", String(x.textContent === URG_NOME[O.urg])); };
+    const add = () => { const v = nova.value.trim(); if (v && !O.hab.includes(v)) O.hab.push(v); nova.value = ""; editou("hab"); preencher(); };
+    nova.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } });
+
+    const p = O.plano;
+    const porque = p ? el("div", { class: "porque" }, [
+      el("span", {}, [`${p.resumo} O assistente sugere `, el("b", { texto: `${p.voluntarios} pessoas` }), ` com ${p.habilidades.join(", ")}.`]),
+      el("button", { type: "button", class: "texto-link pequeno", texto: "Refazer sugestão", onclick: () => { aplicarPlano(p); preencher(); } })]) : null;
+    const chat = el("details", { class: "recolhe" }, [el("summary", { texto: "Ajustar o plano com o assistente" }),
+      el("div", { class: "recolhe-corpo chat" }, [el("div", { class: "chat-msgs", "aria-live": "polite" }),
+        el("form", { class: "chat-form" }, [el("textarea", { "aria-label": "Mensagem", placeholder: "ex.: temos 2 barcos e uma equipe de cozinha" }),
+          el("button", { class: "botao botao-primario", type: "submit", texto: "Enviar" })])])]);
+    c.append(...[porque,
+      el("label", { class: "rotulo" }, ["Nome da campanha", titulo]),
+      el("div", { class: "rotulo" }, [el("span", {}, ["Habilidades", tag("hab")]), chips, el("div", { class: "acoes" }, [nova,
+        el("button", { type: "button", class: "botao botao-neutro", texto: "Adicionar", onclick: add })])]),
+      el("div", { class: "linha" }, [el("label", { class: "rotulo" }, [el("span", {}, ["Quantas pessoas", tag("meta")]), meta]),
+        el("div", { class: "rotulo" }, [el("span", {}, ["Urgência", tag("urg")]), urg])]),
+      el("label", { class: "rotulo" }, [el("span", {}, ["Descrição", tag("desc")]), desc]),
+      el("div", { class: "linha" }, [el("label", { class: "rotulo" }, ["Início (opcional)", ini]), el("label", { class: "rotulo" }, ["Fim (opcional)", fim])]),
+      chat, linhaAcoes(b)].filter(Boolean));
+    preencher();
+    montarChat(chat, { crisis_id: O.crise.id, saudacao: "Conte o que sua ONG tem (equipe, equipamentos, prazo) e eu ajusto o plano.",
+      podeAplicar: (t) => temPlano(lerPlano(t)),
+      aplicar: (t) => {
+        const n = lerPlano(t);
+        if (n.habilidades?.length) O.hab = n.habilidades;
+        if (n.voluntarios) O.meta = n.voluntarios;
+        if (n.urgencia) O.urg = n.urgencia;
+        if (n.descricao) O.desc = n.descricao;
+        O.editado.clear(); O.convPronto = false; preencher();
+      } });
+    b.addEventListener("click", () => { O.convPronto = false; ok(); });
+  },
+};
+
+// ---------- 3. convidar ----------
+const etapaConvidar = {
+  nome: "Convidar", pergunta: "Quem você vai convidar?", ajuda: "Os mais compatíveis com o plano já vêm marcados, até a meta. Desmarque quem não quiser.",
+  resumo: () => `${O.conv.size} convidado${O.conv.size === 1 ? "" : "s"} de ${O.meta}`,
+  async corpo(c, ok) {
+    const chave = `${O.crise.id}|${O.hab.join(",")}`;
+    if (O.rankingDe !== chave) {
+      c.append(el("p", { class: "dica", texto: "Procurando voluntários compatíveis…" }));
+      const r = await acao("matching", { p: { crisis_id: O.crise.id }, q: { habilidades: O.hab.join(","), limite: 100 } });
+      c.replaceChildren();
+      if (!r.ok) avisar(msg, r.erro);
+      O.ranking = r.ok ? r.dados.filter((m) => m.habilidades_comuns.length) : [];
+      O.rankingDe = chave; O.convPronto = false;
+    }
+    if (!O.convPronto) { O.conv = new Set(preSelecionar(O.ranking, O.meta)); O.extras.clear(); O.convPronto = true; }
+    const resumo = el("div", { class: "cobertura" });
+    const lista = el("ul", { class: "lista" });
+    const b = continuar("Continuar", () => O.conv.size > 0);
+    const pessoas = () => [...O.ranking, ...O.extras.values()].filter((p) => O.conv.has(p.volunteer_id));
+    function pintarResumo() {
+      const cob = cobertura(O.hab, pessoas());
+      const sem = cob.filter((x) => !x.pessoas).map((x) => x.habilidade);
+      resumo.replaceChildren(...[
+        el("p", { class: "cob-total" }, [el("b", { texto: `${O.conv.size} de ${O.meta}` }), " pessoas", sem.length ? ` · sem ninguém para ${sem.join(", ")}` : " · todas as habilidades têm alguém"]),
+        ...cob.map((x) => el("div", { class: `cob-linha${x.pessoas ? "" : " descoberta"}` }, [el("span", { texto: x.habilidade }),
+          el("div", { class: "barra" }, [el("i", { style: `width:${Math.min(100, (x.pessoas / Math.max(1, O.conv.size)) * 100)}%` })]),
+          el("b", { texto: x.pessoas ? `${x.pessoas} ${x.pessoas === 1 ? "pessoa" : "pessoas"}` : "ninguém" })])),
+        O.ranking.length < O.meta ? el("p", { class: "dica", texto: `Só ${O.ranking.length} voluntários compatíveis no raio da crise. Depois de publicar, a página da campanha avisa quando aparecer mais gente.` }) : null].filter(Boolean));
+      b.disabled = !O.conv.size;
+    }
+    function linha(m) {
+      return el("label", { class: "item" }, [
+        el("input", { type: "checkbox", checked: O.conv.has(m.volunteer_id), onchange: (e) => { e.target.checked ? O.conv.add(m.volunteer_id) : O.conv.delete(m.volunteer_id); pintarResumo(); } }),
+        el("div", { class: "item-texto" }, [el("span", { class: "item-titulo", texto: m.name }), el("span", { class: "item-meta", texto: motivos(m).join(" · ") })]),
+        m.score != null ? el("span", { class: "compat", title: "compatibilidade" }, [el("span", { class: "compat-barra" }, [el("i", { style: `width:${Math.round(m.score * 100)}%` })]), `${Math.round(m.score * 100)}%`]) : null,
+      ]);
+    }
+    const desenhar = () => lista.replaceChildren(...([...O.ranking, ...O.extras.values()].length ? [...O.ranking, ...O.extras.values()].map(linha)
+      : [el("li", { class: "vazio", texto: "Nenhum voluntário com essas habilidades no raio da crise. Busque outra pessoa abaixo." })]));
+    // busca livre (filtros do Crisis original): habilidade, nome, distância e disponibilidade
+    let todos = null;
+    const fHab = el("input", { placeholder: "ex.: logística", "aria-label": "Habilidade" });
+    const fNome = el("input", { placeholder: "ex.: Helena", "aria-label": "Nome" });
+    const fDistV = el("output", { texto: "1500 km" });
+    const fDist = el("input", { type: "range", min: "50", max: "3000", step: "50", value: "1500", "aria-label": "Distância máxima" });
+    const fDisp = el("select", { "aria-label": "Disponibilidade" }, [el("option", { value: "sim", texto: "Só disponíveis" }), el("option", { value: "", texto: "Todos" })]);
+    const achados = el("ul", { class: "lista" });
+    async function filtrar() {
+      if (!todos) { const r = await acao("voluntarios_disponiveis", { q: { crisis_id: O.crise.id, raio_km: 5000, incluir_indisponiveis: true } }); todos = r.ok ? r.dados : []; }
+      const h = semAcento(fHab.value.trim()), n = semAcento(fNome.value.trim()), max = Number(fDist.value), so = fDisp.value === "sim";
+      const lista2 = todos.filter((v) => !O.conv.has(v.id) && (!so || v.available) && (v.distancia_km == null || v.distancia_km <= max)
+        && (!h || (v.skills || []).some((s) => semAcento(s).includes(h))) && (!n || semAcento(v.name).includes(n))).slice(0, 30);
+      achados.replaceChildren(...(lista2.length ? lista2.map((v) => el("li", {}, [
+        el("div", { class: "item-texto" }, [el("span", { class: "item-titulo", texto: v.name + (v.available ? "" : " (indisponível)") }),
+          el("span", { class: "item-meta", texto: [(v.skills || []).join(", ") || "sem habilidades", v.distancia_km != null ? `${Math.round(v.distancia_km)} km` : null].filter(Boolean).join(" · ") })]),
+        el("button", { type: "button", class: "pilula contorno", texto: "Adicionar", onclick: () => {
+          O.extras.set(v.id, { volunteer_id: v.id, name: v.name, distancia_km: v.distancia_km, skills: v.skills, habilidades_comuns: [], score: null });
+          O.conv.add(v.id); desenhar(); pintarResumo(); filtrar(); } })]))
+        : [el("li", { class: "vazio", texto: "Ninguém com esses filtros." })]));
+    }
+    for (const x of [fHab, fNome]) x.addEventListener("input", filtrar);
+    fDisp.addEventListener("change", filtrar);
+    fDist.addEventListener("input", () => { fDistV.textContent = `${fDist.value} km`; filtrar(); });
+    const outra = el("details", { class: "recolhe", ontoggle: (e) => { if (e.target.open) filtrar(); } }, [el("summary", { texto: "Buscar outra pessoa" }),
+      el("div", { class: "recolhe-corpo" }, [
+        el("div", { class: "linha" }, [el("label", { class: "rotulo" }, ["Habilidade", fHab]), el("label", { class: "rotulo" }, ["Nome", fNome])]),
+        el("div", { class: "linha" }, [el("label", { class: "campo" }, [el("span", { class: "campo-linha" }, ["Distância máxima", fDistV]), fDist]),
+          el("label", { class: "rotulo" }, ["Disponibilidade", fDisp])]),
+        achados])]);
+    desenhar(); pintarResumo();
+    c.append(resumo, lista, outra, linhaAcoes(b));
+    b.addEventListener("click", ok);
+  },
+};
+
+// ---------- 4. revisar e publicar ----------
+const etapaPublicar = {
+  nome: "Revisar e publicar", pergunta: "Tudo certo?", ajuda: "Ao publicar, cada convidado recebe a mensagem abaixo e a campanha entra no seu painel.",
+  resumo: () => "Publicada",
+  async corpo(c) {
+    const primeiro = [...O.ranking, ...O.extras.values()].find((p) => O.conv.has(p.volunteer_id));
+    const dl = el("dl", { class: "revisao" });
+    for (const [k, v] of [["Crise", O.crise.title], ["Campanha", O.titulo], ["Precisa de", `${O.meta} pessoas · ${O.hab.join(", ")}`],
+      ["Urgência", URG_NOME[O.urg]], ["Convites", `${O.conv.size} ${O.conv.size === 1 ? "pessoa" : "pessoas"}`]]) dl.append(el("dt", { texto: k }), el("dd", { texto: v }));
+    const previa = el("p", { class: "previa", texto: "Montando a mensagem…" });
+    const canal = el("p", { class: "dica" });
+    const b = continuar("Publicar e convidar");
+    c.append(dl, el("div", { class: "rotulo" }, [`Mensagem que ${primeiro ? primeiro.name.split(" ")[0] : "cada convidado"} vai receber`, previa]), canal, linhaAcoes(b));
+    const r = await acao("previa_convite", { corpo: { crisis_id: O.crise.id, title: O.titulo, urgency: O.urg, skills_needed: O.hab, volunteer_id: primeiro?.volunteer_id ?? null } });
+    previa.textContent = r.ok ? r.dados.texto : "Não foi possível montar a prévia agora; os convites saem mesmo assim.";
+    if (r.ok) canal.replaceChildren(...(r.dados.canal === "fila"
+      ? [el("b", { style: "color:var(--acento)", texto: "Telegram em pausa. " }), "Os convites ficam na fila e saem quando ele voltar. No app eles aparecem na hora."]
+      : ["Os convites saem agora pelo Telegram."]));
+    b.addEventListener("click", async () => {
+      b.disabled = true; b.textContent = "Publicando…";
+      const r = await acao("criar_campanha", { corpo: { title: O.titulo.trim(), description: O.desc, crisis_id: O.crise.id, skills_needed: O.hab,
+        target_volunteers: O.meta, urgency: O.urg, start_date: O.inicio, end_date: O.fim, convidados: [...O.conv] } });
+      if (!r.ok) { avisar(msg, r.erro); b.disabled = false; b.textContent = "Publicar e convidar"; return; }
+      location.href = `{{ url_for('brasil.ong') }}/campanhas/${r.dados.id}?publicada=${r.dados.convites?.convidados ?? 0}`;
+    });
+  },
+};
+
+checklist($("etapas"), {
+  titulo: "Nova campanha.",
+  sub: pre ? "A crise já está escolhida e o assistente montou um plano. Revise, convide e publique." : "Quatro etapas. Nada é publicado até a última.",
+  etapas: [etapaCrise, etapaPlano, etapaConvidar, etapaPublicar],
+  inicio: pre ? { feitas: [0], atual: 1 } : { atual: 0 },
 });
-buscar();
 </script>
 {% endblock %}

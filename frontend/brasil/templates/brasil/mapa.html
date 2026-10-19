@@ -4,17 +4,24 @@
 {% block lateral %}
 <div class="lateral-rolagem">
   <section aria-labelledby="t-numeros">
-    <p class="bloco-titulo" id="t-numeros">Crises visíveis</p>
+    <h2 class="bloco-titulo" id="t-numeros">Crises visíveis</h2>
     <div class="metricas" aria-live="polite">
       <div class="metrica"><b id="m-crises">–</b><span>crises</span></div>
       <div class="metrica"><b id="m-ufs">–</b><span>UFs afetadas</span></div>
-      <div class="metrica perigo"><b id="m-criticas">–</b><span>críticas (4–5)</span></div>
+      <div class="metrica perigo"><b id="m-criticas">–</b><span>graves (4–5)</span></div>
       <div class="metrica"><b id="m-nv">–</b><span>não verificadas</span></div>
     </div>
   </section>
   <section aria-labelledby="t-filtros" class="campos">
-    <p class="bloco-titulo" id="t-filtros">Filtros</p>
+    <h2 class="bloco-titulo" id="t-filtros">Filtros</h2>
     <div class="form" id="filtros">
+      {% if br_role == 'org' %}
+      <div class="campo">Mostrar
+        <div class="segmentado" role="group" aria-label="Mostrar crises">
+          <button type="button" data-falta="" aria-pressed="true" disabled>Todas</button>
+          <button type="button" data-falta="1" aria-pressed="false" disabled>Onde falta gente <span id="m-falta"></span></button>
+        </div></div>
+      {% endif %}
       <label class="campo"><span class="campo-linha">Severidade mínima <output id="f-sev-valor" for="f-sev">1</output></span>
         <input type="range" id="f-sev" name="sev" min="1" max="5" step="1" value="1" disabled></label>
       <label class="campo">UF
@@ -39,11 +46,10 @@
     <button class="botao botao-primario" type="button" id="atualizar">Atualizar dados</button>
     <p class="aviso ok" id="atualizar-msg" role="status" hidden></p>
   {% elif br_role == 'org' %}
-    <a class="botao botao-primario" href="{{ url_for('brasil.ong') }}">Painel da ONG</a>
-    <a class="botao botao-neutro" href="{{ url_for('brasil.ong_nova') }}">+ Campanha</a>
+    <p class="dica">Anel verde: crise com campanha sua.</p>
+    <a class="botao botao-primario" href="{{ url_for('brasil.ong') }}">O que precisa de você</a>
   {% else %}
-    <a class="botao botao-primario" href="{{ url_for('brasil.perfil') }}">Meu perfil</a>
-    <a class="botao botao-neutro" href="{{ url_for('brasil.minhas_campanhas') }}">Minhas campanhas</a>
+    <a class="botao botao-primario" href="{{ url_for('brasil.perfil') }}">Meu próximo passo</a>
   {% endif %}
 </div>
 {% endblock %}
@@ -52,6 +58,10 @@
 <div class="mapa">
   <div id="mapa" role="region" aria-label="Mapa de crises do Brasil"></div>
   <canvas id="pixels" aria-hidden="true"></canvas>
+  {% if br_role == 'org' and request.args.get('escolher') == '1' %}
+  <div class="faixa-escolha" role="status"><span>Escolha a crise da campanha e toque em “Usar esta crise”.</span>
+    <a href="{{ url_for('brasil.ong_nova') }}">Cancelar</a></div>
+  {% endif %}
   <div class="segmentado modo" role="group" aria-label="Modo do mapa">
     <button type="button" data-modo="municipios" aria-pressed="true">Municípios</button>
     <button type="button" data-modo="pixels" aria-pressed="false">Pixels</button>
@@ -70,6 +80,7 @@
   "papel": br_role,
   "malha": url_for('brasil.malha_js'),
   "nova_campanha": url_for('brasil.ong_nova'),
+  "campanha": url_for('brasil.ong') ~ "/campanhas/",
 }|tojson }}</script>
 <script type="module" src="{{ url_for('brasil.static', filename='mapa.js') }}"></script>
 {% endblock %}

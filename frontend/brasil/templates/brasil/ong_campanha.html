@@ -1,71 +1,82 @@
 {% extends "brasil/base.html" %}
 {% block titulo %}{{ c.title }} · Crisis Monitor Brasil{% endblock %}
 {% block principal %}
-<div class="rolagem"><div class="pagina">
-  <div class="pagina-cabeca"><h1>{{ c.title }}</h1>
-    <p><span class="selo {{ c.status }}">{{ 'Ativa' if c.status == 'active' else 'Encerrada' }}</span>
-      {{ c.crisis_title }}{{ ' · ' ~ c.crisis_uf if c.crisis_uf else '' }} · <span id="resumo">{{ c.selecionados }}/{{ c.target_volunteers }} voluntários · {{ c.confirmados }} confirmados</span></p></div>
-  <p class="aviso" id="msg" role="status" hidden></p>
-  <div class="grade-lateral">
-    <div class="coluna">
-      <div class="cartao">
-        <p class="cartao-titulo">Crise e voluntários</p>
-        <div class="minimapa" id="minimapa" role="region" aria-label="Minimapa da crise e dos voluntários"></div>
-      </div>
-      <div class="cartao">
-        <p class="cartao-titulo">Na campanha</p>
-        <div class="tabela-caixa"><table class="tabela"><thead><tr><th>Nome</th><th>Habilidades</th><th>Distância</th><th>Situação</th><th></th></tr></thead>
-          <tbody id="na-campanha"></tbody></table></div>
-      </div>
-      <div class="cartao" id="editar">
-        <p class="cartao-titulo">Editar campanha</p>
-        <form class="form" id="form-editar">
-          <label>Título <input name="title" value="{{ c.title }}" minlength="3" maxlength="200"></label>
-          <label>Descrição <textarea name="description" rows="3">{{ c.description }}</textarea></label>
-          <label>Habilidades necessárias (separadas por vírgula) <input name="skills_needed" value="{{ (c.skills_needed or [])|join(', ') }}"></label>
-          <div class="linha">
-            <label>Meta de voluntários <input name="target_volunteers" type="number" min="1" value="{{ c.target_volunteers }}"></label>
-            <label>Urgência <select name="urgency">{% for v, n in [('baixa','Baixa'),('media','Média'),('alta','Alta'),('critica','Crítica')] %}<option value="{{ v }}" {{ 'selected' if c.urgency == v }}>{{ n }}</option>{% endfor %}</select></label>
-          </div>
-          <div class="linha">
-            <label>Início <input name="start_date" type="date" value="{{ c.start_date }}"></label>
-            <label>Fim <input name="end_date" type="date" value="{{ c.end_date }}"></label>
-          </div>
-          <div class="acoes"><button class="botao botao-primario" type="submit">Salvar</button>
-            {% if c.status == 'active' %}<button class="botao botao-perigo" type="button" id="encerrar">Encerrar campanha</button>{% endif %}</div>
-        </form>
-      </div>
-    </div>
-    <div class="coluna">
-      <div class="cartao">
-        <p class="cartao-titulo">Voluntários para convidar</p>
-        <div class="form">
-          <div class="linha">
-            <label>Habilidade <input id="f-hab" placeholder="ex.: logística"></label>
-            <label>Nome <input id="f-nome" placeholder="nome"></label>
-          </div>
-          <div class="linha">
-            <label class="campo"><span class="campo-linha">Distância máxima <output id="f-dist-valor">1500 km</output></span>
-              <input type="range" id="f-dist" min="50" max="3000" step="50" value="1500"></label>
-            <label>Disponibilidade <select id="f-disp"><option value="sim">Só disponíveis</option><option value="">Todos</option></select></label>
-          </div>
+<div class="rolagem"><div class="pagina larga">
+  <div class="abertura">
+    <a class="voltar" href="{{ url_for('brasil.ong') }}">‹ Painel</a>
+    <h1 id="titulo">{{ c.title }}</h1>
+    <p>{{ c.crisis_title }}{{ ' · ' ~ c.crisis_uf if c.crisis_uf else '' }} · severidade {{ c.crisis_severity|round|int if c.crisis_severity else '–' }} ·
+      <span class="selo {{ c.status }}">{{ 'ativa' if c.status == 'active' else 'encerrada' }}</span></p>
+  </div>
+  <p class="aviso" id="msg" role="alert" hidden></p>
+  <div class="pilha">
+    <section class="proximo" id="proximo" aria-live="polite"><span class="dica">Próximo passo</span><h2>Carregando…</h2></section>
+
+    <section class="secao" aria-labelledby="t-prog"><h2 id="t-prog">Progresso</h2>
+      <div class="numeros" id="funil"></div>
+      <div class="barra-meta"><i id="barra-meta" style="width:0"></i></div>
+      <div class="cobertura" id="cobertura"></div>
+    </section>
+
+    <section class="secao" id="sec-rec" aria-labelledby="t-rec" hidden>
+      <div class="secao-topo"><h2 id="t-rec">Recomendados pelo assistente</h2><span id="rec-todos"></span></div>
+      <p class="dica">Compatíveis com o plano, as habilidades sem ninguém primeiro. Ainda não convidados.</p>
+      <ul class="lista" id="recomendados"></ul>
+    </section>
+
+    <section class="secao" aria-labelledby="t-eq"><h2 id="t-eq">Equipe</h2><div class="grupos" id="equipe"></div></section>
+
+    {% if c.status == 'active' %}
+    <details class="recolhe secao-d" id="busca">
+      <summary>Buscar outra pessoa</summary>
+      <div class="recolhe-corpo">
+        <div class="linha">
+          <label class="rotulo">Habilidade <input id="f-hab" placeholder="ex.: logística"></label>
+          <label class="rotulo">Nome <input id="f-nome" placeholder="ex.: Helena"></label>
         </div>
-        <div class="tabela-caixa"><table class="tabela"><thead><tr><th>Nome</th><th>Habilidades</th><th>Distância</th><th></th></tr></thead>
-          <tbody id="disponiveis"></tbody></table></div>
+        <div class="linha">
+          <label class="campo"><span class="campo-linha">Distância máxima <output id="f-dist-valor">1500 km</output></span>
+            <input type="range" id="f-dist" min="50" max="3000" step="50" value="1500"></label>
+          <label class="rotulo">Disponibilidade <select id="f-disp"><option value="sim">Só disponíveis</option><option value="">Todos</option></select></label>
+        </div>
+        <ul class="lista" id="disponiveis"></ul>
       </div>
-      <div class="cartao">
-        <p class="cartao-titulo">Matching e notificação</p>
-        <div class="acoes"><button class="botao botao-secundario botao-pequeno" type="button" id="ver-matching">Ver matching</button>
-          <button class="botao botao-neutro botao-pequeno" type="button" id="notificar">Notificar os 10 melhores</button></div>
-        <ul class="lista" id="matching" style="margin-top:10px"></ul>
-      </div>
-      <div class="cartao chat" id="chat" style="height:420px;min-height:0">
-        <p class="cartao-titulo">Assistente de planejamento</p>
+    </details>
+    {% endif %}
+
+    <section class="secao" aria-labelledby="t-mapa"><h2 id="t-mapa">No mapa</h2>
+      <div class="minimapa" id="minimapa" role="region" aria-label="Minimapa da crise e dos voluntários"></div>
+      <p class="dica">A crise e onde estão as pessoas da campanha.</p>
+    </section>
+
+    <details class="recolhe secao-d" id="editar">
+      <summary>Plano da campanha</summary>
+      <form class="recolhe-corpo form" id="form-editar">
+        <label>Nome <input name="title" value="{{ c.title }}" minlength="3" maxlength="200"></label>
+        <label>Descrição <textarea name="description" rows="3">{{ c.description }}</textarea></label>
+        <label>Habilidades (separadas por vírgula) <input name="skills_needed" value="{{ (c.skills_needed or [])|join(', ') }}"></label>
+        <div class="linha">
+          <label>Quantas pessoas <input name="target_volunteers" type="number" min="1" value="{{ c.target_volunteers }}"></label>
+          <label>Urgência <select name="urgency">{% for v, n in [('baixa','baixa'),('media','média'),('alta','alta'),('critica','crítica')] %}<option value="{{ v }}" {{ 'selected' if c.urgency == v }}>{{ n }}</option>{% endfor %}</select></label>
+        </div>
+        <div class="linha">
+          <label>Início <input name="start_date" type="date" value="{{ c.start_date }}"></label>
+          <label>Fim <input name="end_date" type="date" value="{{ c.end_date }}"></label>
+        </div>
+        <div class="acoes"><button class="botao botao-primario" type="submit">Salvar plano</button></div>
+      </form>
+    </details>
+
+    <details class="recolhe secao-d" id="assistente">
+      <summary>Conversar com o assistente</summary>
+      <div class="recolhe-corpo chat" id="chat">
         <div class="chat-msgs" aria-live="polite"></div>
-        <form class="chat-form"><textarea aria-label="Mensagem" placeholder="Ex.: monte um plano para esta campanha"></textarea>
+        <form class="chat-form"><textarea aria-label="Mensagem" placeholder="ex.: choveu mais à noite, o plano ainda serve?"></textarea>
           <button class="botao botao-primario" type="submit">Enviar</button></form>
       </div>
-    </div>
+    </details>
+
+    {% if c.status == 'active' %}<div class="encerrar" id="encerrar"></div>{% endif %}
   </div>
 </div></div>
 {% endblock %}
@@ -74,15 +85,19 @@
 <script src="{{ url_for('brasil.malha_js') }}"></script>
 <script id="br-campanha" type="application/json">{{ c|tojson }}</script>
 <script type="module">
-import { el, acao, avisar, rotulo, CONVITE, montarChat, nivel, textoSeguro } from "{{ url_for('brasil.static', filename='cliente.js') }}";
+import { el, acao, avisar, montarChat, nivel, textoSeguro, toast } from "{{ url_for('brasil.static', filename='cliente.js') }}";
+import { lerPlano, temPlano, motivos } from "{{ url_for('brasil.static', filename='campanha.js') }}";
+import { semAcento } from "{{ url_for('brasil.static', filename='visao.js') }}";
 const C = JSON.parse(document.getElementById("br-campanha").textContent);
 const $ = (id) => document.getElementById(id);
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const msg = $("msg");
 const ativa = C.status === "active";
-let na = [], todos = [];
+let S = null, equipe = [], todos = null;
+const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
 
-// minimapa: crise + voluntários da campanha (FR-019)
-const mapa = L.map("minimapa", { zoomControl: true, attributionControl: false }).setView([C.crisis_lat || -15, C.crisis_lon || -50], 6);
+// ---------- minimapa: crise + pessoas da campanha (FR-019) ----------
+const mapa = L.map("minimapa", { zoomControl: true, attributionControl: false, scrollWheelZoom: false }).setView([C.crisis_lat || -15, C.crisis_lon || -50], 6);
 const ufs = window.MALHA ? L.geoJSON(window.MALHA.estados, { interactive: false,
   style: () => ({ color: css("--uf"), weight: 1, fillColor: css("--mun"), fillOpacity: 1 }) }).addTo(mapa) : null;
 const camada = L.layerGroup().addTo(mapa);
@@ -94,84 +109,160 @@ function desenharMapa() {
       .bindTooltip(textoSeguro(C.crisis_title || "Crise")).addTo(camada);
     pts.push([C.crisis_lat, C.crisis_lon]);
   }
-  for (const v of na) if (v.lat != null) {
-    L.circleMarker([v.lat, v.lon], { radius: 5, fillColor: css("--verde"), fillOpacity: .9, color: css("--anel"), weight: 1 }).bindTooltip(textoSeguro(v.name)).addTo(camada);
+  for (const v of equipe) if (v.lat && v.status !== "declined") {
+    L.circleMarker([v.lat, v.lon], { radius: 5, fillColor: css("--verde"), fillOpacity: v.status === "confirmed" ? .95 : .45, color: css("--anel"), weight: 1 })
+      .bindTooltip(textoSeguro(v.name)).addTo(camada);
     pts.push([v.lat, v.lon]);
   }
   if (pts.length > 1) mapa.fitBounds(pts, { padding: [24, 24], maxZoom: 9 });
 }
 document.addEventListener("br:tema", () => { ufs?.setStyle({ color: css("--uf"), fillColor: css("--mun") }); desenharMapa(); });
 
-const km = (d) => (d == null ? "—" : `${Math.round(d)} km`);
-const linha = (cels) => el("tr", {}, cels.map((c) => el("td", typeof c === "string" ? { texto: c } : {}, typeof c === "string" ? [] : [c])));
+// ---------- ações ----------
+async function convidar(ids, reenviar = false) {
+  const r = await acao("convidar", { p: { cid: C.id }, corpo: { volunteer_ids: ids, reenviar } });
+  if (!r.ok) return avisar(msg, r.erro);
+  const fila = r.dados.modo === "fila" ? " Os avisos esperam o Telegram na fila." : "";
+  toast(`${reenviar ? "Lembrete enviado para" : "Convite enviado para"} ${plural(r.dados.convidados, "pessoa", "pessoas")}.${fila}`);
+  await carregar();
+}
+async function editar(corpo, ok) {
+  const r = await acao("editar_campanha", { p: { cid: C.id }, corpo });
+  if (!r.ok) { avisar(msg, r.erro); return false; }
+  Object.assign(C, r.dados);
+  if (ok) toast(ok);
+  return true;
+}
+function pedirEncerrar() {
+  const box = $("encerrar");
+  if (!box) return;
+  box.scrollIntoView({ behavior: "smooth", block: "center" });
+  const conf = equipe.filter((v) => v.status === "confirmed").length;
+  box.replaceChildren(el("p", { texto: `Encerrar a campanha? ${conf ? `${plural(conf, "confirmado recebe", "confirmados recebem")} um aviso. ` : ""}Não dá para convidar mais ninguém depois.` }),
+    el("button", { type: "button", class: "pilula", texto: "Encerrar", onclick: async () => { if (await editar({ status: "closed" })) location.reload(); } }),
+    el("button", { type: "button", class: "texto-link pequeno", texto: "Cancelar", onclick: pintarEncerrar }));
+}
+function pintarEncerrar() {
+  $("encerrar")?.replaceChildren(el("button", { type: "button", class: "texto-link perigo pequeno", texto: "Encerrar campanha", onclick: pedirEncerrar }));
+}
 
-async function carregarNa() {
-  const r = await acao("voluntarios_campanha", { p: { cid: C.id } });
-  if (!r.ok) return avisar($("msg"), r.erro);
-  const dist = new Map(todos.map((v) => [v.id, v.distancia_km]));
-  na = r.dados.map((v) => ({ ...v, distancia_km: dist.get(v.volunteer_id) }));
-  $("na-campanha").replaceChildren(...(na.length ? na.map((v) => linha([v.name, (v.skills || []).join(", ") || "—", km(v.distancia_km),
-    el("span", { class: `selo ${v.status}`, texto: rotulo(CONVITE, v.status) }),
-    ativa ? el("button", { type: "button", class: "botao botao-neutro botao-pequeno", texto: "Remover", onclick: () => mexer("remover_voluntario", v.volunteer_id) }) : ""]))
-    : [el("tr", {}, [el("td", { colspan: "5", class: "vazio", texto: "Nenhum voluntário ainda." })])]));
-  const conf = na.filter((v) => v.status === "confirmed").length;
-  $("resumo").textContent = `${na.filter((v) => v.status !== "declined").length}/${C.target_volunteers} voluntários · ${conf} confirmados`;
-  desenharMapa();
-  filtrar();
+// ---------- próximo passo (regra da API, sem IA) ----------
+function pintarProximo() {
+  const p = S.proximo_passo, botoes = [];
+  const n = (p.volunteer_ids || []).length;
+  if (p.acao === "convidar") botoes.push(el("button", { type: "button", class: "pilula", texto: `Convidar ${n === 1 ? "a recomendada" : `as ${n} recomendadas`}`, onclick: (e) => { e.currentTarget.disabled = true; convidar(p.volunteer_ids); } }),
+    el("button", { type: "button", class: "texto-link seta pequeno", texto: "Ver quem", onclick: () => $("sec-rec").scrollIntoView({ behavior: "smooth", block: "center" }) }));
+  if (p.acao === "reenviar") botoes.push(el("button", { type: "button", class: "pilula", texto: `Reenviar para ${n === 1 ? "1 pessoa" : `as ${n}`}`, onclick: (e) => { e.currentTarget.disabled = true; convidar(p.volunteer_ids, true); } }));
+  if (p.acao === "aumentar_meta") botoes.push(el("button", { type: "button", class: "pilula", texto: `Aumentar a meta para ${p.meta_sugerida}`, onclick: async () => {
+    if (await editar({ target_volunteers: p.meta_sugerida }, `Meta agora é ${p.meta_sugerida} pessoas.`)) { document.querySelector('[name="target_volunteers"]').value = p.meta_sugerida; carregar(); } } }));
+  if (p.acao === "encerrar") botoes.push(el("button", { type: "button", class: p.tipo === "completa" ? "pilula contorno" : "pilula", texto: "Encerrar campanha", onclick: pedirEncerrar }));
+  if (p.acao === "buscar") botoes.push(el("button", { type: "button", class: "pilula", texto: "Buscar outra pessoa", onclick: () => { $("busca").open = true; $("busca").scrollIntoView({ behavior: "smooth" }); filtrar(); } }));
+  $("proximo").replaceChildren(...[el("span", { class: "dica", texto: "Próximo passo" }), el("h2", { texto: p.titulo }), el("p", { texto: p.texto }),
+    botoes.length ? el("div", { class: "acoes" }, botoes) : null].filter(Boolean));
 }
-async function carregarTodos() {
-  const r = await acao("voluntarios_disponiveis", { q: { crisis_id: C.crisis_id, raio_km: 5000, incluir_indisponiveis: true } });
-  todos = r.ok ? r.dados : [];
+
+function pintarProgresso() {
+  const f = S.funil;
+  $("funil").replaceChildren(
+    el("div", {}, [el("b", {}, [String(f.confirmados), el("small", { texto: `/${f.meta}` })]), el("span", { texto: "confirmados" })]),
+    el("div", {}, [el("b", { texto: String(f.aguardando) }), el("span", { texto: "aguardando" })]),
+    el("div", {}, [el("b", { texto: String(f.recusaram) }), el("span", { texto: "recusaram" })]),
+    el("div", {}, [el("b", { texto: String(f.convidados) }), el("span", { texto: "convidados" })]));
+  $("barra-meta").style.width = `${Math.min(100, (f.confirmados / Math.max(1, f.meta)) * 100)}%`;
+  const total = Math.max(1, f.confirmados + f.aguardando);
+  $("cobertura").replaceChildren(el("p", { class: "cob-total", texto: "Quem cobre cada habilidade do plano" }),
+    ...(S.cobertura.length ? S.cobertura.map((x) => el("div", { class: `cob-linha${x.confirmados + x.aguardando ? "" : " descoberta"}` }, [
+      el("span", { texto: x.habilidade }),
+      el("div", { class: "barra" }, [el("i", { style: `width:${(x.confirmados / total) * 100}%` }), el("i", { class: "aguardando", style: `width:${(x.aguardando / total) * 100}%` })]),
+      el("b", { texto: x.confirmados + x.aguardando ? [x.confirmados ? `${x.confirmados} confirmado${x.confirmados > 1 ? "s" : ""}` : null, x.aguardando ? `${x.aguardando} aguardando` : null].filter(Boolean).join(" · ") : "ninguém ainda" }),
+    ])) : [el("p", { class: "dica", texto: "O plano não tem habilidades. Adicione em Plano da campanha." })]));
 }
-function filtrar() {
-  const hab = $("f-hab").value.trim().toLowerCase(), nome = $("f-nome").value.trim().toLowerCase();
-  const max = Number($("f-dist").value), soDisp = $("f-disp").value === "sim", ja = new Set(na.map((v) => v.volunteer_id));
+
+function pintarRecomendados() {
+  const recs = S.recomendados;
+  $("sec-rec").hidden = !ativa || !recs.length;
+  $("recomendados").replaceChildren(...recs.map((m) => el("li", {}, [
+    el("div", { class: "item-texto" }, [el("span", { class: "item-titulo", texto: m.name }), el("span", { class: "item-meta", texto: motivos(m).join(" · ") })]),
+    el("span", { class: "compat", title: "compatibilidade" }, [el("span", { class: "compat-barra" }, [el("i", { style: `width:${Math.round(m.score * 100)}%` })]), `${Math.round(m.score * 100)}%`]),
+    el("button", { type: "button", class: "pilula contorno", texto: "Convidar", onclick: (e) => { e.currentTarget.disabled = true; convidar([m.volunteer_id]); } }),
+  ])));
+  $("rec-todos").replaceChildren(recs.length > 1 ? el("button", { type: "button", class: "texto-link pequeno", texto: `Convidar todos (${recs.length})`, onclick: () => convidar(recs.map((m) => m.volunteer_id)) }) : "");
+}
+
+const horas = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? null : Math.max(0, Math.round((Date.now() - d.getTime()) / 36e5)); };
+function pintarEquipe() {
+  const grupos = [["confirmed", "Confirmados"], ["selected", "Aguardando resposta"], ["declined", "Recusaram"]];
+  const blocos = grupos.map(([st, nome]) => {
+    const gente = equipe.filter((v) => v.status === st);
+    if (!gente.length) return null;
+    return el("div", { class: "grupo" }, [el("p", { class: "grupo-t" }, [nome, el("span", { texto: String(gente.length) })]),
+      el("ul", { class: "lista" }, gente.map((v) => {
+        const h = st === "selected" ? horas(v.added_at) : null;
+        return el("li", {}, [el("div", { class: "item-texto" }, [el("span", { class: "item-titulo", texto: v.name }),
+          el("span", { class: "item-meta", texto: [(v.skills || []).join(", ") || null, h != null ? (h < 1 ? "convidado(a) agora" : `convidado(a) há ${h} h`) : null].filter(Boolean).join(" · ") || "—" })]),
+          ativa ? el("button", { type: "button", class: "texto-link pequeno", texto: "Remover", onclick: async () => {
+            const r = await acao("remover_voluntario", { p: { cid: C.id, vid: v.volunteer_id } });
+            if (!r.ok) return avisar(msg, r.erro);
+            toast(`${v.name} saiu da campanha.`); carregar(); } }) : null]);
+      }))]);
+  }).filter(Boolean);
+  $("equipe").replaceChildren(...(blocos.length ? blocos : [el("p", { class: "vazio", texto: "Ninguém convidado ainda." })]));
+}
+
+// ---------- busca livre (filtros do Crisis original) ----------
+async function filtrar() {
+  if (!$("disponiveis")) return;
+  if (!todos) { const r = await acao("voluntarios_disponiveis", { q: { crisis_id: C.crisis_id, raio_km: 5000, incluir_indisponiveis: true } }); todos = r.ok ? r.dados : []; }
+  const hab = semAcento($("f-hab").value.trim()), nome = semAcento($("f-nome").value.trim());
+  const max = Number($("f-dist").value), soDisp = $("f-disp").value === "sim", ja = new Set(equipe.map((v) => v.volunteer_id));
   const lista = todos.filter((v) => !ja.has(v.id) && (!soDisp || v.available) && (v.distancia_km == null || v.distancia_km <= max)
-    && (!hab || (v.skills || []).some((s) => s.toLowerCase().includes(hab))) && (!nome || (v.name || "").toLowerCase().includes(nome)));
-  $("disponiveis").replaceChildren(...(lista.length ? lista.slice(0, 80).map((v) => linha([
-    v.name + (v.available ? "" : " (indisponível)"), (v.skills || []).join(", ") || "—", km(v.distancia_km),
-    ativa ? el("button", { type: "button", class: "botao botao-secundario botao-pequeno", texto: "Convidar", onclick: () => mexer("adicionar_voluntario", v.id) }) : ""]))
-    : [el("tr", {}, [el("td", { colspan: "4", class: "vazio", texto: "Ninguém com esses filtros." })])]));
+    && (!hab || (v.skills || []).some((s) => semAcento(s).includes(hab))) && (!nome || semAcento(v.name).includes(nome))).slice(0, 40);
+  $("disponiveis").replaceChildren(...(lista.length ? lista.map((v) => el("li", {}, [
+    el("div", { class: "item-texto" }, [el("span", { class: "item-titulo", texto: v.name + (v.available ? "" : " (indisponível)") }),
+      el("span", { class: "item-meta", texto: [(v.skills || []).join(", ") || "sem habilidades", v.distancia_km != null ? `${Math.round(v.distancia_km)} km` : null].filter(Boolean).join(" · ") })]),
+    el("button", { type: "button", class: "pilula contorno", texto: "Convidar", onclick: (e) => { e.currentTarget.disabled = true; convidar([v.id]); } }),
+  ])) : [el("li", { class: "vazio", texto: "Ninguém com esses filtros." })]));
 }
-async function mexer(nome, vid) {
-  const r = nome === "adicionar_voluntario"
-    ? await acao(nome, { p: { cid: C.id }, corpo: { volunteer_id: vid } })
-    : await acao(nome, { p: { cid: C.id, vid } });
-  if (!r.ok) return avisar($("msg"), r.erro);
-  avisar($("msg"), nome === "adicionar_voluntario" ? "Convite enviado." : "Voluntário removido.", true);
-  carregarNa();
+if ($("busca")) {
+  $("busca").addEventListener("toggle", (e) => { if (e.target.open) filtrar(); });
+  for (const id of ["f-hab", "f-nome"]) $(id).addEventListener("input", filtrar);
+  $("f-disp").addEventListener("change", filtrar);
+  $("f-dist").addEventListener("input", (e) => { $("f-dist-valor").textContent = `${e.target.value} km`; filtrar(); });
 }
-for (const id of ["f-hab", "f-nome"]) $(id).addEventListener("input", filtrar);
-$("f-disp").addEventListener("change", filtrar);
-$("f-dist").addEventListener("input", (e) => { $("f-dist-valor").textContent = `${e.target.value} km`; filtrar(); });
 
+// ---------- plano e assistente ----------
 $("form-editar").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = Object.fromEntries(new FormData(e.target));
-  const r = await acao("editar_campanha", { p: { cid: C.id }, corpo: { ...f, target_volunteers: Number(f.target_volunteers),
-    skills_needed: f.skills_needed.split(",").map((s) => s.trim()).filter(Boolean) } });
-  avisar($("msg"), r.ok ? "Campanha salva." : r.erro, r.ok);
-  if (r.ok) document.querySelector(".pagina-cabeca h1").textContent = r.dados.title;
+  if (await editar({ ...f, target_volunteers: Number(f.target_volunteers), skills_needed: f.skills_needed.split(",").map((s) => s.trim()).filter(Boolean) }, "Plano salvo.")) {
+    $("titulo").textContent = C.title; carregar();
+  }
 });
-$("encerrar")?.addEventListener("click", async () => {
-  if (!confirm("Encerrar esta campanha? Não dá para convidar mais ninguém depois.")) return;
-  const r = await acao("editar_campanha", { p: { cid: C.id }, corpo: { status: "closed" } });
-  if (r.ok) location.reload(); else avisar($("msg"), r.erro);
-});
-$("ver-matching").addEventListener("click", async () => {
-  const r = await acao("matching", { p: { crisis_id: C.crisis_id } });
-  if (!r.ok) return avisar($("msg"), r.erro);
-  $("matching").replaceChildren(...(r.dados.length ? r.dados.slice(0, 10).map((m) => el("li", {}, [
-    el("div", { class: "item-topo" }, [el("span", { class: "item-titulo", texto: m.name }), el("span", { class: "item-meta", texto: `score ${m.score}` })]),
-    el("span", { class: "item-meta", texto: km(m.distancia_km) }),
-  ])) : [el("li", { class: "vazio", texto: "Nenhum voluntário compatível no Brasil." })]));
-});
-$("notificar").addEventListener("click", async () => {
-  const r = await acao("notificar", { p: { crisis_id: C.crisis_id }, corpo: { limite: 10 } });
-  avisar($("msg"), r.ok ? `${r.dados.matches} voluntários notificados (${r.dados.enfileiradas ?? 0} na fila).` : r.erro, r.ok);
-});
-montarChat($("chat"), { crisis_id: C.crisis_id, saudacao: "Posso montar um plano para esta campanha: habilidades, quantidade de pessoas e próximos passos. O que você precisa?" });
-await carregarTodos();
-await carregarNa();
+montarChat($("chat"), { crisis_id: C.crisis_id, saudacao: "Posso revisar o plano desta campanha: habilidades, quantas pessoas e urgência. O que mudou?",
+  podeAplicar: (t) => ativa && temPlano(lerPlano(t)),
+  aplicar: async (t) => {
+    const p = lerPlano(t), corpo = {};
+    if (p.habilidades?.length) corpo.skills_needed = p.habilidades;
+    if (p.voluntarios) corpo.target_volunteers = p.voluntarios;
+    if (p.urgencia) corpo.urgency = p.urgencia;
+    if (p.descricao) corpo.description = p.descricao;
+    if (!(await editar(corpo, "Plano atualizado. A cobertura foi recalculada."))) return;
+    const form = $("form-editar");
+    form.skills_needed.value = (C.skills_needed || []).join(", "); form.target_volunteers.value = C.target_volunteers;
+    form.urgency.value = C.urgency; form.description.value = C.description;
+    carregar();
+  } });
+
+async function carregar() {
+  const [s, v] = await Promise.all([acao("situacao", { p: { cid: C.id } }), acao("voluntarios_campanha", { p: { cid: C.id } })]);
+  if (!s.ok) { avisar(msg, s.erro); $("proximo").replaceChildren(el("span", { class: "dica", texto: "Próximo passo" }), el("h2", { texto: "Não foi possível calcular agora." })); return; }
+  S = s.dados; equipe = v.ok ? v.dados : [];
+  pintarProximo(); pintarProgresso(); pintarRecomendados(); pintarEquipe(); desenharMapa();
+  if ($("busca")?.open) filtrar();
+}
+pintarEncerrar();
+const publicada = new URLSearchParams(location.search).get("publicada");
+if (publicada != null) { toast(`Campanha publicada. ${plural(Number(publicada), "convite saiu", "convites saíram")}.`); history.replaceState(null, "", location.pathname); }
+await carregar();
 </script>
 {% endblock %}

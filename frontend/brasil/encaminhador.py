@@ -41,11 +41,16 @@ POLITICA: dict[str, Regra] = {
     "voluntarios_disponiveis": Regra("GET", "/voluntarios/disponiveis", ("org",)),
     "matching": Regra("GET", "/crises/{crisis_id}/matching", ("org", "admin"), 60),
     "notificar": Regra("POST", "/crises/{crisis_id}/notificar", ("org", "admin"), 60),
+    "plano": Regra("GET", "/crises/{crisis_id}/plano", ("org", "admin")),
+    "campanhas_ong": Regra("GET", "/campanhas", ("org",)),
+    "situacao": Regra("GET", "/campanhas/{cid}/situacao", ("org",), 60),
+    "convidar": Regra("POST", "/campanhas/{cid}/convites", ("org",), 60),
+    "previa_convite": Regra("POST", "/convites/previa", ("org",)),
     # admin
     "atualizar_dados": Regra("POST", "/ingestao", ("admin",), 300),
     "nao_verificadas": Regra("GET", "/crises/nao-verificadas", ("admin",)),
     "verificar": Regra("PUT", "/crises/{crisis_id}/verificacao", ("admin",)),
-    "distribuicao": Regra("GET", "/distribuicao", ("admin",), 60),
+    "distribuicao": Regra("GET", "/distribuicao", ("org", "admin"), 60),
     "notificacoes": Regra("GET", "/notificacoes", ("admin",)),
 }
 

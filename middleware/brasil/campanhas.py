@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from . import db
+from . import assistentes, db, notificacoes
 from .acesso import Acesso
 from .config import Config
 
@@ -32,6 +32,7 @@ class NovaCampanha(BaseModel):
     start_date: str = ""
     end_date: str = ""
     urgency: str = "media"
+    convidados: list[int] = []  # publicar e convidar numa chamada só
 
 
 class EdicaoCampanha(BaseModel):
@@ -51,6 +52,19 @@ class AdicionarVoluntario(BaseModel):
 
 class RespostaConvite(BaseModel):
     status: str
+
+
+class Convites(BaseModel):
+    volunteer_ids: list[int] = Field(min_length=1, max_length=200)
+    reenviar: bool = False
+
+
+class PreviaConvite(BaseModel):
+    crisis_id: str
+    title: str = ""
+    urgency: str = "media"
+    skills_needed: list[str] = []
+    volunteer_id: int | None = None
 
 
 def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
@@ -88,6 +102,41 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
         d["skills_needed"] = json.loads(d["skills_needed"] or "[]")
         return d
 
+    def org_nome(conn, org_id: int) -> str:
+        r = conn.execute("SELECT COALESCE(org_name, name) FROM users WHERE id=?", (org_id,)).fetchone()
+        return r[0] if r and r[0] else "ONG"
+
+    def crise_de(conn, crisis_id: str) -> dict:
+        c = conn.execute("SELECT * FROM crises WHERE id=?", (crisis_id,)).fetchone()
+        return dict(c) if c else {"id": crisis_id, "title": "Crise", "lat": None, "lon": None, "severity": 0}
+
+    def convidar(conn, cid: int, ids: list[int], reenviar: bool = False) -> dict:
+        """Grava os convites e manda a mensagem da campanha (fila ou Telegram). Quem já está na campanha é pulado;
+        `reenviar` só alcança quem ainda não respondeu e renova a data do convite."""
+        cam = campanha_completa(conn, cid)
+        agora = datetime.now(timezone.utc).isoformat()
+        alvo = []
+        for vid in dict.fromkeys(ids):
+            v = conn.execute("SELECT id, name, role, lat, lon, telegram_id, phone FROM users WHERE id=?", (vid,)).fetchone()
+            if not v or v["role"] != "volunteer":
+                continue
+            atual = conn.execute("SELECT status FROM campaign_volunteers WHERE campaign_id=? AND volunteer_id=?", (cid, vid)).fetchone()
+            if reenviar:
+                if not atual or atual["status"] != "selected":
+                    continue
+                conn.execute("UPDATE campaign_volunteers SET added_at=? WHERE campaign_id=? AND volunteer_id=?", (agora, cid, vid))
+            else:
+                if atual and atual["status"] in ("selected", "confirmed"):
+                    continue
+                conn.execute(
+                    """INSERT INTO campaign_volunteers (campaign_id, volunteer_id, status, added_at) VALUES (?,?,'selected',?)
+                       ON CONFLICT(campaign_id, volunteer_id) DO UPDATE SET status='selected', added_at=excluded.added_at""",
+                    (cid, vid, agora))
+            alvo.append({"volunteer_id": v["id"], "name": v["name"], "lat": v["lat"], "lon": v["lon"],
+                         "telegram_id": v["telegram_id"], "phone": v["phone"]})
+        rel = notificacoes.convidar(cfg, conn, cam, crise_de(conn, cam["crisis_id"]), org_nome(conn, cam["org_id"]), alvo)
+        return {"convidados": len(alvo), **rel}
+
     # ── ONG: campanhas ────────────────────────────────────────────────
     @r.post("/campanhas")
     def criar(c: NovaCampanha, u: dict = Depends(ong)):
@@ -103,8 +152,9 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
                 (u["id"], c.title.strip(), c.description, c.crisis_id,
                  json.dumps([s.strip() for s in c.skills_needed if s.strip()], ensure_ascii=False),
                  c.target_volunteers, c.start_date, c.end_date, c.urgency, datetime.now(timezone.utc).isoformat()))
+            convites = convidar(conn, cur.lastrowid, c.convidados) if c.convidados else None
             conn.commit()
-            return campanha_completa(conn, cur.lastrowid)
+            return campanha_completa(conn, cur.lastrowid) | {"convites": convites}
         finally:
             conn.close()
 
@@ -138,13 +188,18 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
             raise HTTPException(422, "Status inválido; use active ou closed")
         conn = conectar()
         try:
-            dono(conn, cid, u)
+            antes = dono(conn, cid, u)
             dados = e.model_dump(exclude_none=True)
             if "skills_needed" in dados:
                 dados["skills_needed"] = json.dumps([s.strip() for s in dados["skills_needed"] if s.strip()], ensure_ascii=False)
             if dados:
                 conn.execute(f"UPDATE campaigns SET {', '.join(f'{k}=?' for k in dados)} WHERE id=?", (*dados.values(), cid))
-                conn.commit()
+            if dados.get("status") == "closed" and antes["status"] == "active":  # avisa os confirmados
+                conf = [dict(x) for x in conn.execute(
+                    """SELECT u.id AS volunteer_id, u.name, u.telegram_id, u.phone FROM campaign_volunteers cv
+                       JOIN users u ON u.id=cv.volunteer_id WHERE cv.campaign_id=? AND cv.status='confirmed'""", (cid,))]
+                notificacoes.avisar_encerramento(cfg, conn, antes, org_nome(conn, antes["org_id"]), conf)
+            conn.commit()
             return campanha_completa(conn, cid)
         finally:
             conn.close()
@@ -172,12 +227,48 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
             v = conn.execute("SELECT role FROM users WHERE id=?", (a.volunteer_id,)).fetchone()
             if not v or v["role"] != "volunteer":
                 raise HTTPException(404, "Voluntário não encontrado")
-            conn.execute(
-                """INSERT INTO campaign_volunteers (campaign_id, volunteer_id, status, added_at) VALUES (?,?,'selected',?)
-                   ON CONFLICT(campaign_id, volunteer_id) DO UPDATE SET status='selected', added_at=excluded.added_at""",
-                (cid, a.volunteer_id, datetime.now(timezone.utc).isoformat()))
+            rel = convidar(conn, cid, [a.volunteer_id])
             conn.commit()
-            return {"ok": True}
+            return {"ok": True, **rel}
+        finally:
+            conn.close()
+
+    @r.post("/campanhas/{cid}/convites")
+    def convidar_varios(cid: int, c: Convites, u: dict = Depends(ong_ou_admin)):
+        """Convida (ou lembra quem não respondeu) vários voluntários; cada um recebe a mensagem da campanha."""
+        conn = conectar()
+        try:
+            if dono(conn, cid, u)["status"] != "active":
+                raise HTTPException(409, "A campanha está encerrada")
+            rel = convidar(conn, cid, c.volunteer_ids, c.reenviar)
+            conn.commit()
+            return rel
+        finally:
+            conn.close()
+
+    @r.get("/campanhas/{cid}/situacao")
+    def situacao(cid: int, u: dict = Depends(ong_ou_admin)):
+        """Próximo passo, funil de convites, cobertura do plano e recomendados (regras determinísticas)."""
+        conn = conectar()
+        try:
+            dono(conn, cid, u)
+        finally:
+            conn.close()
+        return assistentes.situacao_campanha(cfg, cid)
+
+    @r.post("/convites/previa")
+    def previa(p: PreviaConvite, u: dict = Depends(ong)):
+        """O texto exato que o voluntário recebe, para a ONG revisar antes de publicar."""
+        conn = conectar()
+        try:
+            crise = crise_de(conn, p.crisis_id)
+            v = conn.execute("SELECT name, lat, lon FROM users WHERE id=? AND role='volunteer'", (p.volunteer_id,)).fetchone() \
+                if p.volunteer_id else None
+            km = assistentes.haversine_km(crise["lat"], crise["lon"], v["lat"], v["lon"]) \
+                if v and v["lat"] and crise.get("lat") is not None else None
+            texto = notificacoes.mensagem_convite(v["name"] if v else "voluntário", org_nome(conn, u["id"]),
+                                                  p.model_dump(), crise, km)
+            return {"texto": texto, "canal": cfg.notificacoes}
         finally:
             conn.close()
 
@@ -275,21 +366,33 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
                        WHERE campaign_id=? AND status IN ('selected','confirmed') AND substr(added_at, 1, 10) >= ?
                        GROUP BY 1""", (c["id"], dias[0])).fetchall())
                 crescimento[c["id"]] = [{"dia": d, "n": cont.get(d, 0)} for d in dias]
-            return {
-                "voluntarios_selecionados": sum(c["selecionados"] for c in campanhas),
-                "campanhas_ativas": sum(1 for c in campanhas if c["status"] == "active"),
-                # voluntários distintos nas campanhas desta ONG e, deles, os disponíveis (AC-017.1)
-                "voluntarios": len(vols),
-                "voluntarios_disponiveis": conn.execute(
-                    """SELECT COUNT(DISTINCT u.id) FROM campaign_volunteers cv JOIN campaigns cam ON cam.id=cv.campaign_id
-                       JOIN users u ON u.id=cv.volunteer_id WHERE cam.org_id=? AND cv.status IN ('selected','confirmed')
-                       AND u.available=1""", (org_id,)).fetchone()[0],
-                "crises_apoiadas": len(crises),
-                "habilidades": dict(sorted(habilidades.items(), key=lambda kv: -kv[1])),
-                "campanhas": campanhas,
-                "crescimento": crescimento,
-            }
+            org = conn.execute("SELECT lat, lon FROM users WHERE id=?", (org_id,)).fetchone()
+            disponiveis = conn.execute(
+                """SELECT COUNT(DISTINCT u.id) FROM campaign_volunteers cv JOIN campaigns cam ON cam.id=cv.campaign_id
+                   JOIN users u ON u.id=cv.volunteer_id WHERE cam.org_id=? AND cv.status IN ('selected','confirmed')
+                   AND u.available=1""", (org_id,)).fetchone()[0]
         finally:
             conn.close()
+        # o que pede ação primeiro: o próximo passo de cada campanha ativa e as crises sem gente perto da ONG
+        for c in campanhas:
+            if c["status"] == "active":
+                c["proximo_passo"] = assistentes.situacao_campanha(cfg, c["id"])["proximo_passo"]
+        minhas = {c["crisis_id"] for c in campanhas if c["status"] == "active"}
+        lacunas = [l for l in assistentes.distribuicao(cfg)["lacunas"] if l["crisis_id"] not in minhas]
+        for l in lacunas:
+            l["distancia_km"] = round(assistentes.haversine_km(org["lat"], org["lon"], l["lat"], l["lon"])) if org and org["lat"] else None
+        lacunas.sort(key=lambda l: (l["distancia_km"] is None, l["distancia_km"] or 0, -l["severity"]))
+        return {
+            "lacunas_perto": lacunas[:5],
+            "voluntarios_selecionados": sum(c["selecionados"] for c in campanhas),
+            "campanhas_ativas": sum(1 for c in campanhas if c["status"] == "active"),
+            # voluntários distintos nas campanhas desta ONG e, deles, os disponíveis (AC-017.1)
+            "voluntarios": len(vols),
+            "voluntarios_disponiveis": disponiveis,
+            "crises_apoiadas": len(crises),
+            "habilidades": dict(sorted(habilidades.items(), key=lambda kv: -kv[1])),
+            "campanhas": campanhas,
+            "crescimento": crescimento,
+        }
 
     return r

@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='lp/public/logo.png') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <link rel="stylesheet" href="{{ url_for('brasil.static', filename='brasil.css') }}">
   {% block cabeca %}{% endblock %}
@@ -28,26 +28,26 @@
   <header class="topo">
     <div class="topo-esq">
       <a class="marca" href="{{ url_for('brasil.inicio') }}" aria-label="Crisis Monitor Brasil, início">
-        <span class="marca-ponto" aria-hidden="true"></span><span class="marca-nome">Crisis Monitor</span><span class="marca-selo">BRASIL</span>
+        <span class="marca-nome">Crisis Monitor</span> <span class="marca-selo">Brasil</span>
       </a>
       <nav class="menu" id="menu" aria-label="Navegação">
         <a href="{{ url_for('brasil.mapa') }}" {{ 'aria-current=page' if atual == 'brasil.mapa' }}>Mapa</a>
         {% if br_role == 'volunteer' %}
-          <a href="{{ url_for('brasil.perfil') }}" {{ 'aria-current=page' if atual == 'brasil.perfil' }}>Perfil</a>
-          <a href="{{ url_for('brasil.minhas_campanhas') }}" {{ 'aria-current=page' if atual == 'brasil.minhas_campanhas' }}>Minhas Campanhas<span class="badge" id="badge-convites" hidden></span></a>
+          <a href="{{ url_for('brasil.perfil') }}" {{ 'aria-current=page' if atual == 'brasil.perfil' }}>Começar</a>
+          <a href="{{ url_for('brasil.minhas_campanhas') }}" {{ 'aria-current=page' if atual == 'brasil.minhas_campanhas' }}>Minhas campanhas<span class="badge" id="badge-convites" hidden></span></a>
         {% elif br_role == 'org' %}
           <a href="{{ url_for('brasil.ong') }}" {{ 'aria-current=page' if atual in ('brasil.ong', 'brasil.ong_campanha') }}>Painel</a>
-          <a href="{{ url_for('brasil.ong_nova') }}" {{ 'aria-current=page' if atual == 'brasil.ong_nova' }}>+ Campanha</a>
+          <a href="{{ url_for('brasil.ong_nova') }}" {{ 'aria-current=page' if atual == 'brasil.ong_nova' }}>Nova campanha</a>
         {% elif br_role == 'admin' %}
-          <a href="{{ url_for('brasil.admin') }}" {{ 'aria-current=page' if atual == 'brasil.admin' }}>Admin</a>
+          <a href="{{ url_for('brasil.admin') }}" {{ 'aria-current=page' if atual == 'brasil.admin' }}>Rotina</a>
           <a href="{{ url_for('brasil.previsoes') }}" {{ 'aria-current=page' if atual == 'brasil.previsoes' }}>Previsões</a>
         {% endif %}
       </nav>
     </div>
     <div class="quem">
-      <button class="icone" type="button" id="alternar-tema" aria-label="Alternar tema claro/escuro" title="Tema claro/escuro">◐</button>
+      <button class="icone" type="button" id="alternar-tema" aria-label="Alternar tema claro/escuro" title="Tema claro/escuro">Tema</button>
       <button class="icone menu-botao" type="button" id="menu-botao" aria-controls="menu" aria-expanded="false">Menu</button>
-      <span class="quem-nome">{{ br_nome }} · {{ br_papel }}</span>
+      <span class="quem-nome">{{ br_nome }}</span>
       <span class="avatar" aria-hidden="true">{{ br_iniciais }}</span>
       <a href="{{ url_for('brasil.sair') }}">Sair</a>
     </div>

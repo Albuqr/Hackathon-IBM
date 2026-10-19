@@ -10,6 +10,8 @@ const PAPEL = CFG.papel;
 const $ = (id) => document.getElementById(id);
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const LADO = 7;  // passo da grade de pixels, em px de tela
+// ONG escolhendo a crise da nova campanha: o popup troca a ação por "Usar esta crise"
+const ESCOLHER = PAPEL === "org" && new URLSearchParams(location.search).get("escolher") === "1";
 
 let CORES = {};
 function lerCores() {
@@ -27,13 +29,25 @@ let estado = lerFiltros(location.search);
 // o modo também fica lembrado fora da URL (FR-002): o link "Mapa" do cabeçalho não leva a query
 try { if (!new URLSearchParams(location.search).has("modo") && localStorage.getItem("br-modo") === "pixels") estado.modo = "pixels"; } catch { /* sem armazenamento */ }
 let CRISES = [], VISIVEIS = [], INSCRITO = new Set();
+let LACUNAS = null;            // ids das crises onde falta gente (só a ONG usa)
+const MINHAS = new Map();      // crise → campanha ativa da ONG
 let M = null, UF_DE = () => null, NOME_DE = () => "";
 let mapa, camadaMun, camadaUf, marcadores, area = null;
 const POR_ID = new Map();
 
 // ---------- carregamento (FR-013) ----------
 const CONTROLES = ["f-sev", "f-uf", "f-tipo", "f-fonte", "f-verif", "f-q"];
-function travar(sim) { for (const id of CONTROLES) $(id).disabled = sim; }
+function travar(sim) {
+  for (const id of CONTROLES) $(id).disabled = sim;
+  for (const b of document.querySelectorAll("[data-falta]")) b.disabled = sim;
+}
+
+async function carregarLacunas() {
+  if (LACUNAS || PAPEL !== "org") return;
+  const r = await acao("distribuicao");
+  LACUNAS = new Set(r.ok ? r.dados.lacunas.map((l) => l.crisis_id) : []);
+  $("m-falta") && ($("m-falta").textContent = LACUNAS.size.toLocaleString("pt-BR"));
+}
 
 function carregarMalha() {
   if (window.MALHA) return Promise.resolve(window.MALHA);
@@ -55,10 +69,14 @@ async function carregar() {
   } catch {
     return falhar("Não foi possível carregar o mapa dos municípios.");
   }
-  const [r, insc] = await Promise.all([
+  const [r, insc, minhas] = await Promise.all([
     acao("crises"),
     PAPEL === "volunteer" || PAPEL === "org" ? acao("minhas_inscricoes") : Promise.resolve({ ok: true, dados: [] }),
+    PAPEL === "org" ? acao("campanhas_ong") : Promise.resolve({ ok: true, dados: [] }),
+    carregarLacunas(),
   ]);
+  MINHAS.clear();
+  for (const cam of minhas.ok && Array.isArray(minhas.dados) ? minhas.dados : []) if (cam.status === "active") MINHAS.set(cam.crisis_id, cam);
   if (!r.ok || !Array.isArray(r.dados)) return falhar("Não foi possível carregar as crises.");
   CRISES = r.dados;
   INSCRITO = new Set((insc.ok && Array.isArray(insc.dados) ? insc.dados : []).map((i) => i.id));
@@ -155,12 +173,14 @@ function sincronizarControles() {
   $("f-verif").value = estado.verif;
   if (document.activeElement !== $("f-q")) $("f-q").value = estado.q;
   for (const b of document.querySelectorAll("[data-modo]")) b.setAttribute("aria-pressed", String(b.dataset.modo === estado.modo));
+  for (const b of document.querySelectorAll("[data-falta]")) b.setAttribute("aria-pressed", String(b.dataset.falta === estado.falta));
   $("limpar").hidden = filtrosAtivos(estado) === 0;
 }
 function mudar(parcial, opcoes = {}) {
   estado = { ...estado, ...parcial };
   try { localStorage.setItem("br-modo", estado.modo); } catch { /* sem armazenamento */ }
-  history.replaceState(null, "", location.pathname + gravarFiltros(estado));
+  const busca = gravarFiltros(estado);
+  history.replaceState(null, "", location.pathname + busca + (ESCOLHER ? (busca ? "&" : "?") + "escolher=1" : ""));
   desenhar(opcoes);
 }
 const ligar = (id, chave, conv = (v) => v, ev = "change") =>
@@ -174,11 +194,12 @@ let tBusca;
 $("f-q").addEventListener("input", (e) => { clearTimeout(tBusca); tBusca = setTimeout(() => mudar({ q: e.target.value }), 150); });
 $("limpar").addEventListener("click", () => mudar({ ...PADRAO, modo: estado.modo }, { voar: true }));
 for (const b of document.querySelectorAll("[data-modo]")) b.addEventListener("click", () => mudar({ modo: b.dataset.modo }));
+for (const b of document.querySelectorAll("[data-falta]")) b.addEventListener("click", async () => { await carregarLacunas(); mudar({ falta: b.dataset.falta }); });
 
 // ---------- desenho: tudo sai da Visão do mapa ----------
 function desenhar({ voar = false } = {}) {
   if (!mapa) return;
-  VISIVEIS = filtrar(CRISES, estado, { ufDe: UF_DE, nomeDe: NOME_DE });
+  VISIVEIS = filtrar(CRISES, estado, { ufDe: UF_DE, nomeDe: NOME_DE, lacunas: PAPEL === "org" ? LACUNAS : null });
   sincronizarControles();
   const n = numeros(VISIVEIS, UF_DE);
   $("m-crises").textContent = n.crises.toLocaleString("pt-BR");
@@ -201,10 +222,11 @@ function desenharMarcadores() {
   mapa.closePopup();
   marcadores.clearLayers();
   for (const c of ordemDeDesenho(VISIVEIS)) {
-    const nv = c.verificacao === "nao_verificada";
+    const nv = c.verificacao === "nao_verificada", minha = MINHAS.has(c.id);
     L.circleMarker([c.lat, c.lon], {
       pane: "marcas", radius: raioMarcador(c.severity), fillColor: corTipo(c.crisis_type), fillOpacity: 0.9,
-      color: nv ? css("--acento") : CORES.anel, weight: nv ? 1.5 : 1.2, dashArray: nv ? "3 2" : null, criseId: c.id,
+      color: minha ? css("--verde") : nv ? css("--acento") : CORES.anel, weight: minha ? 3 : nv ? 1.5 : 1.2,
+      dashArray: nv && !minha ? "3 2" : null, criseId: c.id,
     }).bindTooltip(textoSeguro(c.title), { direction: "top", offset: [0, -4] })
       .on("click", () => abrirCrise(c.id))
       .addTo(marcadores);
@@ -347,6 +369,34 @@ function clicarPixel(e) {
   if (a) abrirCrise(a.id);
 }
 
+// ---------- popup da ONG: quem já está lá, o plano do assistente e a campanha ----------
+const URG = { baixa: "baixa", "média": "média", alta: "alta", "crítica": "crítica" };
+function acoesOng(c, box) {
+  const ir = (href, texto) => el("a", { class: "botao botao-primario", href, texto });
+  const minha = MINHAS.get(c.id);
+  if (ESCOLHER) box.append(ir(`${CFG.nova_campanha}?crise=${encodeURIComponent(c.id)}`, "Usar esta crise"));
+  else if (minha) box.append(ir(`${CFG.campanha}${minha.id}`, "Abrir minha campanha"));
+  else box.append(ir(`${CFG.nova_campanha}?crise=${encodeURIComponent(c.id)}`, "Criar campanha aqui"));
+  acao("plano", { p: { crisis_id: c.id } }).then((r) => {
+    const pop = box.closest(".pop");
+    if (!pop) return;
+    const n = pop.querySelector('[data-n="campanhas"]'), linha = pop.querySelector("[data-plano]");
+    if (!r.ok) { if (linha) linha.hidden = true; return; }
+    if (n) n.textContent = String(r.dados.campanhas_ativas);
+    if (!linha) return;
+    if (r.dados.minha_campanha) {
+      linha.replaceChildren("Você já tem a campanha ", el("b", { texto: r.dados.minha_campanha.title }), " aqui.");
+      if (!minha) {
+        MINHAS.set(c.id, r.dados.minha_campanha);
+        box.firstChild.replaceWith(ir(`${CFG.campanha}${r.dados.minha_campanha.id}`, "Abrir minha campanha"));
+      }
+      return;
+    }
+    linha.replaceChildren(el("span", { class: "sugestao", style: "margin:0", texto: "recomendação do assistente" }), el("br"),
+      `${r.dados.voluntarios} voluntários · ${r.dados.habilidades.join(", ")} · urgência ${URG[r.dados.urgencia] || r.dados.urgencia}`);
+  });
+}
+
 // ---------- popup (FR-006) e área (FR-007) ----------
 function mostrarArea(id) {
   if (area) { mapa.removeLayer(area); area = null; }
@@ -392,7 +442,9 @@ function conteudo(c) {
     el("div", { class: "pop-assoc" }, [
       el("span", {}, [el("b", { "data-n": "voluntarios", texto: String(c.voluntarios ?? 0) }), "voluntários"]),
       el("span", {}, [el("b", { "data-n": "ongs", texto: String(c.ongs ?? 0) }), "ONGs"]),
+      PAPEL === "org" ? el("span", {}, [el("b", { "data-n": "campanhas", texto: "–" }), "campanhas"]) : null,
     ]),
+    PAPEL === "org" && !ESCOLHER ? el("p", { class: "pop-rec", "data-plano": "", texto: "Carregando a recomendação do assistente…" }) : null,
     acoes(c, msg),
     msg,
   ]);
@@ -401,12 +453,14 @@ function conteudo(c) {
 
 function acoes(c, msg) {
   const box = el("div", { class: "acoes" });
-  if (PAPEL === "volunteer" || PAPEL === "org") {
-    const botao = el("button", { type: "button", class: "botao botao-pequeno" });
+  if (PAPEL === "org") acoesOng(c, box);
+  if ((PAPEL === "volunteer" || PAPEL === "org") && !ESCOLHER) {
+    const botao = el("button", { type: "button" });
     const pintar = () => {
       const dentro = INSCRITO.has(c.id);
-      botao.className = `botao botao-pequeno ${dentro ? "botao-neutro" : "botao-primario"}`;
-      botao.textContent = dentro ? "Cancelar inscrição" : (PAPEL === "org" ? "Apoiar crise" : "Inscrever-se");
+      // para a ONG, apoiar é secundário: a ação principal do popup é a campanha
+      botao.className = PAPEL === "org" ? "texto-link pequeno" : `botao botao-pequeno ${dentro ? "botao-neutro" : "botao-primario"}`;
+      botao.textContent = dentro ? (PAPEL === "org" ? "Deixar de apoiar" : "Cancelar inscrição") : (PAPEL === "org" ? "Apoiar crise" : "Inscrever-se");
     };
     botao.addEventListener("click", async () => {
       botao.disabled = true;
@@ -423,9 +477,6 @@ function acoes(c, msg) {
     });
     pintar();
     box.append(botao);
-  }
-  if (PAPEL === "org") {
-    box.append(el("a", { class: "botao botao-secundario botao-pequeno", href: `${CFG.nova_campanha}?crise=${encodeURIComponent(c.id)}`, texto: "Criar campanha" }));
   }
   if (PAPEL === "admin" && c.verificacao === "nao_verificada") {
     for (const [acaoNome, texto, cls] of [["confirmar", "Confirmar", "botao-primario"], ["descartar", "Descartar", "botao-neutro"]]) {

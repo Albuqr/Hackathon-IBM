@@ -40,30 +40,76 @@ def _enviar(canal: str, destino, texto: str) -> dict:
     return {"ok": res.get("success", False), "erro": res.get("error")}
 
 
+URGENCIA_TEXTO = {"baixa": "baixa", "media": "média", "alta": "alta", "critica": "crítica"}
+
+
+def mensagem_convite(nome: str, org: str, campanha: dict, crise: dict, distancia_km: float | None) -> str:
+    """Texto do convite de campanha; é o mesmo que a ONG vê na prévia antes de publicar."""
+    perto = f", a {distancia_km:.0f} km de você" if distancia_km is not None else ""
+    habs = ", ".join(campanha.get("skills_needed") or []) or "apoio geral"
+    return (f"Olá, {nome}! A {org} convidou você para a campanha “{campanha.get('title', '')}”.\n"
+            f"{crise.get('title', 'Crise')}{perto}. Urgência {URGENCIA_TEXTO.get(campanha.get('urgency'), campanha.get('urgency') or 'média')}.\n"
+            f"Precisamos de: {habs}.\n"
+            f"Responda em Minhas campanhas, no Crisis Monitor Brasil.")
+
+
+def mensagem_encerramento(nome: str, org: str, campanha: dict) -> str:
+    return (f"Olá, {nome}. A {org} encerrou a campanha “{campanha.get('title', '')}”. "
+            f"Obrigado por ajudar.")
+
+
+def _despachar(cfg: Config, conn, canais: list[str], v: dict, crisis_id, texto: str, rel: dict):
+    for canal in canais:
+        if cfg.notificacoes == "fila":
+            conn.execute("INSERT INTO notificacoes_pendentes (canal, user_id, crisis_id, mensagem) VALUES (?,?,?,?)",
+                         (canal, v["volunteer_id"], crisis_id, texto))
+            rel["enfileiradas"] += 1
+        else:
+            destino = v.get("telegram_id") if canal == "telegram" else v.get("phone")
+            res = _enviar(canal, destino, texto)
+            rel["enviadas" if res["ok"] else "falhas"] += 1
+
+
+def _canais(severidade) -> list[str]:
+    return ["telegram"] + (["whatsapp"] if (severidade or 0) >= 4 else [])
+
+
 def notificar(cfg: Config, crise: dict, matches: list[dict]) -> dict:
     """Notifica os voluntários do matching (Telegram; WhatsApp também se severidade ≥ 4)."""
     agora = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    canais = ["telegram"] + (["whatsapp"] if (crise.get("severity") or 0) >= 4 else [])
     rel = {"modo": cfg.notificacoes, "enfileiradas": 0, "enviadas": 0, "falhas": 0}
     conn = db.conectar(cfg)
     try:
         for mt in matches:
-            texto = mensagem(mt["name"], crise, mt["distancia_km"])
-            for canal in canais:
-                if cfg.notificacoes == "fila":
-                    conn.execute("INSERT INTO notificacoes_pendentes (canal, user_id, crisis_id, mensagem) VALUES (?,?,?,?)",
-                                 (canal, mt["volunteer_id"], crise["id"], texto))
-                    rel["enfileiradas"] += 1
-                else:
-                    destino = mt.get("telegram_id") if canal == "telegram" else mt.get("phone")
-                    res = _enviar(canal, destino, texto)
-                    rel["enviadas" if res["ok"] else "falhas"] += 1
+            _despachar(cfg, conn, _canais(crise.get("severity")), mt, crise["id"], mensagem(mt["name"], crise, mt["distancia_km"]), rel)
             conn.execute("INSERT INTO matches (crisis_id, volunteer_id, score, status, notified_at) VALUES (?,?,?,?,?)",
                          (crise["id"], mt["volunteer_id"], mt["score"],
                           "na_fila" if cfg.notificacoes == "fila" else "notified", agora))
         conn.commit()
     finally:
         conn.close()
+    return rel
+
+
+def convidar(cfg: Config, conn, campanha: dict, crise: dict, org: str, voluntarios: list[dict]) -> dict:
+    """Manda o convite da campanha a cada voluntário (volunteer_id, name, lat, lon, telegram_id, phone).
+    Usa a conexão do chamador; quem chama faz o commit."""
+    from .assistentes import haversine_km
+    agora = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    rel = {"modo": cfg.notificacoes, "enfileiradas": 0, "enviadas": 0, "falhas": 0}
+    for v in voluntarios:
+        km = haversine_km(crise["lat"], crise["lon"], v["lat"], v["lon"]) if v.get("lat") and crise.get("lat") is not None else None
+        _despachar(cfg, conn, _canais(crise.get("severity")), v, crise.get("id"),
+                   mensagem_convite(v["name"] or "voluntário", org, campanha, crise, km), rel)
+        conn.execute("INSERT INTO matches (crisis_id, volunteer_id, score, status, notified_at) VALUES (?,?,?,?,?)",
+                     (crise.get("id"), v["volunteer_id"], None, "convite", agora))
+    return rel
+
+
+def avisar_encerramento(cfg: Config, conn, campanha: dict, org: str, voluntarios: list[dict]) -> dict:
+    rel = {"modo": cfg.notificacoes, "enfileiradas": 0, "enviadas": 0, "falhas": 0}
+    for v in voluntarios:
+        _despachar(cfg, conn, ["telegram"], v, campanha.get("crisis_id"), mensagem_encerramento(v["name"] or "voluntário", org, campanha), rel)
     return rel
 
 
