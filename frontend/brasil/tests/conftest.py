@@ -19,17 +19,23 @@ def sem_rede(monkeypatch):
 
 
 class ApiFalsa:
-    """Substitui a API /brasil: registra as chamadas e devolve respostas fixas."""
+    """Substitui a API /brasil (adapter em app.config["BRASIL_API"]): registra as chamadas e devolve respostas fixas."""
     def __init__(self):
-        self.chamadas = []
+        self.chamadas = []      # (metodo, caminho, usuario, json, params)
         self.respostas = {}
+        self.malha = b'{"geojson":{}}'
+        self.malha_pedidos = 0
 
-    def __call__(self, metodo, caminho, timeout=30, **kw):
-        self.chamadas.append((metodo, caminho, kw.get("json")))
+    def __call__(self, metodo, caminho, usuario=None, timeout=30, **kw):
+        self.chamadas.append((metodo, caminho, usuario, kw.get("json"), kw.get("params")))
         for (m, prefixo), resp in self.respostas.items():
             if m == metodo and caminho.startswith(prefixo):
                 return resp
         return 404, {"detail": "Não encontrado"}
+
+    def bruto(self, caminho, timeout=60):
+        self.malha_pedidos += 1
+        return self.malha
 
 
 @pytest.fixture
@@ -38,20 +44,17 @@ def front(monkeypatch, tmp_path):
     # middleware/brasil e frontend/brasil têm o mesmo nome: garante o do frontend (como em produção,
     # onde cada um roda no seu processo).
     frontend = os.path.join(RAIZ, "frontend")
-    carregado = sys.modules.get("brasil")
-    if carregado is not None and not os.path.abspath(carregado.__file__).startswith(frontend + os.sep):
-        monkeypatch.delitem(sys.modules, "brasil")
+    for nome in [m for m in sys.modules if m == "brasil" or m.startswith("brasil.")]:
+        if not os.path.abspath(sys.modules[nome].__file__ or "").startswith(frontend + os.sep):
+            monkeypatch.delitem(sys.modules, nome)
     monkeypatch.syspath_prepend(frontend)
     import app as crisis_app
     falsa = ApiFalsa()
-    # o módulo que o app realmente usa (o blueprint registrado na importação do app.py)
-    monkeypatch.setitem(modulo_do_blueprint(crisis_app.app), "api", falsa)
+    monkeypatch.setitem(crisis_app.app.config, "BRASIL_API", falsa)
     crisis_app.app.config["TESTING"] = True
+    import brasil
+    brasil._malha_cache.clear()
     return crisis_app.app.test_client(), falsa
-
-
-def modulo_do_blueprint(app) -> dict:
-    return app.view_functions["brasil.inicio"].__globals__
 
 
 @pytest.fixture
