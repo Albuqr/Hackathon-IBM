@@ -65,7 +65,11 @@ async function carregar() {
   travar(false);
   $("carregando").hidden = true;
   desenhar({ voar: Boolean(estado.uf) });
-  window.__brasil = { mapa, estado: () => ({ ...estado }), visiveis: () => VISIVEIS.map((c) => c.id), abrir: abrirCrise };
+  // ganchos para o E2E: o que está desenhado, sem olhar dentro do Leaflet
+  window.__brasil = { mapa, estado: () => ({ ...estado }), visiveis: () => VISIVEIS.map((c) => c.id), abrir: abrirCrise,
+    marcadores: () => marcadores.getLayers().map((l) => l.options.criseId),
+    area: () => (area ? area.getLayers().length : 0),
+    pixelsAcesos: () => PIX.acesas.filter(Boolean).length };
   document.body.dataset.pronto = "1";
 }
 
@@ -194,7 +198,7 @@ function desenharMarcadores() {
     const nv = c.verificacao === "nao_verificada";
     L.circleMarker([c.lat, c.lon], {
       pane: "marcas", radius: raioMarcador(c.severity), fillColor: corSev(c.severity), fillOpacity: 0.92,
-      color: nv ? css("--acento") : CORES.anel, weight: nv ? 1.5 : 1.2, dashArray: nv ? "3 2" : null,
+      color: nv ? css("--acento") : CORES.anel, weight: nv ? 1.5 : 1.2, dashArray: nv ? "3 2" : null, criseId: c.id,
     }).bindTooltip(c.title, { direction: "top", offset: [0, -4] })
       .on("click", () => abrirCrise(c.id))
       .addTo(marcadores);

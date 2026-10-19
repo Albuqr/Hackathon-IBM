@@ -29,6 +29,7 @@ def app_crisis(tmp_path, monkeypatch):
     return montar
 
 
+# AC-025.1 (brasil-app)
 def test_ac_025_1_sem_token_401_com_token_200_saude_livre(app_crisis):
     from middleware.seguranca import token
     cli = app_crisis("chave-de-teste-123")
@@ -40,6 +41,7 @@ def test_ac_025_1_sem_token_401_com_token_200_saude_livre(app_crisis):
     assert cli.get("/brasil/crises").status_code == 401
 
 
+# AC-026.1 (brasil-app)
 def test_ac_026_1_sem_secret_key_api_aberta_com_aviso(app_crisis, capsys):
     cli = app_crisis(None)
     assert cli.get("/events").status_code == 200
@@ -59,6 +61,7 @@ def test_save_events_aceito_sem_token_na_transicao_com_aviso(app_crisis, caplog)
     assert "chave-de-teste-123" not in caplog.text  # NFR-004
 
 
+# AC-027.1 (brasil-app)
 def test_ac_027_1_comando_imprime_token_que_a_api_aceita(app_crisis):
     out = subprocess.run([sys.executable, "-m", "middleware.seguranca"], cwd=RAIZ, capture_output=True, text=True,
                          env={**os.environ, "SECRET_KEY": "abc-chave-xyz"})
