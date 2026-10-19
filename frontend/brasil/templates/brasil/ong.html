@@ -9,15 +9,15 @@
     <h1>{{ 'O que precisa de você.' if pedem or lacunas else 'Tudo em dia.' }}</h1>
     <p>{% if pedem %}{{ pedem|length }} campanha{{ 's pedem' if pedem|length > 1 else ' pede' }} uma ação{% else %}Nenhuma campanha pede ação agora{% endif %}{% if lacunas %}, e {{ lacunas|length }} crise{{ 's' if lacunas|length > 1 }} perto de você {{ 'estão' if lacunas|length > 1 else 'está' }} sem gente{% endif %}.</p>
   </div>
-  <div class="pilha">
+  <div class="pilha bento">
     {% if pedem %}
-    <section class="secao" aria-labelledby="t-acao"><h2 id="t-acao">Campanhas que pedem ação</h2>
+    <section class="secao b-7" aria-labelledby="t-acao"><h2 id="t-acao">Campanhas que pedem ação</h2>
       <ul class="lista">{% for c in pedem %}
         <li><div class="item-texto"><span class="item-titulo">{{ c.title }}</span><span class="item-meta">{{ c.proximo_passo.titulo }}</span></div>
           <a class="pilula contorno" href="{{ url_for('brasil.ong_campanha', cid=c.id) }}">Resolver</a></li>{% endfor %}
       </ul></section>
     {% endif %}
-    <section class="secao" aria-labelledby="t-lac"><h2 id="t-lac">Crises perto de você sem gente</h2>
+    <section class="secao {{ 'b-5' if pedem else 'b-12' }}" aria-labelledby="t-lac"><h2 id="t-lac">Crises perto de você sem gente</h2>
       {% if lacunas %}
       <ul class="lista">{% for l in lacunas %}
         <li><div class="item-texto">
@@ -28,7 +28,7 @@
       </ul>
       {% else %}<p class="vazio">Nenhuma crise grave sem gente agora. Veja todas no <a href="{{ url_for('brasil.mapa') }}">mapa</a>.</p>{% endif %}
     </section>
-    <section class="secao" aria-labelledby="t-ong"><h2 id="t-ong">Sua ONG</h2>
+    <section class="secao b-5" aria-labelledby="t-ong"><h2 id="t-ong">Sua ONG</h2>
       <div class="numeros">
         <div><b>{{ p.voluntarios or 0 }}</b><span>voluntários nas campanhas</span></div>
         <div><b>{{ p.voluntarios_disponiveis or 0 }}</b><span>deles, disponíveis</span></div>
@@ -41,7 +41,7 @@
           <div><span title="{{ h }}">{{ h }}</span><i style="width:{{ n / top * 100 }}%"></i><span>{{ n }}</span></div>{% endfor %}</div></div>
       {% endif %}
     </section>
-    <section class="secao" aria-labelledby="t-todas"><div class="secao-topo"><h2 id="t-todas">Todas as campanhas</h2>
+    <section class="secao b-7" aria-labelledby="t-todas"><div class="secao-topo"><h2 id="t-todas">Todas as campanhas</h2>
         <a class="texto-link seta pequeno" href="{{ url_for('brasil.ong_nova') }}">Nova campanha</a></div>
       {% if p.campanhas %}
       <ul class="lista">{% for c in p.campanhas %}
