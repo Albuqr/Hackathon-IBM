@@ -63,7 +63,10 @@ def carregar_fontes(caminho: str = ARQUIVO) -> dict:
 
 
 def dominio_permitido(link: str, dominios: list[str]) -> bool:
-    host = (urlparse(link).hostname or "").lower()
+    u = urlparse(link)
+    if u.scheme not in ("http", "https"):  # javascript:, data: etc. nunca viram link
+        return False
+    host = (u.hostname or "").lower()
     return any(fnmatch.fnmatchcase(host, p) and host.count(".") == p.count(".") for p in dominios)
 
 

@@ -74,7 +74,7 @@
 <script src="{{ url_for('brasil.malha_js') }}"></script>
 <script id="br-campanha" type="application/json">{{ c|tojson }}</script>
 <script type="module">
-import { el, acao, avisar, rotulo, CONVITE, montarChat, nivel } from "{{ url_for('brasil.static', filename='cliente.js') }}";
+import { el, acao, avisar, rotulo, CONVITE, montarChat, nivel, textoSeguro } from "{{ url_for('brasil.static', filename='cliente.js') }}";
 const C = JSON.parse(document.getElementById("br-campanha").textContent);
 const $ = (id) => document.getElementById(id);
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
@@ -91,11 +91,11 @@ function desenharMapa() {
   const pts = [];
   if (C.crisis_lat != null) {
     L.circleMarker([C.crisis_lat, C.crisis_lon], { radius: 10, fillColor: css(`--sev${nivel(C.crisis_severity)}`), fillOpacity: .9, color: css("--anel"), weight: 2 })
-      .bindTooltip(C.crisis_title || "Crise").addTo(camada);
+      .bindTooltip(textoSeguro(C.crisis_title || "Crise")).addTo(camada);
     pts.push([C.crisis_lat, C.crisis_lon]);
   }
   for (const v of na) if (v.lat != null) {
-    L.circleMarker([v.lat, v.lon], { radius: 5, fillColor: css("--verde"), fillOpacity: .9, color: css("--anel"), weight: 1 }).bindTooltip(v.name).addTo(camada);
+    L.circleMarker([v.lat, v.lon], { radius: 5, fillColor: css("--verde"), fillOpacity: .9, color: css("--anel"), weight: 1 }).bindTooltip(textoSeguro(v.name)).addTo(camada);
     pts.push([v.lat, v.lon]);
   }
   if (pts.length > 1) mapa.fitBounds(pts, { padding: [24, 24], maxZoom: 9 });

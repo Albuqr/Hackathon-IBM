@@ -11,7 +11,7 @@ from flask import (Blueprint, Response, abort, current_app, jsonify, redirect, r
                    session, url_for)
 
 from .api_cliente import ApiHttp
-from .encaminhador import POLITICA, Recusa, encaminhar
+from .encaminhador import Recusa, encaminhar
 
 PERFIS = {"voluntario": "volunteer", "ong": "org", "admin": "admin"}
 NOME_PAPEL = {"volunteer": "Voluntário", "org": "ONG", "admin": "Admin"}
@@ -106,6 +106,8 @@ def sair():
 def acao(nome):
     if "br_user_id" not in session:
         return jsonify({"detail": "Entre para continuar"}), 401
+    if not request.is_json:  # formulário de outro site não chega aqui (CSRF)
+        return jsonify({"detail": "Envie JSON"}), 415
     try:
         st, d = encaminhar(api(), nome, session.get("br_role"), session["br_user_id"], request.get_json(silent=True) or {})
     except Recusa as r:
@@ -192,5 +194,3 @@ def malha_js():
     return Response(_malha_cache["js"], mimetype="application/javascript",
                     headers={"Cache-Control": "public, max-age=86400"})
 
-
-__all__ = ["bp", "POLITICA"]

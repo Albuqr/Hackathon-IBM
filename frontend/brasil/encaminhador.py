@@ -64,14 +64,16 @@ def montar_caminho(modelo: str, params: dict, eu: int) -> str:
         if nome == "eu":
             return str(eu)
         valor = params.get(nome)
-        if valor is None or str(valor) == "":
-            raise Recusa(400, f"Falta o parâmetro {nome}")
+        if valor is None or str(valor) in ("", ".", ".."):
+            raise Recusa(400, f"Parâmetro {nome} inválido")
         return quote(str(valor), safe="")  # nunca deixa escapar do caminho ("/", "..")
     return _PARAM.sub(troca, modelo)
 
 
 def encaminhar(api, nome: str, papel: str | None, eu: int | None, pedido: dict) -> tuple[int, object]:
     """Aplica a política e chama a API. Devolve (status, json)."""
+    if not isinstance(pedido, dict) or any(not isinstance(pedido.get(k) or {}, dict) for k in ("p", "q")):
+        raise Recusa(400, "Pedido inválido")
     regra = POLITICA.get(nome)
     if regra is None or eu is None or papel not in regra.papeis:
         raise Recusa(403, "Seu perfil não pode fazer isto")

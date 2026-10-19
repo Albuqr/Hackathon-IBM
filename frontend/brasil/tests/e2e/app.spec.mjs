@@ -161,3 +161,70 @@ test("AC-021.1 tema segue o sistema na primeira visita e a escolha fica lembrada
   await page.reload(); await pronto(page);
   assert.equal(await page.getAttribute("html", "data-theme"), "light");
 });
+
+// Clique real (marcador e pixel), sem atalhos: posição da crise na tela → clique do mouse.
+async function clicarNaCrise(page, id) {
+  const pt = await page.evaluate((id) => {
+    const m = window.__brasil.mapa, c = { "teste-altamira": [-3.2, -52.2] }[id];
+    m.setView(c, 7, { animate: false });
+    const p = m.latLngToContainerPoint(c), r = m.getContainer().getBoundingClientRect();
+    return { x: r.left + p.x, y: r.top + p.y };
+  }, id);
+  await page.waitForTimeout(300);  // um quadro para marcadores/pixels redesenharem na nova vista
+  await page.mouse.click(pt.x, pt.y);
+}
+
+test("AC-006.1 clicar no marcador abre o popup da crise", async () => {
+  const page = await entrar("voluntario");
+  await clicarNaCrise(page, "teste-altamira");
+  await page.waitForSelector('.pop[data-crise="teste-altamira"]');
+});
+
+test("AC-005.1 clicar num pixel aceso abre a crise que o acendeu", async () => {
+  const page = await entrar("voluntario", { url: "/brasil/mapa?modo=pixels" });
+  await page.waitForFunction(() => window.__brasil.pixelsAcesos() > 0);
+  await clicarNaCrise(page, "teste-altamira");
+  await page.waitForSelector('.pop[data-crise="teste-altamira"]');
+});
+
+test("AC-006.2 admin confirma a notícia pelo popup e o selo some", async () => {
+  const page = await entrar("admin");
+  await page.evaluate(() => window.__brasil.abrir("teste-noticia-recife"));
+  await page.locator(".pop").getByRole("button", { name: "Confirmar" }).click();
+  await page.waitForFunction(() => document.getElementById("m-nv").textContent === "0");
+  await page.evaluate(() => window.__brasil.abrir("teste-noticia-recife"));
+  await page.waitForSelector('.pop[data-crise="teste-noticia-recife"] .selo.verificada');
+  // o popup anterior pode ainda estar sumindo (animação); espera ficar só o novo
+  await page.waitForFunction(() => document.querySelectorAll(".pop").length === 1);
+  assert.equal(await page.locator(".pop").getByRole("button", { name: "Confirmar" }).count(), 0);
+});
+
+test("AC-019.1 campanha: convidar e remover voluntário, editar e encerrar", async () => {
+  const page = await entrar("ong", { url: "/brasil/ong" });
+  await page.getByRole("link", { name: "Gerenciar" }).first().click();
+  await page.waitForSelector("#na-campanha tr");
+  await page.selectOption("#f-disp", "");
+  await page.locator("#f-dist").fill("3000");
+  const convidar = page.locator("#disponiveis").getByRole("button", { name: "Convidar" }).first();
+  if (await convidar.count()) {  // a voluntária de teste já está nas 2 campanhas da semente
+    await convidar.click();
+    await page.waitForSelector("#msg:not([hidden])");
+  }
+  await page.locator("#na-campanha").getByRole("button", { name: "Remover" }).first().click();
+  await page.waitForFunction(() => /removido/.test(document.getElementById("msg").textContent));
+  await page.fill('#form-editar input[name="title"]', "Teste campanha editada");
+  await page.click('#form-editar button[type="submit"]');
+  await page.waitForFunction(() => document.querySelector(".pagina-cabeca h1").textContent === "Teste campanha editada");
+  page.once("dialog", (d) => d.accept());
+  await page.click("#encerrar");
+  await page.waitForSelector(".selo.closed");
+});
+
+test("AC-015.1 perfil sem localização salva o resto (sem erro de local)", async () => {
+  const page = await entrar("voluntario", { url: "/brasil/perfil" });
+  await page.fill('input[name="lat"]', "");
+  await page.fill('input[name="lon"]', "");
+  await page.fill('input[name="name"]', "Voluntária de Teste");
+  await page.click('#form-perfil button[type="submit"]');
+  await page.waitForSelector("#msg.ok");
+});

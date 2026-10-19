@@ -42,10 +42,11 @@ def test_ac_025_1_sem_token_401_com_token_200_saude_livre(app_crisis):
 
 
 # AC-026.1 (brasil-app)
-def test_ac_026_1_sem_secret_key_api_aberta_com_aviso(app_crisis, capsys):
-    cli = app_crisis(None)
+def test_ac_026_1_sem_secret_key_api_aberta_com_aviso(app_crisis, caplog):
+    with caplog.at_level(logging.WARNING, logger="crisis.seguranca"):
+        cli = app_crisis(None)
     assert cli.get("/events").status_code == 200
-    assert "API sem proteção" in capsys.readouterr().out
+    assert "API sem proteção" in caplog.text
 
 
 def test_padrao_de_desenvolvimento_conta_como_aberta(app_crisis):
@@ -71,11 +72,24 @@ def test_ac_027_1_comando_imprime_token_que_a_api_aceita(app_crisis):
     assert cli.get("/events", headers={"X-Crisis-Token": tok}).status_code == 200
 
 
-def test_frontend_e_bot_derivam_o_mesmo_token(monkeypatch):
+def test_token_nao_ascii_da_401_e_nao_500(app_crisis):
+    cli = app_crisis("chave-de-teste-123")
+    assert cli.get("/events", headers={"X-Crisis-Token": "é".encode("latin-1")}).status_code == 401
+
+
+def test_frontend_e_bot_mandam_o_mesmo_token_que_a_api_aceita(monkeypatch):
+    """O bot e o frontend usam frontend/token_api.py; a API valida com middleware/seguranca.py."""
     from middleware.seguranca import token
     monkeypatch.setenv("SECRET_KEY", "k-123-segredo")
+    monkeypatch.setenv("TG_TOKEN", "")
     sys.path.insert(0, os.path.join(RAIZ, "frontend"))
     import token_api
     assert token_api.cabecalhos() == {"X-Crisis-Token": token("k-123-segredo")}
-    texto_bot = open(os.path.join(RAIZ, "telegram_bot", "bot.py"), encoding="utf-8").read()
-    assert 'b"crisis-api-v1"' in texto_bot and "hashlib.sha256" in texto_bot
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("bot_teste", os.path.join(RAIZ, "telegram_bot", "bot.py"))
+    bot = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(bot)
+    except ModuleNotFoundError as e:  # python-telegram-bot não está no ambiente de teste
+        pytest.skip(f"bot sem dependências: {e}")
+    assert bot.requests.headers["X-Crisis-Token"] == token("k-123-segredo")

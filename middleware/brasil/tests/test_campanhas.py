@@ -120,3 +120,21 @@ def test_ac_016_1_ingestao_automatica_roda_uma_vez_em_61_min(api, monkeypatch):
 def test_fr016_desligada_nao_cria_thread(api):
     _, rotas = api
     assert rotas.CFG.ingestao_auto_min == 0 and ingestao.iniciar_automatico(rotas.CFG) is None
+
+
+# AC-017.1 (brasil-app): números do painel são da própria ONG
+def test_ac_017_1_painel_conta_voluntarios_da_ong(api):
+    cli, rotas = api
+    ong, vol, extras = preparar(cli, rotas, n_vol=4)
+    c1 = campanha(cli, ong).json()["id"]
+    c2 = campanha(cli, ong, title="Apoio POA", crisis_id="cemaden-poa").json()["id"]
+    for v in (vol, extras[0]):
+        cli.post(f"/brasil/campanhas/{c1}/voluntarios", json={"volunteer_id": v}, headers=como(ong))
+    cli.post(f"/brasil/campanhas/{c2}/voluntarios", json={"volunteer_id": extras[1]}, headers=como(ong))
+    import sqlite3
+    conn = sqlite3.connect(rotas.CFG.db_path)
+    conn.execute("UPDATE users SET available=0 WHERE id IN (?, ?)", (vol, extras[0]))
+    conn.commit(); conn.close()
+    p = cli.get(f"/brasil/ong/{ong}/painel", headers=como(ong)).json()
+    # 3 voluntários nas campanhas (extras[2] e [3] existem, disponíveis, mas não são da ONG)
+    assert (p["campanhas_ativas"], p["voluntarios"], p["voluntarios_disponiveis"]) == (2, 3, 1)

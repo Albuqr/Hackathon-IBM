@@ -22,6 +22,9 @@
   --info: #1f4b8f;
   --info-fundo: #e7eef9;
   --sev1: #f58967; --sev2: #e26239; --sev3: #c34517; --sev4: #9d3106; --sev5: #742304;
+  /* tipo de crise (categórica, ordem fixa; validate_palette light sobre #f6f3ec: CVD ok, contraste < 3:1 → sempre com legenda) */
+  --tipo-meteorologico: #2a78d6; --tipo-queimada: #eb6834; --tipo-hidrologico: #1baf7a;
+  --tipo-seca: #eda100; --tipo-geologico: #6250d6; --tipo-outros: #e87ba4;
   --mapa-fundo: #ebe7dc;      /* o "mar" atrás do Brasil */
   --mun: #f6f3ec;             /* município (malha neutra) */
   --mun-traco: #d3cdbf;
@@ -58,6 +61,8 @@
   --info: #a9c6f5;
   --info-fundo: #16233a;
   --sev1: #7c3a1e; --sev2: #a8461b; --sev3: #d0592a; --sev4: #f07d4a; --sev5: #ffb08a;
+  --tipo-meteorologico: #3987e5; --tipo-queimada: #d95926; --tipo-hidrologico: #199e70;
+  --tipo-seca: #c98500; --tipo-geologico: #9085e9; --tipo-outros: #d55181;
   --mapa-fundo: #0c110f;
   --mun: #18211d;
   --mun-traco: #2c3832;
@@ -80,7 +85,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--verde); outline-offset: 2px; }
 .skip { position: absolute; left: -999px; top: 8px; z-index: 3000; background: var(--cartao); padding: 8px 12px; }
 .skip:focus { left: 8px; }
-.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .mono { font-family: var(--mono); }
 
 /* ---------- shell: tela cheia, sem rolagem da página (FR-001) ---------- */
@@ -130,11 +134,13 @@ body.recolhida .alternar-lateral span { display: inline-block; transform: rotate
   background: var(--papel-claro); border-top: 1px solid var(--linha); font-family: var(--mono); font-size: 11px; color: var(--tinta-3);
 }
 .status-online { display: flex; align-items: center; gap: 6px; color: var(--ok); }
+.status-online.fora { color: var(--acento); }
 .status-online::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .status-coleta { overflow: hidden; text-overflow: ellipsis; }
 .status-legenda { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 .status-legenda span { display: inline-flex; align-items: center; gap: 5px; }
 .status-legenda i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.legenda-tamanho { color: var(--tinta-3); font-style: italic; }
 
 /* ---------- barra lateral do mapa ---------- */
 .bloco-titulo { font-family: var(--mono); font-size: 10px; color: var(--tinta-3); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 8px; }
@@ -173,6 +179,7 @@ input[type="range"] { width: 100%; accent-color: var(--verde); padding: 0; borde
 .pop-topo { display: flex; gap: 8px; align-items: flex-start; }
 .pop-titulo { font-size: 15px; font-weight: 500; line-height: 1.25; overflow-wrap: anywhere; }
 .pop-meta { font-family: var(--mono); font-size: 11px; color: var(--tinta-3); display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.ponto-tipo { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
 .pop-assoc { display: flex; gap: 14px; font-family: var(--mono); font-size: 11px; color: var(--tinta-2); border-top: 1px solid var(--linha); padding-top: 8px; }
 .pop-assoc b { color: var(--tinta); font-family: var(--sans); font-size: 15px; font-weight: 500; margin-right: 3px; }
 .pop .acoes .botao { flex: 1; }
@@ -287,6 +294,8 @@ body.solta { min-height: 100dvh; display: grid; place-items: center; padding: 24
   .lateral { position: absolute; top: 0; bottom: 0; left: 0; box-shadow: var(--sombra); }
   .grade-2, .grade-lateral { grid-template-columns: minmax(0, 1fr); }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .status-legenda span:nth-child(n+2):nth-child(-n+4) { display: none; }
+  .status-online, .status-coleta { display: none; }
+  .statusbar { overflow-x: auto; }
+  .status-legenda { margin-left: 0; }
   .pagina { padding: 20px 16px 40px; }
 }

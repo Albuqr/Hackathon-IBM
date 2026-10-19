@@ -10,6 +10,7 @@ load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "hktn26-dev-secret")
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # cookie de sessão não vai em POST de outro site (CSRF)
 
 API        = os.environ.get("API_URL", "http://localhost:8000")
 DB         = os.environ.get("DB_PATH", "data/crisis.db")
@@ -588,4 +589,4 @@ def api_chat():
 app.register_blueprint(__import__("brasil").bp)  # Dash Brasil (ADR 0001)
 # ── Run ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=os.environ.get("FLASK_DEBUG") == "1")  # nunca debug em produção

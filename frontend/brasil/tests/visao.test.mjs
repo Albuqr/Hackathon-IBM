@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   PADRAO, lerFiltros, gravarFiltros, filtrosAtivos, filtrar, numeros, ufsDaCrise, acender, raioKm, ordemDeDesenho, opcoes,
+  grupoDe, GRUPOS,
 } from "../static/visao.js";
 
 const UF = { 4205407: "SC", 4321501: "RS", 4314902: "RS", 3304557: "RJ" };
@@ -64,24 +65,28 @@ test("AC-004.1 crises na mesma coordenada continuam separadas; a mais grave por 
 });
 
 test("AC-005.1 pixels: mais grave acende mais e domina a célula", () => {
-  const lado = 7;
-  const celulas = [];
-  for (let i = 0; i < 60; i++) for (let j = 0; j < 30; j++) celulas.push({ x: i * lado + 3.5, y: j * lado + 3.5 });
-  const escala = 0.5;  // px por km
-  const focos = [
-    { id: "forte", sev: 5, x: 100, y: 100, r: raioKm(5) * escala },
-    { id: "fraca", sev: 1, x: 300, y: 100, r: raioKm(1) * escala },
-  ];
-  const res = acender(celulas, focos, lado);
-  const acesas = (id) => res.filter((x) => x && x.id === id).length;
-  assert.ok(acesas("forte") > acesas("fraca") && acesas("fraca") > 0);
-  const perto = res[celulas.findIndex((c) => Math.abs(c.x - 101.5) < 4 && Math.abs(c.y - 101.5) < 4)];
-  assert.equal(perto.id, "forte");
-  assert.equal(perto.sev, 5);
+  const lado = 7, cols = 60, lins = 30;
+  const grade = { cols, lins, lado, dentro: new Uint8Array(cols * lins).fill(1) };
+  const escala = 0.3;  // px por km
+  const focos = [{ sev: 5, x: 100, y: 100, r: raioKm(5) * escala }, { sev: 1, x: 330, y: 100, r: raioKm(1) * escala }];
+  const { foco } = acender(grade, focos);
+  const acesas = (f) => foco.filter((x) => x === f).length;
+  assert.ok(acesas(0) > acesas(1) && acesas(1) > 0);
+  assert.equal(foco[Math.floor(100 / lado) * cols + Math.floor(100 / lado)], 0);
   // sobreposição: a de severidade maior vence mesmo mais longe
-  const sobre = acender([{ x: 50, y: 50 }], [{ id: "s5", sev: 5, x: 80, y: 50, r: 60 }, { id: "s2", sev: 2, x: 52, y: 50, r: 60 }], lado);
-  assert.equal(sobre[0].id, "s5");
-  assert.deepEqual(acender(celulas, [], lado).filter(Boolean), []);
+  const um = { cols: 1, lins: 1, lado: 100, dentro: new Uint8Array([1]) };
+  assert.equal(acender(um, [{ sev: 5, x: 80, y: 50, r: 60 }, { sev: 2, x: 52, y: 50, r: 60 }]).foco[0], 0);
+  // fora do Brasil não acende
+  assert.equal(acender({ ...um, dentro: new Uint8Array([0]) }, [{ sev: 5, x: 50, y: 50, r: 60 }]).foco[0], -1);
+  // foco fora da tela não estoura a grade
+  assert.doesNotThrow(() => acender(grade, [{ sev: 5, x: -5000, y: 99999, r: 300 }]));
+});
+
+test("cor por tipo: grupos fixos, tipos desconhecidos em outros", () => {
+  assert.deepEqual(GRUPOS, ["meteorologico", "queimada", "hidrologico", "seca", "geologico", "outros"]);
+  assert.equal(grupoDe("wildfire"), "queimada");
+  assert.equal(grupoDe("seismic"), "geologico");
+  assert.equal(grupoDe("conflict"), "outros");
 });
 
 test("opções contam crises por valor", () => {

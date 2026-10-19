@@ -6,8 +6,8 @@
     <div class="acoes"><a class="botao botao-primario" href="{{ url_for('brasil.ong_nova') }}">+ Nova campanha</a></div></div>
   <div class="kpis">
     <div class="kpi"><b>{{ p.campanhas_ativas or 0 }}</b><span>campanhas ativas</span></div>
-    <div class="kpi"><b>{{ p.voluntarios_selecionados or 0 }}</b><span>voluntários nas campanhas</span></div>
-    <div class="kpi"><b>{{ p.voluntarios_disponiveis or 0 }}</b><span>voluntários disponíveis</span></div>
+    <div class="kpi"><b>{{ p.voluntarios or 0 }}</b><span>voluntários nas campanhas</span></div>
+    <div class="kpi"><b>{{ p.voluntarios_disponiveis or 0 }}</b><span>deles, disponíveis</span></div>
     <div class="kpi"><b>{{ p.crises_apoiadas or 0 }}</b><span>crises apoiadas</span></div>
   </div>
   <div class="grade-lateral">

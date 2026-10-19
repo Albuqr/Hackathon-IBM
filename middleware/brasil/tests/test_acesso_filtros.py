@@ -56,3 +56,14 @@ def test_ac_024_1_papel_vem_do_banco_nao_do_corpo(api):
     assert cli.get(f"/brasil/usuarios/{admin}", headers=como(vol)).status_code == 403
     assert cli.get("/brasil/distribuicao", headers=como(vol)).status_code == 403
     assert cli.post("/brasil/ingestao", headers=como(vol)).status_code == 403
+
+
+def test_link_da_fonte_so_http(api):
+    _, rotas = api
+    from middleware.brasil import noticias
+    assert not noticias.dominio_permitido("javascript://g1.globo.com/%0aalert(1)", ["g1.globo.com"])
+    assert noticias.dominio_permitido("https://g1.globo.com/rs/noticia", ["g1.globo.com"])
+    ingestao.executar(rotas.CFG, fontes={"inmet": lambda: [{"id": "x1", "title": "t", "lat": -30.03, "lon": -51.22,
+        "severity": 2, "source": "inmet", "link_fonte": "javascript:alert(1)"}]})
+    [c] = [c for c in ingestao.crises_ativas(rotas.CFG) if c["id"] == "x1"]
+    assert c["link_fonte"] is None

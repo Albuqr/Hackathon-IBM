@@ -44,7 +44,6 @@ def instalar(app):
     """Registra a checagem no app FastAPI. Avisa uma vez, na subida, se ficou aberta."""
     if segredo() is None:
         log.warning("API sem proteção: defina SECRET_KEY (diferente do padrão) para exigir %s", CABECALHO)
-        print(f"[seguranca] API sem proteção: defina SECRET_KEY para exigir {CABECALHO}")
 
     @app.middleware("http")
     async def exigir_token(request, call_next):
@@ -53,7 +52,7 @@ def instalar(app):
         if s is None or request.method == "OPTIONS" or chave in ISENTOS:
             return await call_next(request)
         recebido = request.headers.get(CABECALHO, "")
-        if hmac.compare_digest(recebido, token(s)):
+        if hmac.compare_digest(recebido.encode(), token(s).encode()):
             return await call_next(request)
         if chave in TRANSICAO:
             log.warning("%s %s sem %s (aceito na transição)", *chave, CABECALHO)

@@ -80,39 +80,45 @@ export const raioMarcador = (s) => 4 + 2 * nivel(s);
 // Ordem de desenho: menos grave embaixo, mais grave por cima (crises na mesma coordenada continuam separadas).
 export const ordemDeDesenho = (crises) => [...crises].sort((a, b) => (Number(a.severity) || 0) - (Number(b.severity) || 0));
 
+// ---------- cor por tipo de crise ----------
+// Ordem fixa dos grupos (paleta categórica validada, brasil.css --tipo-*); nunca reciclada.
+export const GRUPOS = ["meteorologico", "queimada", "hidrologico", "seca", "geologico", "outros"];
+const GRUPO_DO_TIPO = { meteorological: "meteorologico", wildfire: "queimada", hydrological: "hidrologico",
+  drought: "seca", geological: "geologico", seismic: "geologico" };
+export const grupoDe = (tipo) => GRUPO_DO_TIPO[tipo] || "outros";
+
 // ---------- pixels (FR-005) ----------
 // Alcance de cada crise: cresce com a severidade.
-export const raioKm = (s) => 25 + 35 * nivel(s);
+export const raioKm = (s) => 40 + 45 * nivel(s);
 
-// celulas: [{x, y}] centros dos pixels (já recortados ao Brasil), em px de tela.
-// focos: [{x, y, r, sev, id}] cada crise visível projetada na tela, com alcance r em px.
-// Devolve, para cada célula, null (apagada) ou { sev, k (0–1), id } da crise mais grave que a alcança
-// (empate: a mais próxima). A intensidade cai linearmente até a borda do alcance.
-export function acender(celulas, focos, lado = 7) {
-  const saida = new Array(celulas.length).fill(null);
-  if (!focos.length || !celulas.length) return saida;
-  const indice = new Map();
-  celulas.forEach((c, i) => indice.set(`${Math.floor(c.x / lado)}:${Math.floor(c.y / lado)}`, i));
-  for (const f of focos) {
-    const r = Math.max(f.r, lado * 0.75);
-    const i0 = Math.floor((f.x - r) / lado), i1 = Math.floor((f.x + r) / lado);
-    const j0 = Math.floor((f.y - r) / lado), j1 = Math.floor((f.y + r) / lado);
-    for (let i = i0; i <= i1; i++) {
-      for (let j = j0; j <= j1; j++) {
-        const idx = indice.get(`${i}:${j}`);
-        if (idx === undefined) continue;
-        const c = celulas[idx];
-        const d = Math.hypot(c.x - f.x, c.y - f.y);
+// grade: { cols, lins, lado, dentro: Uint8Array(cols*lins) } (1 = célula dentro do Brasil), em px de tela.
+// focos: [{ x, y, r, sev }] cada crise visível projetada na tela, com alcance r em px.
+// Devolve { foco: Int32Array (índice do foco que domina a célula, -1 = apagada), k: Float32Array (0–1) }.
+// Domina a crise mais grave que alcança a célula (empate: a mais próxima). A intensidade cai até a borda.
+// Só percorre as células dentro do quadrado de cada foco, recortado à tela: custo ~ área acesa, não tela × crises.
+export function acender(grade, focos) {
+  const { cols, lins, lado, dentro } = grade;
+  const n = cols * lins;
+  const foco = new Int32Array(n).fill(-1);
+  const k = new Float32Array(n);
+  const sev = new Uint8Array(n);
+  for (let f = 0; f < focos.length; f++) {
+    const F = focos[f];
+    const r = Math.max(F.r, lado * 0.75), s = nivel(F.sev);
+    const i0 = Math.max(0, Math.floor((F.x - r) / lado)), i1 = Math.min(cols - 1, Math.floor((F.x + r) / lado));
+    const j0 = Math.max(0, Math.floor((F.y - r) / lado)), j1 = Math.min(lins - 1, Math.floor((F.y + r) / lado));
+    for (let j = j0; j <= j1; j++) {
+      const cy = j * lado + lado / 2, dy = cy - F.y;
+      for (let i = i0; i <= i1; i++) {
+        const idx = j * cols + i;
+        if (!dentro[idx]) continue;
+        const dx = i * lado + lado / 2 - F.x;
+        const d = Math.sqrt(dx * dx + dy * dy);
         if (d > r) continue;
-        const k = 1 - d / r;
-        const atual = saida[idx];
-        const sev = nivel(f.sev);
-        if (!atual || sev > atual.sev || (sev === atual.sev && k > atual.k)) saida[idx] = { sev, k, id: f.id };
+        const kk = 1 - d / r;
+        if (foco[idx] < 0 || s > sev[idx] || (s === sev[idx] && kk > k[idx])) { foco[idx] = f; k[idx] = kk; sev[idx] = s; }
       }
     }
   }
-  return saida;
+  return { foco, k };
 }
-
-// Célula da grade sob um ponto de tela (para clique/hover nos pixels).
-export const celulaEm = (x, y, lado = 7) => `${Math.floor(x / lado)}:${Math.floor(y / lado)}`;

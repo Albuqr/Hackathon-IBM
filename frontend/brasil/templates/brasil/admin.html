@@ -35,7 +35,7 @@
 {% endblock %}
 {% block scripts %}
 <script type="module">
-import { el as mk, acao, avisar, data as fmt, selSev, rotulo, TIPOS, FONTES, atualizarStatusColeta } from "{{ url_for('brasil.static', filename='cliente.js') }}";
+import { el as mk, acao, avisar, data as fmt, selSev, rotulo, TIPOS, FONTES, atualizarStatusColeta, linkSeguro } from "{{ url_for('brasil.static', filename='cliente.js') }}";
 async function carregar() {
   const { ok, dados } = await acao("status_coleta"), linhas = ok ? dados : [];
   const tb = document.getElementById("status");
@@ -56,11 +56,15 @@ document.getElementById("atualizar").addEventListener("click", async (e) => {
 async function naoVerificadas() {
   const r = await acao("nao_verificadas"), lista = r.ok ? r.dados : [];
   const ul = document.getElementById("nao-verificadas");
-  const decidir = async (id, acaoNome) => { await acao("verificar", { p: { crisis_id: id }, corpo: { acao: acaoNome } }); naoVerificadas(); };
+  const decidir = async (id, acaoNome) => {
+    const r = await acao("verificar", { p: { crisis_id: id }, corpo: { acao: acaoNome } });
+    if (!r.ok) avisar(document.getElementById("msg"), r.erro);
+    naoVerificadas();
+  };
   ul.replaceChildren(...lista.map((c) => mk("li", {}, [
     mk("div", { class: "item-topo" }, [mk("span", { class: "item-titulo" }, [selSev(c.severity), c.title]), mk("span", { class: "selo selo-nv", texto: "não verificada" })]),
     mk("span", { class: "item-meta", texto: `${c.uf || ""} · ${rotulo(TIPOS, c.crisis_type)} · expira ${fmt(c.expira_em)}` }),
-    c.link_fonte ? mk("a", { class: "item-meta", href: c.link_fonte, target: "_blank", rel: "noopener", texto: "ler a notícia ↗" }) : null,
+    linkSeguro(c.link_fonte) ? mk("a", { class: "item-meta", href: linkSeguro(c.link_fonte), target: "_blank", rel: "noopener", texto: "ler a notícia ↗" }) : null,
     mk("div", { class: "acoes" }, [mk("button", { type: "button", class: "botao botao-primario botao-pequeno", texto: "Confirmar", onclick: () => decidir(c.id, "confirmar") }),
                                     mk("button", { type: "button", class: "botao botao-neutro botao-pequeno", texto: "Descartar", onclick: () => decidir(c.id, "descartar") })]),
   ])));
