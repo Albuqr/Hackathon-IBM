@@ -5,11 +5,17 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
+
 import yaml
 
 from middleware.brasil import assistentes, ingestao, noticias, orquestracao
 from middleware.brasil.orquestracao.claude import ClaudeProvedor
 from middleware.brasil.orquestracao.local import LocalProvedor
+
+
+def como(uid) -> dict:
+    """Cabeçalho de identidade que o encaminhador do frontend manda (ADR 0004)."""
+    return {"X-Brasil-Usuario": str(uid)}
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 AGORA = datetime(2026, 10, 16, 12, tzinfo=timezone.utc)
@@ -82,8 +88,8 @@ def test_ac_025_1_admin_confirma_noticia_e_ela_perde_selo_e_teto(api):
     assert c["verificacao"] == "nao_verificada" and c["severity"] == 3
     admin = cli.post("/brasil/dev/usuario/admin").json()["id"]
     vol = cli.post("/brasil/dev/usuario/voluntario").json()["id"]
-    assert cli.put(f"/brasil/crises/{cid}/verificacao", json={"user_id": vol, "acao": "confirmar"}).status_code == 403
-    r = cli.put(f"/brasil/crises/{cid}/verificacao", json={"user_id": admin, "acao": "confirmar", "severity": 5}).json()
+    assert cli.put(f"/brasil/crises/{cid}/verificacao", json={"acao": "confirmar"}, headers=como(vol)).status_code == 403
+    r = cli.put(f"/brasil/crises/{cid}/verificacao", json={"acao": "confirmar", "severity": 5}, headers=como(admin)).json()
     assert r["verificacao"] == "verificada" and r["severity"] == 5 and r["expira_em"] is None
     gravar_noticia(rotas.CFG)  # nova coleta não desfaz a decisão do admin
     [c] = [x for x in ingestao.crises_ativas(rotas.CFG, AGORA + timedelta(days=10)) if x["id"] == cid]
@@ -93,10 +99,10 @@ def test_ac_025_1_admin_confirma_noticia_e_ela_perde_selo_e_teto(api):
 def test_fr025_descartada_sai_do_mapa_e_nao_verificada_expira_em_7_dias(api):
     cli, rotas = api
     cid = gravar_noticia(rotas.CFG)
-    assert [c["id"] for c in cli.get("/brasil/crises/nao-verificadas").json()] == [cid]
+    assert [c["id"] for c in cli.get("/brasil/crises/nao-verificadas", headers=como(cli.post("/brasil/dev/usuario/admin").json()["id"])).json()] == [cid]
     assert cid not in [c["id"] for c in ingestao.crises_ativas(rotas.CFG, AGORA + timedelta(days=8))]
     admin = cli.post("/brasil/dev/usuario/admin").json()["id"]
-    cli.put(f"/brasil/crises/{cid}/verificacao", json={"user_id": admin, "acao": "descartar"})
+    cli.put(f"/brasil/crises/{cid}/verificacao", json={"acao": "descartar"}, headers=como(admin))
     assert cid not in [c["id"] for c in ingestao.crises_ativas(rotas.CFG, AGORA)]
 
 
@@ -183,7 +189,7 @@ def preparar(cli, rotas):
 def test_ac_030_1_chat_do_voluntario_recomenda_crises_proximas_compativeis(api):
     cli, rotas = api
     vol, _ = preparar(cli, rotas)
-    r = cli.post("/brasil/chat", json={"user_id": vol, "mensagem": "onde posso ajudar?"}).json()
+    r = cli.post("/brasil/chat", json={"mensagem": "onde posso ajudar?"}, headers=como(vol)).json()
     ids = [c["id"] for c in r["dados"]["crises"]]
     assert r["provedor"] == "local" and ids[0] == "cemaden-poa" and len(ids) <= 10
     dist = [c["distancia_km"] for c in r["dados"]["crises"]]
@@ -194,7 +200,7 @@ def test_ac_030_1_chat_do_voluntario_recomenda_crises_proximas_compativeis(api):
 def test_ac_031_1_chat_da_ong_monta_o_plano_estruturado(api):
     cli, rotas = api
     _, ong = preparar(cli, rotas)
-    r = cli.post("/brasil/chat", json={"user_id": ong, "mensagem": "plano", "crisis_id": "cemaden-sb"}).json()
+    r = cli.post("/brasil/chat", json={"mensagem": "plano", "crisis_id": "cemaden-sb"}, headers=como(ong)).json()
     for parte in ("Resumo da necessidade", "Habilidades necessárias", "Número de voluntários recomendado", "Urgência", "Descrição da campanha"):
         assert parte in r["texto"]
 
@@ -202,13 +208,13 @@ def test_ac_031_1_chat_da_ong_monta_o_plano_estruturado(api):
 # AC-032.1
 def test_ac_032_1_matching_so_com_voluntarios_no_brasil(api):
     cli, rotas = api
-    preparar(cli, rotas)
+    _, ong = preparar(cli, rotas)
     conn = sqlite3.connect(rotas.CFG.db_path)
     for i, (lat, lon) in enumerate([(-30.05, -51.2), (-29.7, -51.1), (-31.7, -52.3), (-34.6, -58.38)]):  # 3 RS, 1 Buenos Aires
         conn.execute("INSERT INTO users (email, password_hash, role, name, skills, lat, lon, radius_km) VALUES (?,?,?,?,?,?,?,?)",
                      (f"m{i}@t.br", "x", "volunteer", f"M{i}", '["resgate"]', lat, lon, 1500))
     conn.commit(); conn.close()
-    res = cli.get("/brasil/crises/cemaden-poa/matching").json()
+    res = cli.get("/brasil/crises/cemaden-poa/matching", headers=como(ong)).json()
     nomes = [m["name"] for m in res]
     assert "M3" not in nomes and {"M0", "M1", "M2"} <= set(nomes)
     assert [m["score"] for m in res] == sorted([m["score"] for m in res], reverse=True)
@@ -224,9 +230,9 @@ def test_ac_035_1_notificacoes_vao_para_a_fila(api):
                      (f"n{i}@t.br", "x", "volunteer", f"N{i}", '["resgate"]', -30.0, -51.2, 1000))
     conn.execute("UPDATE users SET available=0 WHERE email='voluntario@teste.brasil'")
     conn.commit(); conn.close()
-    r = cli.post("/brasil/crises/cemaden-sb/notificar", json={"user_id": ong, "limite": 3}).json()
+    r = cli.post("/brasil/crises/cemaden-sb/notificar", json={"limite": 3}, headers=como(ong)).json()
     assert r["modo"] == "fila" and r["matches"] == 3 and r["enfileiradas"] == 3 and r["enviadas"] == 0  # sev 3: só Telegram
-    assert len(cli.get("/brasil/notificacoes").json()) == 3
+    assert len(cli.get("/brasil/notificacoes", headers=como(cli.post("/brasil/dev/usuario/admin").json()["id"])).json()) == 3
 
 
 # AC-033.1
@@ -239,10 +245,10 @@ def test_ac_033_1_distribuicao_aponta_lacuna_redundancia_e_sugestao(api):
         ids.append(conn.execute("INSERT INTO users (email, password_hash, role, name, lat, lon) VALUES (?,?,?,?,?,?)",
                                 (f"d{i}@t.br", "x", "volunteer", f"D{i}", -28.7, -55.8)).lastrowid)
     conn.commit(); conn.close()
-    cid = cli.post("/brasil/campanhas", json={"org_id": ong, "title": "Apoio SB", "crisis_id": "cemaden-sb", "target_volunteers": 4}).json()["id"]
+    cid = cli.post("/brasil/campanhas", json={"title": "Apoio SB", "crisis_id": "cemaden-sb", "target_volunteers": 4}, headers=como(ong)).json()["id"]
     for v in ids:
-        cli.post(f"/brasil/campanhas/{cid}/voluntarios", json={"org_id": ong, "volunteer_id": v})
-    d = cli.get("/brasil/distribuicao").json()
+        cli.post(f"/brasil/campanhas/{cid}/voluntarios", json={"volunteer_id": v}, headers=como(ong))
+    d = cli.get("/brasil/distribuicao", headers=como(cli.post("/brasil/dev/usuario/admin").json()["id"])).json()
     assert [x["crisis_id"] for x in d["redundancias"]] == ["cemaden-sb"]
     assert "cemaden-poa" in [x["crisis_id"] for x in d["lacunas"]]  # sev 4 sem ninguém
     assert any(s["de"] == "cemaden-sb" and s["para"] == "cemaden-poa" for s in d["sugestoes"])
@@ -257,5 +263,5 @@ def test_ac_034_1_altamira_com_4_dias_de_queimada_aparece_nas_previsoes(api):
                                                                      municipio_ibge=1500602, visto_em=t.isoformat())]}, agora=t)
     prev = assistentes.previsoes(rotas.CFG, agora=AGORA)
     assert [(p["municipio"], p["tipo"], p["dias_com_crise"]) for p in prev] == [("Altamira", "wildfire", 4)]
-    r = cli.get("/brasil/previsoes").json()
+    r = cli.get("/brasil/previsoes", headers=como(cli.post("/brasil/dev/usuario/admin").json()["id"])).json()
     assert r["provedor"] == "local"

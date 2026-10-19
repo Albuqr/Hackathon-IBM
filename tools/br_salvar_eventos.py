@@ -1,3 +1,4 @@
+import os
 import requests
 from ibm_watsonx_orchestrate.agent_builder.tools import tool
 
@@ -13,7 +14,8 @@ def br_salvar_eventos(api_url: str, eventos: list[dict]) -> dict:
         Relatório com quantas crises foram gravadas e quantas ficaram fora do Brasil.
     """
     try:
-        r = requests.post(f"{api_url.rstrip('/')}/brasil/eventos", json=eventos, timeout=60)
+        r = requests.post(f"{api_url.rstrip('/')}/brasil/eventos", json=eventos, timeout=60,
+                          headers={"X-Crisis-Token": os.environ["CRISIS_API_TOKEN"]} if os.environ.get("CRISIS_API_TOKEN") else {})
         r.raise_for_status()
         return r.json()
     except Exception as e:

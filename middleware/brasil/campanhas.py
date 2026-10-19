@@ -7,10 +7,11 @@ import json
 import math
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from . import db
+from .acesso import Acesso
 from .config import Config
 
 URGENCIAS = ("baixa", "media", "alta", "critica")
@@ -23,7 +24,6 @@ def _haversine_km(lat1, lon1, lat2, lon2):
 
 
 class NovaCampanha(BaseModel):
-    org_id: int
     title: str = Field(min_length=3, max_length=200)
     description: str = ""
     crisis_id: str
@@ -35,7 +35,6 @@ class NovaCampanha(BaseModel):
 
 
 class EdicaoCampanha(BaseModel):
-    org_id: int
     title: str | None = Field(None, min_length=3, max_length=200)
     description: str | None = None
     skills_needed: list[str] | None = None
@@ -47,26 +46,27 @@ class EdicaoCampanha(BaseModel):
 
 
 class AdicionarVoluntario(BaseModel):
-    org_id: int
     volunteer_id: int
 
 
 class RespostaConvite(BaseModel):
-    user_id: int
     status: str
 
 
-def criar_router(cfg: Config) -> APIRouter:
+def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
     r = APIRouter()
+    ong = acesso.exige("org")
+    ong_ou_admin = acesso.exige("org", "admin")
 
     def conectar():
         return db.conectar(cfg)
 
-    def dono(conn, campanha_id: int, org_id: int) -> dict:
+    def dono(conn, campanha_id: int, u: dict) -> dict:
+        """A ONG dona da campanha (o admin também passa)."""
         c = conn.execute("SELECT * FROM campaigns WHERE id=?", (campanha_id,)).fetchone()
         if not c:
             raise HTTPException(404, "Campanha não encontrada")
-        if c["org_id"] != org_id:
+        if c["org_id"] != u["id"] and u["role"] != "admin":
             raise HTTPException(403, "Esta campanha é de outra ONG")
         return dict(c)
 
@@ -90,18 +90,17 @@ def criar_router(cfg: Config) -> APIRouter:
 
     # ── ONG: campanhas ────────────────────────────────────────────────
     @r.post("/campanhas")
-    def criar(c: NovaCampanha):
+    def criar(c: NovaCampanha, u: dict = Depends(ong)):
         if c.urgency not in URGENCIAS:
             raise HTTPException(422, f"Urgência inválida; use {', '.join(URGENCIAS)}")
         conn = conectar()
         try:
-            exige_ong(conn, c.org_id)
             if not conn.execute("SELECT 1 FROM crises WHERE id=?", (c.crisis_id,)).fetchone():
                 raise HTTPException(422, "Escolha uma crise do Brasil que esteja no mapa")
             cur = conn.execute(
                 """INSERT INTO campaigns (org_id, title, description, crisis_id, skills_needed, target_volunteers,
                        start_date, end_date, urgency, status, created_at) VALUES (?,?,?,?,?,?,?,?,?,'active',?)""",
-                (c.org_id, c.title.strip(), c.description, c.crisis_id,
+                (u["id"], c.title.strip(), c.description, c.crisis_id,
                  json.dumps([s.strip() for s in c.skills_needed if s.strip()], ensure_ascii=False),
                  c.target_volunteers, c.start_date, c.end_date, c.urgency, datetime.now(timezone.utc).isoformat()))
             conn.commit()
@@ -110,7 +109,9 @@ def criar_router(cfg: Config) -> APIRouter:
             conn.close()
 
     @r.get("/campanhas")
-    def listar(org_id: int | None = None):
+    def listar(org_id: int | None = None, u: dict = Depends(ong_ou_admin)):
+        if u["role"] == "org":
+            org_id = u["id"]  # a ONG só vê as próprias
         conn = conectar()
         try:
             q, p = "SELECT id FROM campaigns", ()
@@ -121,25 +122,24 @@ def criar_router(cfg: Config) -> APIRouter:
             conn.close()
 
     @r.get("/campanhas/{cid}")
-    def obter(cid: int):
+    def obter(cid: int, u: dict = Depends(ong_ou_admin)):
         conn = conectar()
         try:
-            if not conn.execute("SELECT 1 FROM campaigns WHERE id=?", (cid,)).fetchone():
-                raise HTTPException(404, "Campanha não encontrada")
+            dono(conn, cid, u)
             return campanha_completa(conn, cid)
         finally:
             conn.close()
 
     @r.put("/campanhas/{cid}")
-    def editar(cid: int, e: EdicaoCampanha):
+    def editar(cid: int, e: EdicaoCampanha, u: dict = Depends(ong_ou_admin)):
         if e.urgency is not None and e.urgency not in URGENCIAS:
             raise HTTPException(422, f"Urgência inválida; use {', '.join(URGENCIAS)}")
         if e.status is not None and e.status not in ("active", "closed"):
             raise HTTPException(422, "Status inválido; use active ou closed")
         conn = conectar()
         try:
-            dono(conn, cid, e.org_id)
-            dados = e.model_dump(exclude_none=True, exclude={"org_id"})
+            dono(conn, cid, u)
+            dados = e.model_dump(exclude_none=True)
             if "skills_needed" in dados:
                 dados["skills_needed"] = json.dumps([s.strip() for s in dados["skills_needed"] if s.strip()], ensure_ascii=False)
             if dados:
@@ -151,9 +151,10 @@ def criar_router(cfg: Config) -> APIRouter:
 
     # ── ONG: voluntários da campanha ──────────────────────────────────
     @r.get("/campanhas/{cid}/voluntarios")
-    def voluntarios_da_campanha(cid: int):
+    def voluntarios_da_campanha(cid: int, u: dict = Depends(ong_ou_admin)):
         conn = conectar()
         try:
+            dono(conn, cid, u)
             return [dict(x) | {"skills": json.loads(x["skills"] or "[]")} for x in conn.execute(
                 """SELECT cv.id AS cv_id, cv.volunteer_id, cv.status, cv.added_at, u.name, u.email, u.skills, u.lat, u.lon
                    FROM campaign_volunteers cv JOIN users u ON u.id=cv.volunteer_id
@@ -162,10 +163,10 @@ def criar_router(cfg: Config) -> APIRouter:
             conn.close()
 
     @r.post("/campanhas/{cid}/voluntarios")
-    def adicionar(cid: int, a: AdicionarVoluntario):
+    def adicionar(cid: int, a: AdicionarVoluntario, u: dict = Depends(ong_ou_admin)):
         conn = conectar()
         try:
-            c = dono(conn, cid, a.org_id)
+            c = dono(conn, cid, u)
             if c["status"] != "active":
                 raise HTTPException(409, "A campanha está encerrada")
             v = conn.execute("SELECT role FROM users WHERE id=?", (a.volunteer_id,)).fetchone()
@@ -181,10 +182,10 @@ def criar_router(cfg: Config) -> APIRouter:
             conn.close()
 
     @r.delete("/campanhas/{cid}/voluntarios/{vid}")
-    def remover(cid: int, vid: int, org_id: int):
+    def remover(cid: int, vid: int, u: dict = Depends(ong_ou_admin)):
         conn = conectar()
         try:
-            dono(conn, cid, org_id)
+            dono(conn, cid, u)
             conn.execute("UPDATE campaign_volunteers SET status='removed' WHERE campaign_id=? AND volunteer_id=?", (cid, vid))
             conn.commit()
             return {"ok": True}
@@ -192,14 +193,17 @@ def criar_router(cfg: Config) -> APIRouter:
             conn.close()
 
     @r.get("/voluntarios/disponiveis")
-    def disponiveis(crisis_id: str | None = None, raio_km: float = 1000):
-        """Voluntários disponíveis no Brasil; com crise, filtra pelo raio e ordena por distância."""
+    def disponiveis(crisis_id: str | None = None, raio_km: float = 1000, incluir_indisponiveis: bool = False,
+                    u: dict = Depends(ong_ou_admin)):
+        """Voluntários no Brasil (só os disponíveis, salvo incluir_indisponiveis); com crise, filtra pelo raio
+        e ordena por distância."""
         conn = conectar()
         try:
             alvo = conn.execute("SELECT lat, lon FROM crises WHERE id=?", (crisis_id,)).fetchone() if crisis_id else None
             out = []
-            for u in conn.execute("SELECT id, name, email, skills, lat, lon, radius_km FROM users "
-                                  "WHERE role='volunteer' AND available=1 AND lat!=0 AND lon!=0"):
+            filtro = "" if incluir_indisponiveis else " AND available=1"
+            for u in conn.execute("SELECT id, name, email, skills, lat, lon, radius_km, available FROM users "
+                                  "WHERE role='volunteer' AND lat!=0 AND lon!=0" + filtro):
                 d = dict(u) | {"skills": json.loads(u["skills"] or "[]"), "distancia_km": None}
                 if alvo:
                     d["distancia_km"] = round(_haversine_km(alvo["lat"], alvo["lon"], u["lat"], u["lon"]), 1)
@@ -212,7 +216,8 @@ def criar_router(cfg: Config) -> APIRouter:
 
     # ── voluntário: convites ──────────────────────────────────────────
     @r.get("/voluntario/{uid}/campanhas")
-    def campanhas_do_voluntario(uid: int):
+    def campanhas_do_voluntario(uid: int, u: dict = Depends(acesso.identidade)):
+        acesso.proprio(u, uid)
         conn = conectar()
         try:
             return [dict(x) for x in conn.execute(
@@ -226,7 +231,7 @@ def criar_router(cfg: Config) -> APIRouter:
             conn.close()
 
     @r.put("/convites/{cv_id}")
-    def responder(cv_id: int, resp: RespostaConvite):
+    def responder(cv_id: int, resp: RespostaConvite, u: dict = Depends(acesso.exige("volunteer"))):
         if resp.status not in ("confirmed", "declined"):
             raise HTTPException(422, "Responda com confirmed ou declined")
         conn = conectar()
@@ -234,7 +239,7 @@ def criar_router(cfg: Config) -> APIRouter:
             cv = conn.execute("SELECT volunteer_id, status FROM campaign_volunteers WHERE id=?", (cv_id,)).fetchone()
             if not cv or cv["status"] == "removed":
                 raise HTTPException(404, "Convite não encontrado")
-            if cv["volunteer_id"] != resp.user_id:
+            if cv["volunteer_id"] != u["id"]:
                 raise HTTPException(403, "Este convite é de outro voluntário")
             conn.execute("UPDATE campaign_volunteers SET status=? WHERE id=?", (resp.status, cv_id))
             conn.commit()
@@ -244,7 +249,8 @@ def criar_router(cfg: Config) -> APIRouter:
 
     # ── painel da ONG ─────────────────────────────────────────────────
     @r.get("/ong/{org_id}/painel")
-    def painel(org_id: int):
+    def painel(org_id: int, u: dict = Depends(ong_ou_admin)):
+        acesso.proprio(u, org_id)
         conn = conectar()
         try:
             exige_ong(conn, org_id)
@@ -272,6 +278,8 @@ def criar_router(cfg: Config) -> APIRouter:
             return {
                 "voluntarios_selecionados": sum(c["selecionados"] for c in campanhas),
                 "campanhas_ativas": sum(1 for c in campanhas if c["status"] == "active"),
+                "voluntarios_disponiveis": conn.execute(
+                    "SELECT COUNT(*) FROM users WHERE role='volunteer' AND available=1").fetchone()[0],
                 "crises_apoiadas": len(crises),
                 "habilidades": dict(sorted(habilidades.items(), key=lambda kv: -kv[1])),
                 "campanhas": campanhas,

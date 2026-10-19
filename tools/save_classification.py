@@ -44,6 +44,7 @@ def save_classification(event_json: str, classification_json: str) -> str:
         r = requests.post(
             f"{VPS_API_URL}/save_events",
             json=[payload],
+            headers={"X-Crisis-Token": os.environ["CRISIS_API_TOKEN"]} if os.environ.get("CRISIS_API_TOKEN") else {},
             timeout=15
         )
         r.raise_for_status()

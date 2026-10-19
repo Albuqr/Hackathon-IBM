@@ -1,81 +1,75 @@
 {% extends "brasil/base.html" %}
 {% block titulo %}Mapa · Crisis Monitor Brasil{% endblock %}
-{% block corpo %}
-<section class="hero" aria-labelledby="hero-titulo">
-  <div class="hero-texto">
-    <p class="rotulo">Crises ativas no Brasil, por município</p>
-    <h1 class="hero-titulo" id="hero-titulo"><span class="linha"><span>Brasil</span></span><span class="linha"><span>em alerta</span></span></h1>
-    <p class="hero-lede">Cada pixel é um pedaço do país. Quanto maior e mais claro, mais grave a crise ativa no município.</p>
-    <div class="hero-numeros" id="kpis" aria-live="polite">
-      <div><b id="k-crises">–</b><span>crises ativas</span></div>
-      <div><b id="k-muns">–</b><span>municípios afetados</span></div>
-      <div><b id="k-graves" class="perigo">–</b><span>severidade 4 ou 5</span></div>
-      <div><b id="k-nv">–</b><span>não verificadas</span></div>
-    </div>
-    <div class="acoes"><a class="botao botao-claro" href="#mapa">Explorar o mapa ↓</a></div>
-  </div>
-  <figure class="hero-cidade" aria-label="Brasil desenhado em pixels pelo indicador escolhido">
-    <canvas id="cidade" role="img" aria-label="Mapa em pixels dos municípios do Brasil"></canvas>
-    <div class="cidade-tag" id="cidade-tag" hidden></div>
-    <figcaption class="hero-legenda"><span class="px px-p" aria-hidden="true"></span>sem crise<span class="px px-g" aria-hidden="true"></span>mais grave</figcaption>
-  </figure>
-</section>
 
-<section class="explorar" id="mapa" aria-labelledby="mapa-titulo">
-  <div class="secao-cabeca">
-    <h2 id="mapa-titulo">Crises por município</h2>
-    <p>Escolha o que pintar no mapa. Clique num município ou num ponto para ver as crises e agir.</p>
-  </div>
+{% block lateral %}
+<div class="lateral-rolagem">
+  <section aria-labelledby="t-numeros">
+    <p class="bloco-titulo" id="t-numeros">Crises visíveis</p>
+    <div class="metricas" aria-live="polite">
+      <div class="metrica"><b id="m-crises">–</b><span>crises</span></div>
+      <div class="metrica"><b id="m-ufs">–</b><span>UFs afetadas</span></div>
+      <div class="metrica perigo"><b id="m-criticas">–</b><span>críticas (4–5)</span></div>
+      <div class="metrica"><b id="m-nv">–</b><span>não verificadas</span></div>
+    </div>
+  </section>
+  <section aria-labelledby="t-filtros" class="campos">
+    <p class="bloco-titulo" id="t-filtros">Filtros</p>
+    <div class="form" id="filtros">
+      <label class="campo"><span class="campo-linha">Severidade mínima <output id="f-sev-valor" for="f-sev">1</output></span>
+        <input type="range" id="f-sev" name="sev" min="1" max="5" step="1" value="1" disabled></label>
+      <label class="campo">UF
+        <select id="f-uf" name="uf" disabled><option value="">Todas as UFs</option></select></label>
+      <label class="campo">Tipo
+        <select id="f-tipo" name="tipo" disabled><option value="">Todos os tipos</option></select></label>
+      <label class="campo">Fonte
+        <select id="f-fonte" name="fonte" disabled><option value="">Todas as fontes</option></select></label>
+      <label class="campo">Verificação
+        <select id="f-verif" name="verif" disabled>
+          <option value="">Todas</option><option value="verificada">Verificadas</option><option value="nao_verificada">Não verificadas</option>
+        </select></label>
+      <label class="campo">Buscar crise ou município
+        <input type="search" id="f-q" name="q" placeholder="ex.: Porto Alegre" autocomplete="off" disabled></label>
+      <button class="limpar" type="button" id="limpar" hidden>Limpar filtros</button>
+    </div>
+  </section>
 
-  <div class="barra-ferramentas" role="toolbar" aria-label="Controles do mapa">
-    <div class="segmentado" id="ctl-indicador" role="group" aria-label="O que pintar">
-      <button type="button" data-v="severidade" aria-pressed="true">Severidade</button>
-      <button type="button" data-v="crises" aria-pressed="false">Nº de crises</button>
-      <button type="button" data-v="voluntarios" aria-pressed="false">Voluntários</button>
-      <button type="button" data-v="densidade" aria-pressed="false">Densidade</button>
-      <button type="button" data-v="populacao" aria-pressed="false">População</button>
-    </div>
-    <div class="filtros-rapidos">
-      <label class="campo-uf"><span class="visually-hidden">UF</span><select id="f-uf"><option value="">Todas as UFs</option></select></label>
-      <button class="botao botao-neutro" type="button" id="mais-filtros" aria-expanded="false" aria-controls="filtros">Filtros<span class="filtros-conta" id="filtros-conta"></span></button>
-    </div>
-  </div>
-  <div class="filtros" id="filtros" hidden>
-    <label>Severidade mínima <select id="f-sev"><option value="1">1 — todas</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option></select></label>
-    <label>Tipo <select id="f-tipo"><option value="">todos</option></select></label>
-    <label>Fonte <select id="f-fonte"><option value="">todas</option></select></label>
-    <label>Verificação <select id="f-verif"><option value="">todas</option><option value="verificada">verificadas</option><option value="nao_verificada">não verificadas</option></select></label>
-    <label class="marcar"><input type="checkbox" id="f-pontos"> mostrar pontos das crises</label>
-  </div>
-
-  <div class="mapa-grade">
-    <div class="mapa-caixa">
-      <div id="mapa-leaflet" class="mapa" aria-label="Mapa coroplético dos municípios"></div>
-      <div class="legenda" id="legenda" aria-live="polite"></div>
-    </div>
-    <aside class="painel">
-      <article class="cartao ficha" id="ficha" aria-live="polite" hidden></article>
-      <div class="cartao">
-        <p class="cartao-titulo">Municípios mais afetados · <span class="contagem" id="contagem"></span></p>
-        <label class="busca"><span class="visually-hidden">Buscar município</span><input type="search" id="busca" placeholder="Buscar município ou UF" autocomplete="off"></label>
-        <ol class="ranking" id="ranking"></ol>
-        <div class="ranking-pe"><span id="ranking-pe"></span><button class="link-botao" type="button" id="ranking-mais" hidden>Mostrar mais</button></div>
-      </div>
-    </aside>
-  </div>
-</section>
+</div>
+<div class="lateral-pe">
+  {% if br_role == 'admin' %}
+    <button class="botao botao-primario" type="button" id="atualizar">Atualizar dados</button>
+    <p class="aviso ok" id="atualizar-msg" role="status" hidden></p>
+  {% elif br_role == 'org' %}
+    <a class="botao botao-primario" href="{{ url_for('brasil.ong') }}">Painel da ONG</a>
+    <a class="botao botao-neutro" href="{{ url_for('brasil.ong_nova') }}">+ Campanha</a>
+  {% else %}
+    <a class="botao botao-primario" href="{{ url_for('brasil.perfil') }}">Meu perfil</a>
+    <a class="botao botao-neutro" href="{{ url_for('brasil.minhas_campanhas') }}">Minhas campanhas</a>
+  {% endif %}
+</div>
 {% endblock %}
-{% block rodape %}<footer class="rodape">Fontes: INPE (Programa Queimadas), CEMADEN, INMET, USGS, GDACS, NASA EONET, ReliefWeb, GDELT e notícias de fontes confiáveis. Malha e população: IBGE, Censo 2022. Mapa com Leaflet.</footer>{% endblock %}
+
+{% block principal %}
+<div class="mapa">
+  <div id="mapa" role="region" aria-label="Mapa de crises do Brasil"></div>
+  <canvas id="pixels" aria-hidden="true"></canvas>
+  <div class="segmentado modo" role="group" aria-label="Modo do mapa">
+    <button type="button" data-modo="municipios" aria-pressed="true">Municípios</button>
+    <button type="button" data-modo="pixels" aria-pressed="false">Pixels</button>
+  </div>
+  <div class="carregando" id="carregando" role="status">Carregando crises…</div>
+  <div class="falha" id="falha" role="alert" hidden>
+    <p id="falha-texto">Não foi possível carregar as crises.</p>
+    <button class="botao botao-primario" type="button" id="tentar">Tentar de novo</button>
+  </div>
+</div>
+{% endblock %}
+
 {% block scripts %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="{{ url_for('brasil.malha_js') }}"></script>
 <script id="br-config" type="application/json">{{ {
   "papel": br_role,
-  "crises": url_for('brasil.api_crises'),
-  "voluntarios": url_for('brasil.api_voluntarios'),
-  "inscricoes": url_for('brasil.api_inscricoes'),
-  "nova_campanha": url_for('brasil.ong') if br_role == 'org' else none,
-  "inscrever": url_for('brasil.api_inscricao', crisis_id='__ID__', acao='__ACAO__')
+  "malha": url_for('brasil.malha_js'),
+  "nova_campanha": url_for('brasil.ong_nova'),
 }|tojson }}</script>
-<script src="{{ url_for('brasil.static', filename='mapa.js') }}"></script>
+<script type="module" src="{{ url_for('brasil.static', filename='mapa.js') }}"></script>
 {% endblock %}

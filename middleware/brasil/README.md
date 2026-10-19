@@ -10,7 +10,12 @@ Decisões: `docs/adr/0001` a `0003`. Requisitos: spec da feature `brasil-dash`.
 | Páginas, mapa de pixels + coroplético, login de teste | `frontend/brasil/` |
 | Fontes brasileiras (INPE, CEMADEN, INMET) | `tools/br_*.py` |
 
-No código existente do Crisis mudou só 1 linha em `frontend/app.py` e 1 em `middleware/main.py` (registro dos módulos).
+No código existente do Crisis mudou só 1 linha em `frontend/app.py` e 1 em `middleware/main.py` (registro dos módulos),
+mais o segredo da API (ADR 0004): os helpers `api_*` do frontend, o bot e as tools mandam o cabeçalho `X-Crisis-Token`.
+
+O frontend é um app de tela cheia no wireframe do Crisis: cabeçalho, barra lateral (filtros e números), um mapa com dois modos
+(Municípios: malha neutra; Pixels: cada crise acende os pixels em volta) e barra de status. Cada crise é um marcador com popup.
+O navegador só fala com `POST /brasil/acao/<nome>` (tabela `POLITICA` em `frontend/brasil/encaminhador.py`).
 
 ## Rodar local
 ```bash
@@ -31,6 +36,8 @@ No Admin, "Atualizar dados" faz a primeira ingestão (≈ 15 s).
 | `BRASIL_INGESTAO_AUTO_MIN` | `0` (só manual) | `0` ou `15`–`1440` |
 | `BRASIL_NOTIFICACOES` | `fila` | `fila` (nada sai; fila visível ao admin), `enviar` |
 | `BRASIL_CLAUDE_MODELO` | `claude-sonnet-5-5` | id de modelo Claude |
+| `SECRET_KEY` | — (já existe) | segredo. Definido e diferente do padrão de dev, liga o segredo da API (ADR 0004). Precisa ser **o mesmo** no frontend, no middleware e no bot. |
+| `CRISIS_API_TOKEN` | — | só nas conexões das tools do watsonx: o valor de `python -m middleware.seguranca` |
 | `ANTHROPIC_API_KEY` | — | segredo; só para `BRASIL_ORQUESTRADOR=claude` |
 | `BRASIL_ORCHESTRATOR_AGENT_ID`, `BRASIL_PREDICTION_AGENT_ID` | — | IDs dos agentes `brasil_orchestrator` e `prediction_agent` publicados no watsonx (provedor `watsonx`) |
 | `BRASIL_API_URL` | `http://localhost:8000` | URL da API que o `br_salvar_eventos` usa (provedor `watsonx`) |
@@ -53,9 +60,10 @@ Valor inválido impede a API de subir, com mensagem que nomeia a variável.
 pip install pytest httpx                            # só para desenvolvimento
 pytest                                              # unitários e de API, sem rede
 # E2E no navegador (precisa de rede para Leaflet/fontes):
-BRASIL_DB_PATH=data/brasil-e2e.db python -m middleware.brasil.semear_teste
+BRASIL_DB_PATH=data/brasil-e2e.db BRASIL_DEV_LOGIN=1 python -m middleware.brasil.semear_teste
 # suba API e frontend com o mesmo BRASIL_DB_PATH e BRASIL_DEV_LOGIN=1, depois:
-BASE_URL=http://localhost:5000 node --test frontend/brasil/tests/e2e/mapa.spec.mjs
+BASE_URL=http://localhost:5000 node --test --test-concurrency=1 frontend/brasil/tests/e2e/app.spec.mjs
+node --test frontend/brasil/tests/visao.test.mjs          # regras do mapa, sem navegador
 ```
 
 ## Malha

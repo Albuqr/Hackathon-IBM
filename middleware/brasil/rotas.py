@@ -4,19 +4,21 @@ import json
 import secrets
 import string
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from . import campanhas, db, ingestao, inteligencia, malha, noticias
+from .acesso import Acesso
 from .config import carregar
 
 CFG = carregar()  # falha rápido na subida da API se a configuração for inválida
 noticias.carregar_fontes()  # CFG-008: lista de fontes de notícia inválida também impede a subida
 
+ACESSO = Acesso(CFG)
 router = APIRouter(prefix="/brasil", tags=["brasil"])
-router.include_router(campanhas.criar_router(CFG))
-router.include_router(inteligencia.criar_router(CFG))
+router.include_router(campanhas.criar_router(CFG, ACESSO))
+router.include_router(inteligencia.criar_router(CFG, ACESSO))
 _PARAR_AUTO = ingestao.iniciar_automatico(CFG)  # FR-016; None quando BRASIL_INGESTAO_AUTO_MIN=0
 
 USUARIOS_TESTE = {
@@ -103,7 +105,8 @@ def dev_usuario(perfil: str):
 
 
 @router.get("/usuarios/{uid}")
-def obter_usuario(uid: int):
+def obter_usuario(uid: int, u: dict = Depends(ACESSO.identidade)):
+    ACESSO.proprio(u, uid)
     conn = db.conectar(CFG)
     try:
         return _usuario(conn, uid)
@@ -123,8 +126,9 @@ class Perfil(BaseModel):
 
 
 @router.put("/usuarios/{uid}")
-def atualizar_usuario(uid: int, p: Perfil):
+def atualizar_usuario(uid: int, p: Perfil, u: dict = Depends(ACESSO.identidade)):
     """FR-010: a localização precisa estar dentro do Brasil."""
+    ACESSO.proprio(u, uid)
     dados = p.model_dump(exclude_none=True)
     if ("lat" in dados) != ("lon" in dados):
         raise HTTPException(422, "Informe latitude e longitude juntas")
@@ -148,68 +152,46 @@ def atualizar_usuario(uid: int, p: Perfil):
 
 # ── crises ────────────────────────────────────────────────────────────
 @router.get("/crises")
-def listar_crises():
-    return ingestao.crises_ativas(CFG)
-
-
-@router.get("/voluntarios/por-municipio")
-def voluntarios_por_municipio():
-    """FR-007: voluntários disponíveis por município (localização do perfil)."""
-    m = malha.carregar()
-    conn = db.conectar(CFG)
-    try:
-        linhas = conn.execute("SELECT lat, lon FROM users WHERE role='volunteer' AND available=1").fetchall()
-    finally:
-        conn.close()
-    contagem: dict[int, int] = {}
-    for r in linhas:
-        cod = m.municipio_em(r["lat"], r["lon"]) if r["lat"] is not None else None
-        if cod:
-            contagem[cod] = contagem.get(cod, 0) + 1
-    return contagem
-
-
-class Inscricao(BaseModel):
-    user_id: int
+def listar_crises(sev_min: float = 0, uf: str = "", tipo: str = "", fonte: str = "", verificacao: str = "",
+                  q: str = "", limite: int = 0):
+    """FR-022: mesmos filtros do mapa; UF = qualquer município da crise na UF (FR-009)."""
+    return ingestao.filtrar(ingestao.crises_ativas(CFG), sev_min=sev_min, uf=uf, tipo=tipo, fonte=fonte,
+                            verificacao=verificacao, q=q, limite=limite)
 
 
 @router.post("/crises/{crisis_id}/inscrever")
-def inscrever(crisis_id: str, d: Inscricao):
+def inscrever(crisis_id: str, u: dict = Depends(ACESSO.exige("volunteer", "org"))):
     """FR-009: voluntário ou ONG se inscreve numa crise BR."""
     conn = db.conectar(CFG)
     try:
-        u = _usuario(conn, d.user_id)
-        if u["role"] not in ("volunteer", "org"):
-            raise HTTPException(403, "Só voluntários e ONGs se inscrevem em crises")
         if not conn.execute("SELECT 1 FROM crises WHERE id=?", (crisis_id,)).fetchone():
             raise HTTPException(404, "Crise não encontrada")
         conn.execute("INSERT OR IGNORE INTO crisis_associations (crisis_id, user_id, role) VALUES (?,?,?)",
-                     (crisis_id, d.user_id, u["role"]))
+                     (crisis_id, u["id"], u["role"]))
         conn.commit()
-        return {"ok": True, "inscritos": conn.execute(
-            "SELECT COUNT(*) FROM crisis_associations WHERE crisis_id=?", (crisis_id,)).fetchone()[0]}
+        return {"ok": True, **ingestao.associados(conn, crisis_id)}
     finally:
         conn.close()
 
 
 @router.post("/crises/{crisis_id}/cancelar")
-def cancelar(crisis_id: str, d: Inscricao):
+def cancelar(crisis_id: str, u: dict = Depends(ACESSO.exige("volunteer", "org"))):
     conn = db.conectar(CFG)
     try:
-        conn.execute("DELETE FROM crisis_associations WHERE crisis_id=? AND user_id=?", (crisis_id, d.user_id))
+        conn.execute("DELETE FROM crisis_associations WHERE crisis_id=? AND user_id=?", (crisis_id, u["id"]))
         conn.commit()
-        return {"ok": True, "inscritos": conn.execute(
-            "SELECT COUNT(*) FROM crisis_associations WHERE crisis_id=?", (crisis_id,)).fetchone()[0]}
+        return {"ok": True, **ingestao.associados(conn, crisis_id)}
     finally:
         conn.close()
 
 
 @router.get("/usuarios/{uid}/inscricoes")
-def inscricoes(uid: int):
+def inscricoes(uid: int, u: dict = Depends(ACESSO.identidade)):
+    ACESSO.proprio(u, uid)
     conn = db.conectar(CFG)
     try:
         return [dict(r) for r in conn.execute(
-            """SELECT c.id, c.title, c.severity, c.crisis_type, c.uf, a.created_at
+            """SELECT c.id, c.title, c.severity, c.crisis_type, c.uf, c.lat, c.lon, a.created_at
                FROM crisis_associations a JOIN crises c ON c.id=a.crisis_id WHERE a.user_id=? ORDER BY a.created_at DESC""",
             (uid,))]
     finally:

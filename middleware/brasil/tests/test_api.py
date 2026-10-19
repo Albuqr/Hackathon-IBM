@@ -4,7 +4,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+
 from middleware.brasil import ingestao
+
+
+def como(uid) -> dict:
+    """Cabeçalho de identidade que o encaminhador do frontend manda (ADR 0004)."""
+    return {"X-Brasil-Usuario": str(uid)}
 
 AGORA = datetime(2026, 10, 16, 12, tzinfo=timezone.utc)
 
@@ -50,8 +56,8 @@ def test_ac_003_1_banco_do_crisis_nao_muda(api, ambiente):
     antes = hashlib.sha256(crisis.read_bytes()).hexdigest()
     uid = cli.post("/brasil/dev/usuario/voluntario").json()["id"]
     ingestao.executar(rotas.CFG, fontes={"cemaden": lambda: [ev("cemaden-1", -30.03, -51.22)]}, agora=AGORA)
-    cli.post("/brasil/crises/cemaden-1/inscrever", json={"user_id": uid})
-    cli.put(f"/brasil/usuarios/{uid}", json={"radius_km": 100})
+    cli.post("/brasil/crises/cemaden-1/inscrever", headers=como(uid))
+    cli.put(f"/brasil/usuarios/{uid}", json={"radius_km": 100}, headers=como(uid))
     assert hashlib.sha256(crisis.read_bytes()).hexdigest() == antes
     assert (ambiente / "brasil.db").exists()
 
@@ -123,36 +129,30 @@ def test_ac_009_1_inscrever_e_cancelar(api):
     cli, rotas = api
     uid = cli.post("/brasil/dev/usuario/voluntario").json()["id"]
     ingestao.executar(rotas.CFG, fontes={"cemaden": lambda: [ev("cemaden-1", -30.03, -51.22)]})
-    assert cli.post("/brasil/crises/cemaden-1/inscrever", json={"user_id": uid}).json()["inscritos"] == 1
-    assert [i["id"] for i in cli.get(f"/brasil/usuarios/{uid}/inscricoes").json()] == ["cemaden-1"]
-    assert cli.post("/brasil/crises/cemaden-1/cancelar", json={"user_id": uid}).json()["inscritos"] == 0
-    assert cli.get(f"/brasil/usuarios/{uid}/inscricoes").json() == []
+    assert cli.post("/brasil/crises/cemaden-1/inscrever", headers=como(uid)).json()["inscritos"] == 1
+    assert [i["id"] for i in cli.get(f"/brasil/usuarios/{uid}/inscricoes", headers=como(uid)).json()] == ["cemaden-1"]
+    assert cli.post("/brasil/crises/cemaden-1/cancelar", headers=como(uid)).json()["inscritos"] == 0
+    assert cli.get(f"/brasil/usuarios/{uid}/inscricoes", headers=como(uid)).json() == []
 
 
 def test_fr009_admin_nao_se_inscreve(api):
     cli, rotas = api
     uid = cli.post("/brasil/dev/usuario/admin").json()["id"]
     ingestao.executar(rotas.CFG, fontes={"cemaden": lambda: [ev("cemaden-1", -30.03, -51.22)]})
-    assert cli.post("/brasil/crises/cemaden-1/inscrever", json={"user_id": uid}).status_code == 403
+    assert cli.post("/brasil/crises/cemaden-1/inscrever", headers=como(uid)).status_code == 403
 
 
 # AC-010.1
 def test_ac_010_1_localizacao_fora_do_brasil_e_recusada(api):
     cli, _ = api
     uid = cli.post("/brasil/dev/usuario/voluntario").json()["id"]
-    r = cli.put(f"/brasil/usuarios/{uid}", json={"lat": -34.6, "lon": -58.38})
+    r = cli.put(f"/brasil/usuarios/{uid}", json={"lat": -34.6, "lon": -58.38}, headers=como(uid))
     assert r.status_code == 422 and r.json()["detail"] == "A localização precisa estar no Brasil"
-    assert cli.get(f"/brasil/usuarios/{uid}").json()["lat"] == pytest.approx(-30.0346)
+    assert cli.get(f"/brasil/usuarios/{uid}", headers=como(uid)).json()["lat"] == pytest.approx(-30.0346)
 
 
 def test_fr010_perfil_salva_habilidades_e_local_no_brasil(api):
     cli, _ = api
     uid = cli.post("/brasil/dev/usuario/voluntario").json()["id"]
-    u = cli.put(f"/brasil/usuarios/{uid}", json={"lat": -3.73, "lon": -38.52, "skills": ["resgate", " "], "radius_km": 50}).json()
+    u = cli.put(f"/brasil/usuarios/{uid}", json={"lat": -3.73, "lon": -38.52, "skills": ["resgate", " "], "radius_km": 50}, headers=como(uid)).json()
     assert u["skills"] == ["resgate"] and u["radius_km"] == 50 and u["link_code"]
-
-
-def test_fr007_voluntarios_por_municipio(api):
-    cli, _ = api
-    cli.post("/brasil/dev/usuario/voluntario")
-    assert cli.get("/brasil/voluntarios/por-municipio").json() == {"4314902": 1}  # Porto Alegre

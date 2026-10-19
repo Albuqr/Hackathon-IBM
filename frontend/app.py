@@ -4,6 +4,7 @@ from functools import wraps
 from flask import (Flask, render_template, request,
                    redirect, session, jsonify)
 from dotenv import load_dotenv
+from token_api import cabecalhos  # segredo da API (ADR 0004)
 
 load_dotenv()
 
@@ -57,28 +58,28 @@ def _ensure_link_code(db, user_id):
 
 def api_get(path, params=None, timeout=60):
     try:
-        r = requests.get(f"{API}{path}", params=params, timeout=timeout)
+        r = requests.get(f"{API}{path}", headers=cabecalhos(), params=params, timeout=timeout)
         return r.json()
     except:
         return []
 
 def api_post(path, data=None, timeout=60):
     try:
-        r = requests.post(f"{API}{path}", json=data, timeout=timeout)
+        r = requests.post(f"{API}{path}", headers=cabecalhos(), json=data, timeout=timeout)
         return r.json()
     except Exception as e:
         return {"error": str(e)}
 
 def api_put(path, data=None):
     try:
-        r = requests.put(f"{API}{path}", json=data, timeout=10)
+        r = requests.put(f"{API}{path}", headers=cabecalhos(), json=data, timeout=10)
         return r.json()
     except Exception as e:
         return {"error": str(e)}
 
 def api_delete(path):
     try:
-        r = requests.delete(f"{API}{path}", timeout=10)
+        r = requests.delete(f"{API}{path}", headers=cabecalhos(), timeout=10)
         return r.json()
     except Exception as e:
         return {"error": str(e)}

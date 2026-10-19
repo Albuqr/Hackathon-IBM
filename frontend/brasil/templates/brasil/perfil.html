@@ -1,54 +1,121 @@
 {% extends "brasil/base.html" %}
 {% block titulo %}Meu perfil · Crisis Monitor Brasil{% endblock %}
-{% block corpo %}
-<div class="pagina">
+{% block principal %}
+<div class="rolagem"><div class="pagina">
   <div class="pagina-cabeca"><h1>Meu perfil</h1>
-    <p>Sua localização precisa estar no Brasil. O matching usa habilidades, localização e raio de atuação.</p></div>
+    <p>Habilidades, localização e raio de atuação guiam o matching e a lista de crises perto de você.</p></div>
   <div class="grade-lateral">
-    <div class="cartao">
-      <form class="form" id="form-perfil">
-        <p class="aviso" id="msg" role="status" hidden></p>
-        <div class="linha">
-          <label>Nome <input name="name" value="{{ u.name or '' }}"></label>
-          <label>Telefone (WhatsApp) <input name="phone" value="{{ u.phone or '' }}" inputmode="tel"></label>
-        </div>
-        <label>Habilidades (separadas por vírgula) <input name="skills" value="{{ (u.skills or [])|join(', ') }}"></label>
-        <label>Idiomas (separados por vírgula) <input name="languages" value="{{ (u.languages or [])|join(', ') }}"></label>
-        <div class="linha">
-          <label>Latitude <input name="lat" type="number" step="any" value="{{ u.lat }}"></label>
-          <label>Longitude <input name="lon" type="number" step="any" value="{{ u.lon }}"></label>
-        </div>
-        <div class="linha">
-          <label>Raio de atuação (km) <input name="radius_km" type="number" min="1" max="5000" value="{{ u.radius_km }}"></label>
-          <label>Disponível <select name="available"><option value="1" {{ 'selected' if u.available else '' }}>Sim</option><option value="0" {{ '' if u.available else 'selected' }}>Não</option></select></label>
-        </div>
-        <div><button class="botao botao-primario" type="submit">Salvar</button></div>
-      </form>
-    </div>
-    <aside class="painel">
-      {% if u.link_code %}<div class="cartao"><p class="cartao-titulo">Telegram</p>
-        <p class="mono" style="font-size:20px;font-weight:600;color:var(--acento-texto)">{{ u.link_code }}</p>
-        <p class="item-meta">Envie este código ao bot para vincular sua conta.</p></div>{% endif %}
-      <div class="cartao"><p class="cartao-titulo">Minhas crises</p>
-        {% if inscricoes %}<ul class="lista">{% for c in inscricoes %}
-          <li><span class="item-titulo">{{ c.title }}</span><span class="item-meta">{{ c.uf or '' }} · severidade {{ c.severity|int }}</span></li>
-        {% endfor %}</ul>{% else %}<p class="vazio">Você ainda não se inscreveu em nenhuma crise.</p>{% endif %}
+    <div class="coluna">
+      <div class="cartao">
+        <p class="cartao-titulo">Dados</p>
+        <form class="form" id="form-perfil">
+          <p class="aviso" id="msg" role="status" hidden></p>
+          <div class="linha">
+            <label>Nome <input name="name" value="{{ u.name or '' }}"></label>
+            <label>Telefone (WhatsApp) <input name="phone" value="{{ u.phone or '' }}" inputmode="tel"></label>
+          </div>
+          <div class="campo">Habilidades
+            <div class="chips" id="chips"></div>
+            <div class="acoes"><input id="nova-hab" placeholder="Nova habilidade" style="flex:1"><button class="botao botao-neutro botao-pequeno" type="button" id="add-hab">+ Adicionar</button></div>
+          </div>
+          <div class="linha">
+            <label>Latitude <input name="lat" type="number" step="any" value="{{ u.lat }}"></label>
+            <label>Longitude <input name="lon" type="number" step="any" value="{{ u.lon }}"></label>
+          </div>
+          <label class="campo"><span class="campo-linha">Raio de atuação <output id="raio-valor">{{ u.radius_km|int }} km</output></span>
+            <input type="range" name="radius_km" id="raio" min="10" max="2000" step="10" value="{{ u.radius_km|int }}"></label>
+          <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="available" {{ 'checked' if u.available }}> Disponível para ação</label>
+          <div><button class="botao botao-primario" type="submit">Salvar</button></div>
+        </form>
       </div>
-    </aside>
+      {% if u.link_code %}
+      <div class="cartao">
+        <p class="cartao-titulo">Conectar Telegram</p>
+        <div class="acoes"><span class="mono" style="font-size:20px;color:var(--acento)">{{ u.link_code }}</span>
+          <button class="botao botao-neutro botao-pequeno" type="button" id="copiar">Copiar código</button></div>
+        <p class="item-meta">Use /vincular {{ u.link_code }} no bot do Telegram.</p>
+      </div>
+      {% endif %}
+      <div class="cartao">
+        <p class="cartao-titulo">Minhas crises</p>
+        <ul class="lista" id="minhas"><li class="vazio">Carregando…</li></ul>
+      </div>
+    </div>
+    <div class="coluna">
+      {% if br_role == 'volunteer' %}
+      <div class="cartao chat" id="chat">
+        <p class="cartao-titulo">Assistente — onde posso ajudar?</p>
+        <div class="chat-msgs" aria-live="polite"></div>
+        <form class="chat-form"><textarea aria-label="Mensagem" placeholder="Digite sua mensagem…"></textarea>
+          <button class="botao botao-primario" type="submit">Enviar</button></form>
+      </div>
+      {% endif %}
+      <div class="cartao">
+        <p class="cartao-titulo">Crises no seu raio</p>
+        <ul class="lista" id="no-raio"><li class="vazio">Carregando…</li></ul>
+      </div>
+    </div>
   </div>
-</div>
+</div></div>
 {% endblock %}
 {% block scripts %}
-<script>
-document.getElementById("form-perfil").addEventListener("submit", async (e) => {
+<script id="br-perfil" type="application/json">{{ {"skills": u.skills or [], "lat": u.lat, "lon": u.lon, "nome": (u.name or '').split(' ')[0]}|tojson }}</script>
+<script type="module">
+import { el, acao, avisar, selSev, rotulo, TIPOS, distanciaKm, montarChat } from "{{ url_for('brasil.static', filename='cliente.js') }}";
+const P = JSON.parse(document.getElementById("br-perfil").textContent);
+const $ = (id) => document.getElementById(id);
+let skills = [...P.skills], crises = [], inscritas = [];
+
+function chips() {
+  $("chips").replaceChildren(...skills.map((s) => el("span", { class: "chip" }, [s,
+    el("button", { type: "button", "aria-label": `Remover ${s}`, texto: "×", onclick: () => { skills = skills.filter((x) => x !== s); chips(); } })])));
+}
+$("add-hab").addEventListener("click", () => { const v = $("nova-hab").value.trim(); if (v && !skills.includes(v)) skills.push(v); $("nova-hab").value = ""; chips(); });
+$("nova-hab").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("add-hab").click(); } });
+$("raio").addEventListener("input", (e) => { $("raio-valor").textContent = `${e.target.value} km`; noRaio(); });
+$("copiar")?.addEventListener("click", (e) => { navigator.clipboard?.writeText("{{ u.link_code or '' }}"); e.currentTarget.textContent = "Copiado"; });
+
+$("form-perfil").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const f = new FormData(e.target), lista = (k) => f.get(k).split(",").map((s) => s.trim()).filter(Boolean);
-  const corpo = { name: f.get("name"), phone: f.get("phone"), skills: lista("skills"), languages: lista("languages"),
-    lat: Number(f.get("lat")), lon: Number(f.get("lon")), radius_km: Number(f.get("radius_km")), available: f.get("available") === "1" };
-  const r = await fetch("{{ url_for('brasil.api_perfil') }}", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
-  const d = await r.json(), msg = document.getElementById("msg");
-  msg.hidden = false; msg.className = r.ok ? "aviso ok" : "aviso";
-  msg.textContent = r.ok ? "Perfil salvo." : (typeof d.detail === "string" ? d.detail : "Confira os campos.");
+  const f = new FormData(e.target);
+  const r = await acao("salvar_perfil", { corpo: { name: f.get("name"), phone: f.get("phone"), skills,
+    lat: Number(f.get("lat")), lon: Number(f.get("lon")), radius_km: Number(f.get("radius_km")), available: f.get("available") === "on" } });
+  avisar($("msg"), r.ok ? "Perfil salvo." : r.erro, r.ok);
+  if (r.ok) { P.lat = r.dados.lat; P.lon = r.dados.lon; noRaio(); }
 });
+
+const item = (c, botao) => el("li", {}, [
+  el("div", { class: "item-topo" }, [el("span", { class: "item-titulo" }, [selSev(c.severity), c.title]), botao]),
+  el("span", { class: "item-meta", texto: [rotulo(TIPOS, c.crisis_type), c.uf, c.distancia != null ? `${Math.round(c.distancia)} km` : null].filter(Boolean).join(" · ") }),
+]);
+
+async function alternar(c, entrar) {
+  const r = await acao(entrar ? "inscrever" : "cancelar", { p: { crisis_id: c.id } });
+  if (!r.ok) return avisar($("msg"), r.erro);
+  await carregarInscricoes();
+}
+function minhas() {
+  $("minhas").replaceChildren(...(inscritas.length ? inscritas.map((c) => item(c,
+    el("button", { type: "button", class: "botao botao-neutro botao-pequeno", texto: "Sair", onclick: () => alternar(c, false) })))
+    : [el("li", { class: "vazio", texto: "Você ainda não se inscreveu em nenhuma crise." })]));
+}
+function noRaio() {
+  const raio = Number($("raio").value), ids = new Set(inscritas.map((c) => c.id));
+  const perto = P.lat == null ? [] : crises.map((c) => ({ ...c, distancia: distanciaKm(P, c) }))
+    .filter((c) => c.distancia <= raio && !ids.has(c.id)).sort((a, b) => b.severity - a.severity || a.distancia - b.distancia);
+  $("no-raio").replaceChildren(...(perto.length ? perto.slice(0, 30).map((c) => item(c,
+    el("button", { type: "button", class: "botao botao-primario botao-pequeno", texto: "Inscrever-se", onclick: () => alternar(c, true) })))
+    : [el("li", { class: "vazio", texto: `Nenhuma crise ativa a até ${raio} km.` })]));
+}
+async function carregarInscricoes() {
+  const r = await acao("minhas_inscricoes");
+  inscritas = r.ok ? r.dados : [];
+  minhas(); noRaio();
+}
+chips();
+const rc = await acao("crises");
+crises = rc.ok ? rc.dados : [];
+await carregarInscricoes();
+if ($("chat")) montarChat($("chat"), { saudacao: `Olá${P.nome ? ", " + P.nome : ""}! Posso indicar crises compatíveis com suas habilidades e sua localização. O que você quer saber?` });
 </script>
 {% endblock %}
