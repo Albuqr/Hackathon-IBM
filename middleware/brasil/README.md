@@ -17,6 +17,21 @@ O frontend é um app de tela cheia no wireframe do Crisis: cabeçalho, barra lat
 (Municípios: malha neutra; Pixels: cada crise acende os pixels em volta) e barra de status. Cada crise é um marcador com popup.
 O navegador só fala com `POST /brasil/acao/<nome>` (tabela `POLITICA` em `frontend/brasil/encaminhador.py`).
 
+Fora do mapa, cada página é uma lista de etapas com uma etapa aberta por vez (`frontend/brasil/static/etapas.js`):
+Começar (voluntário), Nova campanha e acompanhamento da campanha (ONG) e Rotina (admin).
+
+### Campanha guiada (regras, sem IA)
+| Rota | O que devolve |
+|---|---|
+| `GET /brasil/crises/{id}/plano` | plano do assistente (habilidades, pessoas, urgência, descrição) e as campanhas na crise |
+| `GET /brasil/crises/{id}/matching?habilidades=` | voluntários ranqueados com os motivos (habilidades em comum, km, histórico, aviso recente) |
+| `GET /brasil/campanhas/{cid}/situacao` | funil, quem cobre cada habilidade (sem meta por habilidade), recomendados e um próximo passo |
+| `POST /brasil/campanhas/{cid}/convites` | convida ou lembra (`reenviar`) e manda a mensagem da campanha (fila ou Telegram) |
+| `POST /brasil/convites/previa` | o texto exato do convite, para revisar antes de publicar |
+
+Próximo passo, nesta ordem: crise saiu do mapa › agravou (sugere a meta da nova severidade) › faltam pessoas › convites
+sem resposta há 24 h › equipe completa. Regras em `middleware/brasil/assistentes.py` (`proximo_passo`, `situacao_campanha`).
+
 ## Rodar local
 ```bash
 python init_db.py                                   # banco do Crisis (se ainda não existe)
