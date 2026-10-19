@@ -3,6 +3,8 @@
 //
 // checklist(raiz, { titulo, sub, etapas, inicio: { feitas: [i], atual: i }, final: () => Node })
 // etapa: { nome, pergunta, ajuda, resumo: () => texto, editar?: "Trocar", corpo(caixa, concluir) }
+// Desktop: a abertura e as etapas resumidas ficam numa coluna; a etapa aberta ocupa o resto da tela.
+// Celular: as colunas somem (display: contents) e a ordem (order) volta a ser a das etapas.
 import { el } from "./cliente.js";
 
 const CHECK = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 7.4 5.8 10 11 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -13,11 +15,16 @@ export function checklist(raiz, cfg) {
   const primeiraAberta = () => cfg.etapas.findIndex((_, i) => !feitas.has(i));
   const st = { atual: cfg.inicio?.atual ?? Math.max(0, primeiraAberta()), fim: primeiraAberta() < 0 && cfg.inicio?.atual == null };
 
+  raiz.classList.add("checklist");
   function render() {
     const n = cfg.etapas.length;
     const ol = el("ol", { class: "etapas" });
-    raiz.replaceChildren(
-      el("div", { class: "abertura" }, [
+    const olFoco = el("ol", { class: "etapas" });
+    const lado = el("div", { class: "checklist-lado" });
+    const foco = el("div", { class: "checklist-foco" }, [olFoco]);
+    raiz.replaceChildren(lado, foco);
+    lado.append(
+      el("div", { class: "abertura", style: "order:-1" }, [
         el("h1", { texto: cfg.titulo }),
         cfg.sub ? el("p", { texto: cfg.sub }) : null,
         el("div", { class: "progresso" }, [
@@ -31,7 +38,7 @@ export function checklist(raiz, cfg) {
       const atual = !st.fim && i === st.atual, feita = feitas.has(i) && !atual, travada = !feita && !atual;
       const marcador = el("span", { class: "marcador" });
       if (feita) marcador.innerHTML = CHECK; else if (travada) marcador.innerHTML = CADEADO; else marcador.textContent = String(i + 1);
-      const li = el("li", { class: `etapa ${atual ? "atual" : feita ? "feita" : "travada"}`, "data-etapa": String(i) }, [
+      const li = el("li", { class: `etapa ${atual ? "atual" : feita ? "feita" : "travada"}`, "data-etapa": String(i), style: `order:${i}`, value: String(i + 1) }, [
         el("div", { class: "etapa-linha" }, [
           marcador,
           el("div", { class: "etapa-texto" }, [
@@ -46,9 +53,9 @@ export function checklist(raiz, cfg) {
         li.append(corpo);
         e.corpo(corpo, () => concluir(i));
       }
-      ol.append(li);
+      (atual ? olFoco : ol).append(li);
     });
-    if (st.fim && cfg.final) raiz.append(cfg.final());
+    if (st.fim && cfg.final) { const f = cfg.final(); f.style.order = "99"; foco.append(f); }
   }
   function abrir(i) { st.atual = i; st.fim = false; render(); focar(); }
   function concluir(i) {

@@ -416,6 +416,60 @@ body.solta { min-height: 100dvh; display: grid; place-items: center; padding: 24
 .entrar h1 { font-size: 40px; letter-spacing: -0.03em; }
 .teste { display: grid; gap: 10px; border-top: 1px solid var(--linha-suave); padding-top: 18px; }
 
+/* ---------- colunas que só existem no desktop ----------
+   No celular os invólucros somem (display: contents) e "order" devolve a ordem de leitura de uma coluna só. */
+.checklist { display: grid; gap: 12px; }
+.checklist-lado, .checklist-foco, .checklist .etapas { display: contents; }
+.checklist .abertura { margin-bottom: 24px; }
+.checklist .final { margin-top: 0; }
+.painel-campanha { display: grid; gap: 12px; }
+.col-principal, .col-lateral { display: contents; }
+.o1 { order: 1; } .o2 { order: 2; } .o3 { order: 3; } .o4 { order: 4; } .o5 { order: 5; }
+.o6 { order: 6; } .o7 { order: 7; } .o8 { order: 8; } .o9 { order: 9; }
+
+/* ---------- desktop: cartões que preenchem a tela ---------- */
+@media (min-width: 1100px) {
+  .pagina, .pagina.larga { max-width: 1440px; padding-top: 40px; }
+  .abertura h1, .pagina-cabeca h1 { font-size: 52px; }
+
+  /* etapas: abertura e etapas resumidas numa coluna fixa; a etapa aberta ocupa o resto */
+  .checklist { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 24px; align-items: start; }
+  .checklist-lado { display: grid; gap: 12px; position: sticky; top: 24px; }
+  .checklist-foco { display: grid; gap: 12px; min-width: 0; }
+  .checklist-lado .etapas, .checklist-foco .etapas { display: grid; gap: 12px; }
+  .checklist .abertura { margin-bottom: 12px; }
+  .checklist .abertura h1 { font-size: 44px; }
+  .checklist .abertura p { font-size: 17px; }
+  .checklist-lado .etapa-linha { padding: 16px 22px; min-height: 64px; }
+  .checklist-foco .etapa.atual, .checklist-foco .final { min-height: calc(100dvh - var(--topo) - var(--status) - 80px); }
+  .checklist-foco .etapa.atual .etapa-linha { padding: 44px 48px 8px; }
+  .checklist-foco .etapa.atual .etapa-titulo { font-size: 36px; }
+  .checklist-foco .etapa-corpo { padding: 24px 48px 48px 92px; }
+  .checklist-foco .final { align-content: center; padding: 56px 48px; }
+  .checklist + .pilha { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); align-items: start;
+    margin-left: calc(380px + 24px); }
+
+  /* painel da ONG: grade de 12 colunas */
+  .bento { grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+  .b-5 { grid-column: span 5; } .b-7 { grid-column: span 7; } .b-12 { grid-column: span 12; }
+  .bento .secao { align-content: start; }
+
+  /* campanha: o que fazer à esquerda; progresso e mapa fixos à direita */
+  .painel-campanha { grid-template-columns: minmax(0, 1.65fr) minmax(340px, 1fr); gap: 24px; align-items: start; }
+  .col-principal, .col-lateral { display: grid; gap: 12px; align-content: start; min-width: 0; }
+  .col-lateral { position: sticky; top: 24px; }
+  .painel-campanha .minimapa { height: 340px; }
+  .painel-campanha .proximo { padding: 44px 48px; }
+  .painel-campanha .proximo h2 { font-size: 40px; }
+
+  /* listas que viram cartões (Minhas campanhas) */
+  .lista.grade-cartoes { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px;
+    background: none; border-radius: 0; overflow: visible; }
+  .lista.grade-cartoes > li { border-radius: var(--r-card); padding: 28px; flex-direction: column; align-items: flex-start; gap: 18px; }
+  .lista.grade-cartoes > li .item-texto { flex: none; width: 100%; }
+  .lista.grade-cartoes > li.vazio { grid-column: 1 / -1; }
+}
+
 /* ---------- celular: barra lateral vira gaveta, menu compacto ---------- */
 @media (max-width: 860px) {
   :root { --lateral: min(86vw, 320px); }

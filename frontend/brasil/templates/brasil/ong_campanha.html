@@ -9,25 +9,17 @@
       <span class="selo {{ c.status }}">{{ 'ativa' if c.status == 'active' else 'encerrada' }}</span></p>
   </div>
   <p class="aviso" id="msg" role="alert" hidden></p>
-  <div class="pilha">
-    <section class="proximo" id="proximo" aria-live="polite"><span class="dica">Próximo passo</span><h2>Carregando…</h2></section>
-
-    <section class="secao" aria-labelledby="t-prog"><h2 id="t-prog">Progresso</h2>
-      <div class="numeros" id="funil"></div>
-      <div class="barra-meta"><i id="barra-meta" style="width:0"></i></div>
-      <div class="cobertura" id="cobertura"></div>
-    </section>
-
-    <section class="secao" id="sec-rec" aria-labelledby="t-rec" hidden>
+  <div class="painel-campanha">
+    <div class="col-principal">
+    <section class="proximo o1" id="proximo" aria-live="polite"><span class="dica">Próximo passo</span><h2>Carregando…</h2></section>
+    <section class="secao o3" id="sec-rec" aria-labelledby="t-rec" hidden>
       <div class="secao-topo"><h2 id="t-rec">Recomendados pelo assistente</h2><span id="rec-todos"></span></div>
       <p class="dica">Compatíveis com o plano, as habilidades sem ninguém primeiro. Ainda não convidados.</p>
       <ul class="lista" id="recomendados"></ul>
     </section>
-
-    <section class="secao" aria-labelledby="t-eq"><h2 id="t-eq">Equipe</h2><div class="grupos" id="equipe"></div></section>
-
+    <section class="secao o4" aria-labelledby="t-eq"><h2 id="t-eq">Equipe</h2><div class="grupos" id="equipe"></div></section>
     {% if c.status == 'active' %}
-    <details class="recolhe secao-d" id="busca">
+    <details class="recolhe secao-d o5" id="busca">
       <summary>Buscar outra pessoa</summary>
       <div class="recolhe-corpo">
         <div class="linha">
@@ -43,13 +35,7 @@
       </div>
     </details>
     {% endif %}
-
-    <section class="secao" aria-labelledby="t-mapa"><h2 id="t-mapa">No mapa</h2>
-      <div class="minimapa" id="minimapa" role="region" aria-label="Minimapa da crise e dos voluntários"></div>
-      <p class="dica">A crise e onde estão as pessoas da campanha.</p>
-    </section>
-
-    <details class="recolhe secao-d" id="editar">
+    <details class="recolhe secao-d o7" id="editar">
       <summary>Plano da campanha</summary>
       <form class="recolhe-corpo form" id="form-editar">
         <label>Nome <input name="title" value="{{ c.title }}" minlength="3" maxlength="200"></label>
@@ -66,8 +52,7 @@
         <div class="acoes"><button class="botao botao-primario" type="submit">Salvar plano</button></div>
       </form>
     </details>
-
-    <details class="recolhe secao-d" id="assistente">
+    <details class="recolhe secao-d o8" id="assistente">
       <summary>Conversar com o assistente</summary>
       <div class="recolhe-corpo chat" id="chat">
         <div class="chat-msgs" aria-live="polite"></div>
@@ -75,8 +60,19 @@
           <button class="botao botao-primario" type="submit">Enviar</button></form>
       </div>
     </details>
-
-    {% if c.status == 'active' %}<div class="encerrar" id="encerrar"></div>{% endif %}
+    {% if c.status == 'active' %}<div class="encerrar o9" id="encerrar"></div>{% endif %}
+    </div>
+    <div class="col-lateral">
+    <section class="secao o2" aria-labelledby="t-prog"><h2 id="t-prog">Progresso</h2>
+      <div class="numeros" id="funil"></div>
+      <div class="barra-meta"><i id="barra-meta" style="width:0"></i></div>
+      <div class="cobertura" id="cobertura"></div>
+    </section>
+    <section class="secao o6" aria-labelledby="t-mapa"><h2 id="t-mapa">No mapa</h2>
+      <div class="minimapa" id="minimapa" role="region" aria-label="Minimapa da crise e dos voluntários"></div>
+      <p class="dica">A crise e onde estão as pessoas da campanha.</p>
+    </section>
+    </div>
   </div>
 </div></div>
 {% endblock %}

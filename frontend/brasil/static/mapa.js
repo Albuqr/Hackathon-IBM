@@ -242,8 +242,8 @@ function desenharMarcadores() {
 // perto das crises visíveis na tela.
 // Fluidez: a grade fica presa ao mundo (múltiplos de LADO em pixels do mapa), então arrastar não faz as células pularem.
 // Durante o zoom o canvas acompanha o mapa por transformação CSS, como as camadas do Leaflet; no fim, o quadro novo
-// cresce por baixo do antigo, que esmaece. Animação (como na referência): as células crescem ao entrar e uma onda
-// sai de cada crise, do centro para a borda.
+// cresce por baixo do antigo, que esmaece. Animação: as células crescem ao entrar (como na referência) e,
+// no hover, a crise enche e solta um anel; parado, nada se move.
 const tela = $("pixels");
 const fantasma = document.createElement("canvas");   // o quadro anterior, que esmaece depois do zoom
 fantasma.setAttribute("aria-hidden", "true");
@@ -252,7 +252,6 @@ const ctx2d = tela.getContext("2d");
 const REDUZIR = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 let PIX = null;          // { grade, foco, k, focos, gx0, gy0, fundo, acesas, inicio, entradaFundo, centro, zoom, pos }
 let MASCARA = null;      // { w, h, lon0, lat1, passo, dados }
-let pairando = -1;       // foco sob o mouse: as células dele ficam cheias
 
 function montarMascara() {
   const passo = 0.04;  // graus (~4 km)
@@ -285,7 +284,7 @@ function limparPixels() {
   pararLaco();
   ctx2d.clearRect(0, 0, tela.width, tela.height);
   fantasma.style.opacity = "0";
-  PIX = null; pairando = -1;
+  PIX = null; HOVER.f = HOVER.saindo = -1;
 }
 
 // Grade alinhada ao mundo: a primeira coluna começa no múltiplo de LADO logo à esquerda da tela.
@@ -315,9 +314,6 @@ function kmPorPx() {
   return a.distanceTo(b) / 1000 / 100;
 }
 
-// fase da onda de cada crise: estável (pelo id), para as ondas não pulsarem todas juntas
-const faseDe = (id) => { let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return (h % 1000) / 1000; };
-
 // entrada: "tudo" (abriu o modo), "rapida" (zoom ou filtros: cresce do centro de cada crise) ou "nada" (só arrastou)
 function desenharPixels(entrada = "rapida") {
   const t = mapa.getSize();
@@ -335,9 +331,10 @@ function desenharPixels(entrada = "rapida") {
     const p = mapa.latLngToContainerPoint([c.lat, c.lon]);
     const r = Math.min(raioKm(c.severity) / escala, LADO * (2.5 + 1.5 * nivel(c.severity)));
     if (p.x + r < 0 || p.y + r < 0 || p.x - r > t.x || p.y - r > t.y) continue;  // fora da tela
-    focos.push({ id: c.id, sev: c.severity, grupo: grupoDe(c.crisis_type), x: p.x - gx0, y: p.y - gy0, r, fase: faseDe(c.id) });
+    focos.push({ id: c.id, sev: c.severity, grupo: grupoDe(c.crisis_type), x: p.x - gx0, y: p.y - gy0, r });
   }
   const { foco, k } = acender(grade, focos);
+  HOVER.f = HOVER.saindo = -1;  // os índices dos focos mudam a cada desenho
   // células apagadas: desenhadas uma vez num canvas de fundo; as acesas são pintadas a cada quadro (animação)
   const fundo = document.createElement("canvas");
   fundo.width = tela.width; fundo.height = tela.height;
@@ -366,6 +363,13 @@ function desenharPixels(entrada = "rapida") {
   if (!REDUZIR) iniciarLaco();
 }
 
+// Hover: a crise sob o mouse cresce até as células ficarem cheias e solta um anel do centro até a borda;
+// ao sair, volta ao tamanho de repouso. Fora do hover e da entrada nada se move, e o laço para.
+const HOVER = { f: -1, desde: 0, saindo: -1, saiu: 0 };
+const ENTRAR_MS = 280, ANEL_MS = 650, SAIR_MS = 220;
+const suave = (x) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
+
+// Pinta um quadro; devolve true enquanto ainda há animação a fazer (entrada ou hover).
 function pintar(agora) {
   const { dpr, fundo, acesas, focos } = PIX;
   const t = agora - PIX.inicio;
@@ -374,34 +378,41 @@ function pintar(agora) {
   ctx2d.globalAlpha = PIX.entradaFundo ? Math.min(1, t / 600) : 1;
   ctx2d.drawImage(fundo, 0, 0);
   ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
-  let cor = "";
+  const dentro = REDUZIR ? (HOVER.f >= 0 ? 1 : 0) : suave((agora - HOVER.desde) / ENTRAR_MS);
+  const fora = REDUZIR ? 0 : 1 - suave((agora - HOVER.saiu) / SAIR_MS);
+  const anel = REDUZIR ? 2 : (agora - HOVER.desde) / ANEL_MS;     // 0 → 1: o anel vai do centro à borda
+  let cor = "", pendente = !REDUZIR && (anel < 1.3 || fora > 0 || (PIX.entradaFundo && t < 600));
   for (const c of acesas) {
     let e = 1;
     if (!REDUZIR) {
       e = Math.min(1, Math.max(0, (t - c.atraso) / 420));
+      if (e < 1) pendente = true;
       if (e === 0) continue;
       e = 1 - Math.pow(1 - e, 3);
     }
     const F = focos[c.f];
-    // onda: um anel sai do centro da crise (1 - k = 0) até a borda (1) a cada ~2,6 s
-    const fase = REDUZIR ? -1 : (agora / 2600 + F.fase) % 1;
-    const onda = REDUZIR ? 0 : Math.exp(-((((1 - c.k) - fase) / 0.13) ** 2));
-    const cheio = c.f === pairando;
-    const tam = cheio ? LADO - 1 : LADO * (0.52 + 0.24 * c.k + 0.22 * onda) * e;
+    const repouso = LADO * (0.56 + 0.26 * c.k) * e;
+    let tam = repouso, alfa = 0.55 + 0.35 * c.k;
+    const h = c.f === HOVER.f ? dentro : c.f === HOVER.saindo ? fora : 0;
+    if (h > 0) {
+      const onda = c.f === HOVER.f ? Math.exp(-((((1 - c.k) - anel) / 0.14) ** 2)) : 0;
+      tam = repouso + (LADO - 1 - repouso) * h + LADO * 0.18 * onda;
+      alfa = alfa + (1 - alfa) * h;
+    }
     if (CORES.tipo[F.grupo] !== cor) { cor = CORES.tipo[F.grupo]; ctx2d.fillStyle = cor; }
-    ctx2d.globalAlpha = cheio ? 1 : Math.min(1, 0.5 + 0.3 * c.k + 0.25 * onda);
+    ctx2d.globalAlpha = Math.min(1, alfa);
     ctx2d.fillRect(c.x - tam / 2, c.y - tam / 2, tam, tam);
   }
   ctx2d.globalAlpha = 1;
+  return pendente;
 }
 
-// laço de animação: só roda no modo Pixels, e o navegador o pausa sozinho com a aba escondida
+// laço de animação: roda só enquanto há entrada ou hover em andamento
 let laco = 0;
 function animar(agora) {
   laco = 0;
   if (estado.modo !== "pixels" || !PIX) return;
-  pintar(agora);
-  laco = requestAnimationFrame(animar);
+  if (pintar(agora)) laco = requestAnimationFrame(animar);
 }
 function iniciarLaco() { if (!laco) laco = requestAnimationFrame(animar); }
 function pararLaco() { if (laco) cancelAnimationFrame(laco); laco = 0; }
@@ -453,9 +464,12 @@ function pairarPixel(e) {
   mapa.getContainer().style.cursor = a ? "pointer" : "";
   if (a) mapa.getContainer().title = POR_ID.get(a.id)?.title || "";
   else mapa.getContainer().removeAttribute("title");
-  const antes = pairando;
-  pairando = a ? a.indice : -1;
-  if (REDUZIR && PIX && antes !== pairando) pintar(performance.now());
+  const novo = a ? a.indice : -1;
+  if (!PIX || novo === HOVER.f) return;
+  const agora = performance.now();
+  if (HOVER.f >= 0) { HOVER.saindo = HOVER.f; HOVER.saiu = agora; }
+  HOVER.f = novo; HOVER.desde = agora;
+  if (REDUZIR) pintar(agora); else iniciarLaco();
 }
 function clicarPixel(e) {
   const a = criseNoPixel(e);
