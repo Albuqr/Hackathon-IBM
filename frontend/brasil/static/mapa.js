@@ -119,7 +119,8 @@ function montarMapa() {
   const painelPixels = mapa.createPane("pixels");
   painelPixels.style.zIndex = 450;
   painelPixels.style.pointerEvents = "none";
-  painelPixels.append(tela);  // dentro do mapa: popups ficam por cima dos pixels
+  tela.classList.add("leaflet-zoom-animated"); fantasma.classList.add("leaflet-zoom-animated");
+  painelPixels.append(tela, fantasma);  // dentro do mapa: popups ficam por cima dos pixels
 
   camadaMun = L.geoJSON(M.geojson, {
     renderer: render,
@@ -141,7 +142,9 @@ function montarMapa() {
 
   mapa.on("popupopen", (e) => mostrarArea(e.popup._criseId));
   mapa.on("popupclose", () => mostrarArea(null));
-  mapa.on("zoomstart", () => { if (estado.modo === "pixels") tela.style.visibility = "hidden"; });
+  // zoom fluido: o quadro acompanha a animação do mapa (zoomanim) e o pinça/scroll sem animação (zoom)
+  mapa.on("zoomanim", (e) => transformar(e.center, e.zoom));
+  mapa.on("zoom", () => transformar(mapa.getCenter(), mapa.getZoom()));
   mapa.on("moveend resize", pedirPixels);
   mapa.on("mousemove", pairarPixel);
   mapa.on("click", clicarPixel);
@@ -207,7 +210,7 @@ function desenhar({ voar = false } = {}) {
   $("m-criticas").textContent = n.criticas.toLocaleString("pt-BR");
   $("m-nv").textContent = n.naoVerificadas.toLocaleString("pt-BR");
   const pixels = estado.modo === "pixels";
-  if (pixels) { mapa.removeLayer(camadaMun); marcadores.clearLayers(); desenharPixels(); }
+  if (pixels) { mapa.removeLayer(camadaMun); marcadores.clearLayers(); desenharPixels(PIX ? "rapida" : "tudo"); }
   else { if (!mapa.hasLayer(camadaMun)) camadaMun.addTo(mapa); camadaUf.bringToFront(); limparPixels(); desenharMarcadores(); }
   if (voar) voarParaUf(estado.uf);
 }
@@ -235,12 +238,21 @@ function desenharMarcadores() {
 
 // ---------- pixels (FR-005) ----------
 // Desempenho: a forma do Brasil vira uma máscara lat/lon calculada uma vez; cada redesenho só lê a máscara
-// (lon por coluna e lat por linha, porque na projeção do mapa elas são independentes), acende as células
-// perto das crises visíveis na tela e pinta tudo em poucos caminhos por cor.
+// (lon por coluna e lat por linha, porque na projeção do mapa elas são independentes) e acende as células
+// perto das crises visíveis na tela.
+// Fluidez: a grade fica presa ao mundo (múltiplos de LADO em pixels do mapa), então arrastar não faz as células pularem.
+// Durante o zoom o canvas acompanha o mapa por transformação CSS, como as camadas do Leaflet; no fim, o quadro novo
+// cresce por baixo do antigo, que esmaece. Animação (como na referência): as células crescem ao entrar e uma onda
+// sai de cada crise, do centro para a borda.
 const tela = $("pixels");
+const fantasma = document.createElement("canvas");   // o quadro anterior, que esmaece depois do zoom
+fantasma.setAttribute("aria-hidden", "true");
+fantasma.style.cssText = "position:absolute;left:0;top:0;pointer-events:none;opacity:0";
 const ctx2d = tela.getContext("2d");
-let PIX = null;          // { grade, foco, k, focos }
+const REDUZIR = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let PIX = null;          // { grade, foco, k, focos, gx0, gy0, fundo, acesas, inicio, entradaFundo, centro, zoom, pos }
 let MASCARA = null;      // { w, h, lon0, lat1, passo, dados }
+let pairando = -1;       // foco sob o mouse: as células dele ficam cheias
 
 function montarMascara() {
   const passo = 0.04;  // graus (~4 km)
@@ -269,14 +281,22 @@ function montarMascara() {
   MASCARA = { w, h, lon0: x0, lat1: y1, passo, dados };
 }
 
-function limparPixels() { ctx2d.clearRect(0, 0, tela.width, tela.height); PIX = null; }
+function limparPixels() {
+  pararLaco();
+  ctx2d.clearRect(0, 0, tela.width, tela.height);
+  fantasma.style.opacity = "0";
+  PIX = null; pairando = -1;
+}
 
+// Grade alinhada ao mundo: a primeira coluna começa no múltiplo de LADO logo à esquerda da tela.
 function gradeNaTela(t) {
   if (!MASCARA) montarMascara();
-  const cols = Math.ceil(t.x / LADO), lins = Math.ceil(t.y / LADO);
+  const min = mapa.getPixelBounds().min;
+  const gx0 = -(((min.x % LADO) + LADO) % LADO), gy0 = -(((min.y % LADO) + LADO) % LADO);
+  const cols = Math.ceil((t.x - gx0) / LADO), lins = Math.ceil((t.y - gy0) / LADO);
   const colX = new Int32Array(cols), linY = new Int32Array(lins);
-  for (let i = 0; i < cols; i++) colX[i] = Math.floor((mapa.containerPointToLatLng([i * LADO + LADO / 2, 0]).lng - MASCARA.lon0) / MASCARA.passo);
-  for (let j = 0; j < lins; j++) linY[j] = Math.floor((MASCARA.lat1 - mapa.containerPointToLatLng([0, j * LADO + LADO / 2]).lat) / MASCARA.passo);
+  for (let i = 0; i < cols; i++) colX[i] = Math.floor((mapa.containerPointToLatLng([gx0 + i * LADO + LADO / 2, 0]).lng - MASCARA.lon0) / MASCARA.passo);
+  for (let j = 0; j < lins; j++) linY[j] = Math.floor((MASCARA.lat1 - mapa.containerPointToLatLng([0, gy0 + j * LADO + LADO / 2]).lat) / MASCARA.passo);
   const dentro = new Uint8Array(cols * lins);
   for (let j = 0; j < lins; j++) {
     const y = linY[j];
@@ -286,7 +306,7 @@ function gradeNaTela(t) {
       if (x >= 0 && x < MASCARA.w) dentro[j * cols + i] = MASCARA.dados[y * MASCARA.w + x];
     }
   }
-  return { cols, lins, lado: LADO, dentro };
+  return { grade: { cols, lins, lado: LADO, dentro }, gx0, gy0 };
 }
 
 function kmPorPx() {
@@ -295,15 +315,19 @@ function kmPorPx() {
   return a.distanceTo(b) / 1000 / 100;
 }
 
-function desenharPixels() {
+// fase da onda de cada crise: estável (pelo id), para as ondas não pulsarem todas juntas
+const faseDe = (id) => { let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return (h % 1000) / 1000; };
+
+// entrada: "tudo" (abriu o modo), "rapida" (zoom ou filtros: cresce do centro de cada crise) ou "nada" (só arrastou)
+function desenharPixels(entrada = "rapida") {
   const t = mapa.getSize();
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  if (entrada === "rapida" && PIX && !REDUZIR) guardarFantasma();
   tela.width = Math.round(t.x * dpr); tela.height = Math.round(t.y * dpr);
   tela.style.width = t.x + "px"; tela.style.height = t.y + "px";
-  L.DomUtil.setPosition(tela, mapa.containerPointToLayerPoint([0, 0]));
-  ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx2d.clearRect(0, 0, t.x, t.y);
-  const grade = gradeNaTela(t);
+  const pos = mapa.containerPointToLayerPoint([0, 0]);
+  L.DomUtil.setPosition(tela, pos);
+  const { grade, gx0, gy0 } = gradeNaTela(t);
   const escala = kmPorPx();
   const focos = [];
   for (const c of VISIVEIS) {
@@ -311,58 +335,127 @@ function desenharPixels() {
     const p = mapa.latLngToContainerPoint([c.lat, c.lon]);
     const r = Math.min(raioKm(c.severity) / escala, LADO * (2.5 + 1.5 * nivel(c.severity)));
     if (p.x + r < 0 || p.y + r < 0 || p.x - r > t.x || p.y - r > t.y) continue;  // fora da tela
-    focos.push({ id: c.id, sev: c.severity, grupo: grupoDe(c.crisis_type), x: p.x, y: p.y, r });
+    focos.push({ id: c.id, sev: c.severity, grupo: grupoDe(c.crisis_type), x: p.x - gx0, y: p.y - gy0, r, fase: faseDe(c.id) });
   }
   const { foco, k } = acender(grade, focos);
-  PIX = { grade, foco, k, focos };
-  // um caminho para as células apagadas e um por (tipo, faixa de intensidade) para as acesas
-  const caminhos = new Map();
-  const apagadas = new Path2D();
-  const { cols, lins } = grade, base = LADO * 0.3;
+  // células apagadas: desenhadas uma vez num canvas de fundo; as acesas são pintadas a cada quadro (animação)
+  const fundo = document.createElement("canvas");
+  fundo.width = tela.width; fundo.height = tela.height;
+  const f = fundo.getContext("2d");
+  f.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const apagadas = new Path2D(), base = LADO * 0.3, acesas = [];
+  const { cols, lins } = grade, meio = { x: t.x / 2, y: t.y / 2 }, diag = Math.hypot(t.x, t.y);
   for (let j = 0; j < lins; j++) for (let i = 0; i < cols; i++) {
     const idx = j * cols + i;
     if (!grade.dentro[idx]) continue;
-    const cx = i * LADO + LADO / 2, cy = j * LADO + LADO / 2;
-    const f = foco[idx];
-    if (f < 0) { apagadas.rect(cx - base / 2, cy - base / 2, base, base); continue; }
-    const faixa = Math.min(3, Math.floor(k[idx] * 4));          // 0–3
-    const chave = focos[f].grupo + faixa;
-    let c = caminhos.get(chave);
-    if (!c) caminhos.set(chave, (c = { grupo: focos[f].grupo, faixa, p: new Path2D() }));
-    const tam = LADO * (0.62 + 0.11 * faixa);                    // acesas quase cheias: o mapa ganha cor
-    c.p.rect(cx - tam / 2, cy - tam / 2, tam, tam);
+    const cx = gx0 + i * LADO + LADO / 2, cy = gy0 + j * LADO + LADO / 2;
+    if (foco[idx] < 0) { apagadas.rect(cx - base / 2, cy - base / 2, base, base); continue; }
+    const kk = k[idx];
+    // do centro de cada crise para a borda; na abertura do modo, também da área central para fora (como a referência)
+    const atraso = entrada === "nada" || REDUZIR ? -1e9
+      : entrada === "tudo" ? (Math.hypot(cx - meio.x, cy - meio.y) / diag) * 900 + (1 - kk) * 350 + Math.random() * 220
+      : (1 - kk) * 260;
+    acesas.push({ x: cx, y: cy, f: foco[idx], k: kk, atraso });
   }
-  ctx2d.fillStyle = CORES.pixel;
-  ctx2d.fill(apagadas);
-  for (const c of caminhos.values()) {
-    ctx2d.globalAlpha = 0.55 + 0.15 * c.faixa;
-    ctx2d.fillStyle = CORES.tipo[c.grupo];
-    ctx2d.fill(c.p);
-  }
-  ctx2d.globalAlpha = 1;
-  tela.style.visibility = "";
+  f.fillStyle = CORES.pixel;
+  f.fill(apagadas);
+  acesas.sort((a, b) => (focos[a.f].grupo < focos[b.f].grupo ? -1 : focos[a.f].grupo > focos[b.f].grupo ? 1 : 0));  // menos trocas de cor
+  PIX = { grade, foco, k, focos, gx0, gy0, fundo, acesas, dpr, inicio: performance.now(),
+    entradaFundo: entrada === "tudo" && !REDUZIR, centro: mapa.getCenter(), zoom: mapa.getZoom(), pos };
+  pintar(performance.now());
+  if (!REDUZIR) iniciarLaco();
 }
 
-// Redesenho em no máximo um quadro; durante o zoom animado os pixels somem (não escalam com o mapa).
+function pintar(agora) {
+  const { dpr, fundo, acesas, focos } = PIX;
+  const t = agora - PIX.inicio;
+  ctx2d.setTransform(1, 0, 0, 1, 0, 0);
+  ctx2d.clearRect(0, 0, tela.width, tela.height);
+  ctx2d.globalAlpha = PIX.entradaFundo ? Math.min(1, t / 600) : 1;
+  ctx2d.drawImage(fundo, 0, 0);
+  ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+  let cor = "";
+  for (const c of acesas) {
+    let e = 1;
+    if (!REDUZIR) {
+      e = Math.min(1, Math.max(0, (t - c.atraso) / 420));
+      if (e === 0) continue;
+      e = 1 - Math.pow(1 - e, 3);
+    }
+    const F = focos[c.f];
+    // onda: um anel sai do centro da crise (1 - k = 0) até a borda (1) a cada ~2,6 s
+    const fase = REDUZIR ? -1 : (agora / 2600 + F.fase) % 1;
+    const onda = REDUZIR ? 0 : Math.exp(-((((1 - c.k) - fase) / 0.13) ** 2));
+    const cheio = c.f === pairando;
+    const tam = cheio ? LADO - 1 : LADO * (0.52 + 0.24 * c.k + 0.22 * onda) * e;
+    if (CORES.tipo[F.grupo] !== cor) { cor = CORES.tipo[F.grupo]; ctx2d.fillStyle = cor; }
+    ctx2d.globalAlpha = cheio ? 1 : Math.min(1, 0.5 + 0.3 * c.k + 0.25 * onda);
+    ctx2d.fillRect(c.x - tam / 2, c.y - tam / 2, tam, tam);
+  }
+  ctx2d.globalAlpha = 1;
+}
+
+// laço de animação: só roda no modo Pixels, e o navegador o pausa sozinho com a aba escondida
+let laco = 0;
+function animar(agora) {
+  laco = 0;
+  if (estado.modo !== "pixels" || !PIX) return;
+  pintar(agora);
+  laco = requestAnimationFrame(animar);
+}
+function iniciarLaco() { if (!laco) laco = requestAnimationFrame(animar); }
+function pararLaco() { if (laco) cancelAnimationFrame(laco); laco = 0; }
+
+// O quadro atual vira o fantasma: fica onde está (com a escala do zoom) e esmaece enquanto o novo cresce.
+function guardarFantasma() {
+  fantasma.width = tela.width; fantasma.height = tela.height;
+  fantasma.style.width = tela.style.width; fantasma.style.height = tela.style.height;
+  fantasma.getContext("2d").drawImage(tela, 0, 0);
+  fantasma.style.transform = tela.style.transform;
+  fantasma.style.transition = "none";
+  fantasma.style.opacity = "1";
+  void fantasma.offsetWidth;  // aplica a opacidade antes da transição
+  fantasma.style.transition = "opacity .35s ease-out";
+  fantasma.style.opacity = "0";
+}
+
+// Acompanha o zoom como o L.Renderer do Leaflet: escala e desloca o quadro já desenhado (sem redesenhar).
+function transformar(centro, zoom) {
+  if (!PIX || estado.modo !== "pixels") return;
+  const escala = mapa.getZoomScale(zoom, PIX.zoom);
+  const meio = mapa.getSize().multiplyBy(0.5);
+  const desloc = mapa.project(centro, zoom).subtract(mapa.project(PIX.centro, zoom));
+  L.DomUtil.setTransform(tela, meio.multiplyBy(-escala).add(PIX.pos).add(meio).subtract(desloc), escala);
+  fantasma.style.transition = "none";
+  fantasma.style.opacity = "0";
+}
+
+// Redesenho no fim do movimento, em no máximo um quadro. Só arrastar: sem entrada (a grade é a mesma).
 let pedido = 0;
 function pedirPixels() {
   if (estado.modo !== "pixels" || pedido) return;
-  pedido = requestAnimationFrame(() => { pedido = 0; desenharPixels(); });
+  pedido = requestAnimationFrame(() => {
+    pedido = 0;
+    desenharPixels(PIX && PIX.zoom === mapa.getZoom() ? "nada" : "rapida");
+  });
 }
 
 function criseNoPixel(e) {
   if (estado.modo !== "pixels" || !PIX) return null;
   const { cols, lins, lado } = PIX.grade;
-  const i = Math.floor(e.containerPoint.x / lado), j = Math.floor(e.containerPoint.y / lado);
+  const i = Math.floor((e.containerPoint.x - PIX.gx0) / lado), j = Math.floor((e.containerPoint.y - PIX.gy0) / lado);
   if (i < 0 || j < 0 || i >= cols || j >= lins) return null;
   const f = PIX.foco[j * cols + i];
-  return f < 0 ? null : PIX.focos[f];
+  return f < 0 ? null : { ...PIX.focos[f], indice: f };
 }
 function pairarPixel(e) {
   const a = criseNoPixel(e);
   mapa.getContainer().style.cursor = a ? "pointer" : "";
   if (a) mapa.getContainer().title = POR_ID.get(a.id)?.title || "";
   else mapa.getContainer().removeAttribute("title");
+  const antes = pairando;
+  pairando = a ? a.indice : -1;
+  if (REDUZIR && PIX && antes !== pairando) pintar(performance.now());
 }
 function clicarPixel(e) {
   const a = criseNoPixel(e);
