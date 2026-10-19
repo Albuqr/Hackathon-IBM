@@ -93,8 +93,26 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
 
     # ── matching e notificações (FR-032, FR-035) ─────────────────────
     @r.get("/crises/{crisis_id}/matching")
-    def ver_matching(crisis_id: str, limite: int = 20, u: dict = Depends(ong_ou_admin)):
-        return assistentes.matching(cfg, crisis_id, limite)
+    def ver_matching(crisis_id: str, limite: int = 20, habilidades: str = "", u: dict = Depends(ong_ou_admin)):
+        """`habilidades` (separadas por vírgula) troca as do tipo da crise pelas do plano da campanha."""
+        habs = [h.strip() for h in habilidades.split(",") if h.strip()]
+        return assistentes.matching(cfg, crisis_id, min(limite, 100), habilidades=habs or None)
+
+    @r.get("/crises/{crisis_id}/plano")
+    def plano(crisis_id: str, u: dict = Depends(ong_ou_admin)):
+        """Plano sugerido (regras do assistente) e quem já atua na crise, para o popup e a nova campanha."""
+        p = assistentes.plano_campanha(cfg, crisis_id)
+        if not p:
+            raise HTTPException(404, "Crise não encontrada")
+        conn = db.conectar(cfg)
+        try:
+            ativas = conn.execute("SELECT id, title, org_id FROM campaigns WHERE crisis_id=? AND status='active'", (crisis_id,)).fetchall()
+            assoc = ingestao.associados(conn, crisis_id)
+        finally:
+            conn.close()
+        minha = next(({"id": c["id"], "title": c["title"]} for c in ativas if c["org_id"] == u["id"]), None)
+        return p | {"campanhas_ativas": len(ativas), "minha_campanha": minha,
+                    "voluntarios_na_crise": assoc["voluntarios"], "ongs_na_crise": assoc["ongs"]}
 
     @r.post("/crises/{crisis_id}/notificar")
     def notificar(crisis_id: str, n: Notificar, u: dict = Depends(ong_ou_admin)):
@@ -114,7 +132,7 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
 
     # ── otimização e previsões (FR-033, FR-034) ──────────────────────
     @r.get("/distribuicao")
-    def distribuicao(u: dict = Depends(admin)):
+    def distribuicao(u: dict = Depends(ong_ou_admin)):  # a ONG usa as lacunas no filtro "onde falta gente"
         return assistentes.distribuicao(cfg)
 
     @r.get("/previsoes")
