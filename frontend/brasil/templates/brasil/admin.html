@@ -1,7 +1,7 @@
 {% extends "brasil/base.html" %}
 {% block titulo %}Admin · Crisis Monitor Brasil{% endblock %}
-{% block corpo %}
-<div class="pagina">
+{% block principal %}
+<div class="rolagem"><div class="pagina">
   <div class="pagina-cabeca"><h1>Admin</h1>
     <p>Ingestão de dados, crises de notícia, distribuição de voluntários e fila de notificações.</p></div>
 
@@ -31,71 +31,59 @@
     <p class="item-meta" style="margin-bottom:10px">Com BRASIL_NOTIFICACOES=fila, nenhuma mensagem sai: elas ficam aqui até o Telegram voltar.</p>
     <div class="tabela-caixa"><table class="tabela"><thead><tr><th>Quando</th><th>Canal</th><th>Voluntário</th><th>Crise</th></tr></thead><tbody id="fila"></tbody></table></div>
   </div>
-</div>
+</div></div>
 {% endblock %}
 {% block scripts %}
-<script>
-const fmt = (s) => s ? new Date(s).toLocaleString("pt-BR") : "—";
+<script type="module">
+import { el as mk, acao, avisar, data as fmt, selSev, rotulo, TIPOS, FONTES, atualizarStatusColeta } from "{{ url_for('brasil.static', filename='cliente.js') }}";
 async function carregar() {
-  const r = await fetch("{{ url_for('brasil.api_ingestao_status') }}"), linhas = r.ok ? await r.json() : [];
+  const { ok, dados } = await acao("status_coleta"), linhas = ok ? dados : [];
   const tb = document.getElementById("status");
-  tb.replaceChildren(...linhas.map((s) => {
-    const tr = document.createElement("tr");
-    for (const [t, cls] of [[s.fonte.toUpperCase()], [fmt(s.tentativa_em)], [s.ok ? "ok" : "falha: " + (s.erro || "").slice(0, 160), s.ok ? "ok" : "erro"], [s.eventos, "num"], [fmt(s.ultimo_ok_em)]]) {
-      const td = document.createElement("td"); td.textContent = t; if (cls) td.className = cls; tr.append(td);
-    }
-    return tr;
-  }));
-  if (!linhas.length) tb.innerHTML = '<tr><td colspan="5">Nenhuma coleta ainda. Clique em "Atualizar dados".</td></tr>';
+  tb.replaceChildren(...linhas.map((s) => mk("tr", {}, [
+    mk("td", { texto: rotulo(FONTES, s.fonte) }), mk("td", { texto: fmt(s.tentativa_em) }),
+    mk("td", { class: s.ok ? "ok" : "erro", texto: s.ok ? "ok" : "falha: " + (s.erro || "").slice(0, 160) }),
+    mk("td", { class: "num", texto: String(s.eventos ?? 0) }), mk("td", { texto: fmt(s.ultimo_ok_em) })])));
+  if (!linhas.length) tb.replaceChildren(mk("tr", {}, [mk("td", { colspan: "5", texto: 'Nenhuma coleta ainda. Clique em "Atualizar dados".' })]));
 }
 document.getElementById("atualizar").addEventListener("click", async (e) => {
   const b = e.currentTarget, msg = document.getElementById("msg");
-  b.disabled = true; msg.hidden = false; msg.className = "aviso ok"; msg.textContent = "Coletando… pode levar até 2 minutos.";
-  const r = await fetch("{{ url_for('brasil.api_ingestao') }}", { method: "POST" }), d = await r.json();
-  msg.className = r.ok ? "aviso ok" : "aviso";
-  msg.textContent = r.ok ? `Pronto: ${d.gravadas} crises gravadas em ${d.segundos}s (orquestrador: ${d.provedor}${d.avisos?.length ? " — " + d.avisos.join("; ") : ""}).` : (d.detail || "Falha na ingestão");
-  b.disabled = false; carregar();
+  b.disabled = true; avisar(msg, "Coletando… pode levar até 2 minutos.", true);
+  const r = await acao("atualizar_dados");
+  b.disabled = false;
+  avisar(msg, r.ok ? `Pronto: ${r.dados.gravadas} crises gravadas em ${r.dados.segundos}s (orquestrador: ${r.dados.provedor}${r.dados.avisos?.length ? " — " + r.dados.avisos.join("; ") : ""}).` : r.erro, r.ok);
+  carregar(); atualizarStatusColeta(); naoVerificadas();
 });
-carregar();
-
-const mk = (tag, attrs = {}, filhos = []) => { const n = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) k === "texto" ? (n.textContent = v) : k.startsWith("on") ? n.addEventListener(k.slice(2), v) : n.setAttribute(k, v);
-  n.append(...filhos); return n; };
 async function naoVerificadas() {
-  const r = await fetch("{{ url_for('brasil.api_admin', parte='nao-verificadas') }}"), lista = r.ok ? await r.json() : [];
+  const r = await acao("nao_verificadas"), lista = r.ok ? r.dados : [];
   const ul = document.getElementById("nao-verificadas");
-  const decidir = async (id, acao) => {
-    await fetch("{{ url_for('brasil.api_verificacao', crisis_id='__ID__') }}".replace("__ID__", encodeURIComponent(id)),
-      { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao }) });
-    naoVerificadas();
-  };
+  const decidir = async (id, acaoNome) => { await acao("verificar", { p: { crisis_id: id }, corpo: { acao: acaoNome } }); naoVerificadas(); };
   ul.replaceChildren(...lista.map((c) => mk("li", {}, [
-    mk("div", { class: "item-topo" }, [mk("span", { class: "item-titulo", texto: c.title }), mk("span", { class: "selo selo-nv", texto: "não verificada" })]),
-    mk("span", { class: "item-meta", texto: `${c.uf || ""} · ${c.crisis_type} · severidade ${c.severity} · expira ${fmt(c.expira_em)}` }),
-    mk("a", { class: "item-meta", href: c.link_fonte, target: "_blank", rel: "noopener", texto: "ler a notícia ↗" }),
+    mk("div", { class: "item-topo" }, [mk("span", { class: "item-titulo" }, [selSev(c.severity), c.title]), mk("span", { class: "selo selo-nv", texto: "não verificada" })]),
+    mk("span", { class: "item-meta", texto: `${c.uf || ""} · ${rotulo(TIPOS, c.crisis_type)} · expira ${fmt(c.expira_em)}` }),
+    c.link_fonte ? mk("a", { class: "item-meta", href: c.link_fonte, target: "_blank", rel: "noopener", texto: "ler a notícia ↗" }) : null,
     mk("div", { class: "acoes" }, [mk("button", { type: "button", class: "botao botao-primario botao-pequeno", texto: "Confirmar", onclick: () => decidir(c.id, "confirmar") }),
                                     mk("button", { type: "button", class: "botao botao-neutro botao-pequeno", texto: "Descartar", onclick: () => decidir(c.id, "descartar") })]),
   ])));
-  if (!lista.length) ul.replaceChildren(mk("li", { class: "vazio", texto: "Nenhuma crise de notícia esperando decisão." }));
+  if (!lista.length) ul.replaceChildren(mk("li", { class: "vazio", texto: r.ok ? "Nenhuma crise de notícia esperando decisão." : r.erro }));
 }
 async function distribuicao() {
-  const r = await fetch("{{ url_for('brasil.api_admin', parte='distribuicao') }}"), d = r.ok ? await r.json() : null, box = document.getElementById("distribuicao");
-  if (!d) return box.append(mk("p", { class: "vazio", texto: "Não foi possível calcular." }));
-  const lista = (titulo, itens, f) => [mk("p", { class: "item-titulo", style: "margin-top:14px", texto: titulo }),
+  const r = await acao("distribuicao"), d = r.ok ? r.dados : null, box = document.getElementById("distribuicao");
+  if (!d) return box.append(mk("p", { class: "vazio", texto: r.erro }));
+  const lista = (titulo, itens, f) => [mk("p", { class: "item-titulo", style: "margin-top:12px", texto: titulo }),
     itens.length ? mk("ul", { class: "lista" }, itens.slice(0, 10).map((x) => mk("li", { class: "item-meta", texto: f(x) }))) : mk("p", { class: "vazio", texto: "nenhuma" })];
   box.replaceChildren(mk("p", { class: "cartao-titulo", texto: "Distribuição de voluntários" }),
-    mk("div", { class: "ficha-numero" }, [mk("b", { texto: Math.round(d.cobertura * 100) + "%" }), mk("span", { texto: "das crises ativas têm alguém" })]),
+    mk("div", { class: "kpi" }, [mk("b", { texto: Math.round(d.cobertura * 100) + "%" }), mk("span", { texto: "das crises ativas têm alguém" })]),
     ...lista("Sugestões de realocação", d.sugestoes, (s) => `${s.texto} (${s.distancia_km} km)`),
     ...lista("Lacunas", d.lacunas, (l) => `${l.title} — severidade ${l.severity}, ${l.voluntarios}/${l.meta} voluntários`),
     ...lista("Redundâncias", d.redundancias, (x) => `${x.title} — ${x.voluntarios} para meta ${x.meta}`));
 }
 async function fila() {
-  const r = await fetch("{{ url_for('brasil.api_admin', parte='notificacoes') }}"), linhas = r.ok ? await r.json() : [];
+  const r = await acao("notificacoes"), linhas = r.ok ? r.dados : [];
   const tb = document.getElementById("fila");
   tb.replaceChildren(...linhas.map((n) => mk("tr", {}, [mk("td", { texto: fmt(n.criada_em) }), mk("td", { texto: n.canal }),
-    mk("td", { texto: n.nome || n.user_id }), mk("td", { texto: n.crisis_id })])));
+    mk("td", { texto: n.nome || String(n.user_id) }), mk("td", { texto: n.crisis_id })])));
   if (!linhas.length) tb.replaceChildren(mk("tr", {}, [mk("td", { colspan: "4", texto: "Fila vazia." })]));
 }
-naoVerificadas(); distribuicao(); fila();
+carregar(); naoVerificadas(); distribuicao(); fila();
 </script>
 {% endblock %}

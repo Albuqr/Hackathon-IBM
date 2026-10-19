@@ -1,31 +1,37 @@
 {% extends "brasil/base.html" %}
 {% block titulo %}Minhas campanhas · Crisis Monitor Brasil{% endblock %}
-{% block corpo %}
-<div class="pagina">
+{% block principal %}
+<div class="rolagem"><div class="pagina">
   <div class="pagina-cabeca"><h1>Minhas campanhas</h1>
     <p>Convites de ONGs para campanhas em crises brasileiras. Aceite ou recuse cada um.</p></div>
-  <div class="cartao">
-    <p class="aviso" id="msg" role="status" hidden></p>
-    {% if campanhas %}<ul class="lista">{% for c in campanhas %}
-      <li><div class="item-topo"><span class="item-titulo">{{ c.title }}</span>
-          <span class="selo status {{ c.status }}">{{ {'selected': 'convite pendente', 'confirmed': 'confirmado', 'declined': 'recusado'}[c.status] }}</span></div>
-        <span class="item-meta">{{ c.org_name }} · {{ c.crisis_title }}{{ ' · ' ~ c.crisis_uf if c.crisis_uf else '' }} · urgência {{ c.urgency }}</span>
-        {% if c.description %}<span class="item-meta">{{ c.description }}</span>{% endif %}
-        {% if c.status == 'selected' %}<div class="acoes">
-          <button class="botao botao-primario botao-pequeno" type="button" data-cv="{{ c.cv_id }}" data-status="confirmed">Aceitar</button>
-          <button class="botao botao-neutro botao-pequeno" type="button" data-cv="{{ c.cv_id }}" data-status="declined">Recusar</button></div>{% endif %}
-      </li>{% endfor %}</ul>
-    {% else %}<p class="vazio">Nenhum convite ainda. Quando uma ONG selecionar você, ele aparece aqui.</p>{% endif %}
-  </div>
-</div>
+  <p class="aviso" id="msg" role="status" hidden></p>
+  <div class="cartao"><ul class="lista" id="lista"><li class="vazio">Carregando…</li></ul></div>
+</div></div>
 {% endblock %}
 {% block scripts %}
-<script>
-document.querySelectorAll("button[data-cv]").forEach((b) => b.addEventListener("click", async () => {
-  const url = "{{ url_for('brasil.api_convite', cv_id=0) }}".replace(/0$/, b.dataset.cv);
-  const r = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: b.dataset.status }) });
-  if (r.ok) return location.reload();
-  const m = document.getElementById("msg"); m.hidden = false; m.textContent = "Não foi possível responder ao convite.";
-}));
+<script type="module">
+import { el, acao, avisar, selSev, rotulo, CONVITE, URGENCIA } from "{{ url_for('brasil.static', filename='cliente.js') }}";
+const lista = document.getElementById("lista"), msg = document.getElementById("msg");
+async function carregar() {
+  const r = await acao("meus_convites");
+  if (!r.ok) return avisar(msg, r.erro);
+  const pend = r.dados.filter((c) => c.status === "selected").length, badge = document.getElementById("badge-convites");
+  if (badge) { badge.textContent = String(pend); badge.hidden = pend === 0; }
+  lista.replaceChildren(...(r.dados.length ? r.dados.map((c) => el("li", {}, [
+    el("div", { class: "item-topo" }, [el("span", { class: "item-titulo" }, [c.crisis_severity ? selSev(c.crisis_severity) : null, c.title]),
+      el("span", { class: `selo ${c.status}`, texto: rotulo(CONVITE, c.status) })]),
+    el("span", { class: "item-meta", texto: `${c.org_name || "ONG"} · ${c.crisis_title || ""}${c.crisis_uf ? " · " + c.crisis_uf : ""} · urgência ${rotulo(URGENCIA, c.urgency)}` }),
+    c.description ? el("span", { class: "vazio", texto: c.description }) : null,
+    c.status === "selected" ? el("div", { class: "acoes" }, [
+      el("button", { type: "button", class: "botao botao-primario botao-pequeno", texto: "Aceitar", onclick: () => responder(c.cv_id, "confirmed") }),
+      el("button", { type: "button", class: "botao botao-neutro botao-pequeno", texto: "Recusar", onclick: () => responder(c.cv_id, "declined") })]) : null,
+  ])) : [el("li", { class: "vazio", texto: "Nenhum convite ainda. Quando uma ONG te chamar, ele aparece aqui." })]));
+}
+async function responder(cv_id, status) {
+  const r = await acao("responder_convite", { p: { cv_id }, corpo: { status } });
+  avisar(msg, r.ok ? (status === "confirmed" ? "Convite aceito." : "Convite recusado.") : r.erro, r.ok);
+  carregar();
+}
+carregar();
 </script>
 {% endblock %}

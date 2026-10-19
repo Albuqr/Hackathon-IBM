@@ -120,3 +120,24 @@ def test_chat_antigo_redireciona(front, logar):
     cli, _ = front
     logar(cli, "volunteer")
     assert cli.get("/brasil/chat").headers["Location"].endswith("/brasil/perfil")
+
+
+@pytest.mark.parametrize("papel,url", [
+    ("volunteer", "/brasil/mapa"), ("volunteer", "/brasil/perfil"), ("volunteer", "/brasil/campanhas"),
+    ("org", "/brasil/mapa"), ("org", "/brasil/ong"), ("org", "/brasil/ong/nova"), ("org", "/brasil/ong/campanhas/5"),
+    ("admin", "/brasil/mapa"), ("admin", "/brasil/admin"), ("admin", "/brasil/previsoes"),
+])
+def test_ac_014_1_paginas_renderizam_no_shell_com_o_menu_do_perfil(front, logar, papel, url):
+    cli, api = front
+    logar(cli, papel, uid=3)
+    api.respostas[("GET", "/usuarios/3")] = (200, {"id": 3, "name": "Ana", "skills": ["resgate"], "lat": -30, "lon": -51, "radius_km": 100, "available": 1, "link_code": "AB12-CD34"})
+    api.respostas[("GET", "/ong/3/painel")] = (200, {"campanhas": [], "habilidades": {}, "voluntarios_disponiveis": 4})
+    api.respostas[("GET", "/campanhas/5")] = (200, {"id": 5, "org_id": 3, "title": "Apoio", "status": "active", "crisis_id": "c1", "skills_needed": [],
+                                                    "target_volunteers": 10, "selecionados": 0, "confirmados": 0, "urgency": "media"})
+    api.respostas[("GET", "/previsoes")] = (200, {"dados": [], "texto": "", "avisos": [], "provedor": "local"})
+    html = cli.get(url).get_data(as_text=True)
+    assert 'class="app' in html and "statusbar" in html and "cliente.js" in html
+    assert ("Minhas Campanhas" in html) == (papel == "volunteer")
+    assert ("+ Campanha" in html) == (papel == "org")
+    assert ('href="/brasil/admin"' in html) == (papel == "admin")
+    assert ('id="lateral"' in html) == url.endswith("/mapa")  # só o mapa tem barra lateral

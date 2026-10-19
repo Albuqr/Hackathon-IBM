@@ -193,14 +193,17 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
             conn.close()
 
     @r.get("/voluntarios/disponiveis")
-    def disponiveis(crisis_id: str | None = None, raio_km: float = 1000, u: dict = Depends(ong_ou_admin)):
-        """Voluntários disponíveis no Brasil; com crise, filtra pelo raio e ordena por distância."""
+    def disponiveis(crisis_id: str | None = None, raio_km: float = 1000, incluir_indisponiveis: bool = False,
+                    u: dict = Depends(ong_ou_admin)):
+        """Voluntários no Brasil (só os disponíveis, salvo incluir_indisponiveis); com crise, filtra pelo raio
+        e ordena por distância."""
         conn = conectar()
         try:
             alvo = conn.execute("SELECT lat, lon FROM crises WHERE id=?", (crisis_id,)).fetchone() if crisis_id else None
             out = []
-            for u in conn.execute("SELECT id, name, email, skills, lat, lon, radius_km FROM users "
-                                  "WHERE role='volunteer' AND available=1 AND lat!=0 AND lon!=0"):
+            filtro = "" if incluir_indisponiveis else " AND available=1"
+            for u in conn.execute("SELECT id, name, email, skills, lat, lon, radius_km, available FROM users "
+                                  "WHERE role='volunteer' AND lat!=0 AND lon!=0" + filtro):
                 d = dict(u) | {"skills": json.loads(u["skills"] or "[]"), "distancia_km": None}
                 if alvo:
                     d["distancia_km"] = round(_haversine_km(alvo["lat"], alvo["lon"], u["lat"], u["lon"]), 1)

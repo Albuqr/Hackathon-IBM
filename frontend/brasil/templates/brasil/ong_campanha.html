@@ -1,68 +1,177 @@
 {% extends "brasil/base.html" %}
 {% block titulo %}{{ c.title }} · Crisis Monitor Brasil{% endblock %}
-{% block corpo %}
-<div class="pagina">
+{% block principal %}
+<div class="rolagem"><div class="pagina">
   <div class="pagina-cabeca"><h1>{{ c.title }}</h1>
-    <p>{{ c.crisis_title }}{{ ' · ' ~ c.crisis_uf if c.crisis_uf else '' }} · urgência {{ c.urgency }} · {{ c.selecionados }}/{{ c.target_volunteers }} voluntários ({{ c.confirmados }} confirmados)</p></div>
+    <p><span class="selo {{ c.status }}">{{ 'Ativa' if c.status == 'active' else 'Encerrada' }}</span>
+      {{ c.crisis_title }}{{ ' · ' ~ c.crisis_uf if c.crisis_uf else '' }} · <span id="resumo">{{ c.selecionados }}/{{ c.target_volunteers }} voluntários · {{ c.confirmados }} confirmados</span></p></div>
   <p class="aviso" id="msg" role="status" hidden></p>
-  <div class="grade-2">
-    <div class="cartao">
-      <p class="cartao-titulo">Na campanha</p>
-      {% if na_campanha %}<ul class="lista">{% for v in na_campanha %}
-        <li><div class="item-topo"><span class="item-titulo">{{ v.name }}</span><span class="selo status {{ v.status }}">{{ {'selected': 'convidado', 'confirmed': 'confirmado', 'declined': 'recusou'}[v.status] }}</span></div>
-          <span class="item-meta">{{ (v.skills or [])|join(', ') or 'sem habilidades informadas' }}</span>
-          <div class="acoes"><button class="botao botao-neutro botao-pequeno" type="button" data-acao="DELETE" data-vid="{{ v.volunteer_id }}">Remover</button></div></li>
-      {% endfor %}</ul>{% else %}<p class="vazio">Nenhum voluntário ainda.</p>{% endif %}
-      <div class="acoes" style="margin-top:16px">
-        {% if c.status == 'active' %}<button class="botao botao-neutro" type="button" id="encerrar">Encerrar campanha</button>
-        {% else %}<span class="selo status">campanha encerrada</span>{% endif %}
+  <div class="grade-lateral">
+    <div class="coluna">
+      <div class="cartao">
+        <p class="cartao-titulo">Crise e voluntários</p>
+        <div class="minimapa" id="minimapa" role="region" aria-label="Minimapa da crise e dos voluntários"></div>
+      </div>
+      <div class="cartao">
+        <p class="cartao-titulo">Na campanha</p>
+        <div class="tabela-caixa"><table class="tabela"><thead><tr><th>Nome</th><th>Habilidades</th><th>Distância</th><th>Situação</th><th></th></tr></thead>
+          <tbody id="na-campanha"></tbody></table></div>
+      </div>
+      <div class="cartao" id="editar">
+        <p class="cartao-titulo">Editar campanha</p>
+        <form class="form" id="form-editar">
+          <label>Título <input name="title" value="{{ c.title }}" minlength="3" maxlength="200"></label>
+          <label>Descrição <textarea name="description" rows="3">{{ c.description }}</textarea></label>
+          <label>Habilidades necessárias (separadas por vírgula) <input name="skills_needed" value="{{ (c.skills_needed or [])|join(', ') }}"></label>
+          <div class="linha">
+            <label>Meta de voluntários <input name="target_volunteers" type="number" min="1" value="{{ c.target_volunteers }}"></label>
+            <label>Urgência <select name="urgency">{% for v, n in [('baixa','Baixa'),('media','Média'),('alta','Alta'),('critica','Crítica')] %}<option value="{{ v }}" {{ 'selected' if c.urgency == v }}>{{ n }}</option>{% endfor %}</select></label>
+          </div>
+          <div class="linha">
+            <label>Início <input name="start_date" type="date" value="{{ c.start_date }}"></label>
+            <label>Fim <input name="end_date" type="date" value="{{ c.end_date }}"></label>
+          </div>
+          <div class="acoes"><button class="botao botao-primario" type="submit">Salvar</button>
+            {% if c.status == 'active' %}<button class="botao botao-perigo" type="button" id="encerrar">Encerrar campanha</button>{% endif %}</div>
+        </form>
       </div>
     </div>
-    <div class="cartao">
-      <p class="cartao-titulo">Voluntários disponíveis perto da crise (até 1.500 km)</p>
-      {% if disponiveis %}<ul class="lista">{% for v in disponiveis[:60] %}
-        <li><div class="item-topo"><span class="item-titulo">{{ v.name }}</span><span class="item-meta">{{ v.distancia_km|round|int if v.distancia_km is not none else '' }} km</span></div>
-          <span class="item-meta">{{ (v.skills or [])|join(', ') or 'sem habilidades informadas' }}</span>
-          {% if c.status == 'active' %}<div class="acoes"><button class="botao botao-secundario botao-pequeno" type="button" data-acao="POST" data-vid="{{ v.id }}">Adicionar</button></div>{% endif %}</li>
-      {% endfor %}</ul>{% else %}<p class="vazio">Nenhum voluntário disponível nesse raio.</p>{% endif %}
+    <div class="coluna">
+      <div class="cartao">
+        <p class="cartao-titulo">Voluntários para convidar</p>
+        <div class="form">
+          <div class="linha">
+            <label>Habilidade <input id="f-hab" placeholder="ex.: logística"></label>
+            <label>Nome <input id="f-nome" placeholder="nome"></label>
+          </div>
+          <div class="linha">
+            <label class="campo"><span class="campo-linha">Distância máxima <output id="f-dist-valor">1500 km</output></span>
+              <input type="range" id="f-dist" min="50" max="3000" step="50" value="1500"></label>
+            <label>Disponibilidade <select id="f-disp"><option value="sim">Só disponíveis</option><option value="">Todos</option></select></label>
+          </div>
+        </div>
+        <div class="tabela-caixa"><table class="tabela"><thead><tr><th>Nome</th><th>Habilidades</th><th>Distância</th><th></th></tr></thead>
+          <tbody id="disponiveis"></tbody></table></div>
+      </div>
+      <div class="cartao">
+        <p class="cartao-titulo">Matching e notificação</p>
+        <div class="acoes"><button class="botao botao-secundario botao-pequeno" type="button" id="ver-matching">Ver matching</button>
+          <button class="botao botao-neutro botao-pequeno" type="button" id="notificar">Notificar os 10 melhores</button></div>
+        <ul class="lista" id="matching" style="margin-top:10px"></ul>
+      </div>
+      <div class="cartao chat" id="chat" style="height:420px;min-height:0">
+        <p class="cartao-titulo">Assistente de planejamento</p>
+        <div class="chat-msgs" aria-live="polite"></div>
+        <form class="chat-form"><textarea aria-label="Mensagem" placeholder="Ex.: monte um plano para esta campanha"></textarea>
+          <button class="botao botao-primario" type="submit">Enviar</button></form>
+      </div>
     </div>
   </div>
-  <div class="cartao secao">
-    <p class="cartao-titulo">Matching para a crise (voluntários no Brasil, por compatibilidade)</p>
-    <div class="acoes">
-      <button class="botao botao-secundario botao-pequeno" type="button" id="ver-matching">Ver matching</button>
-      <button class="botao botao-neutro botao-pequeno" type="button" id="notificar">Notificar os 10 melhores</button>
-      <span class="item-meta" id="notif-msg"></span>
-    </div>
-    <ul class="lista" id="matching" style="margin-top:12px"></ul>
-  </div>
-</div>
+</div></div>
 {% endblock %}
 {% block scripts %}
-<script>
-const msg = document.getElementById("msg");
-const erro = async (r) => { const d = await r.json().catch(() => ({})); msg.hidden = false; msg.textContent = typeof d.detail === "string" ? d.detail : "Não foi possível."; };
-document.querySelectorAll("button[data-vid]").forEach((b) => b.addEventListener("click", async () => {
-  b.disabled = true;
-  const url = "{{ url_for('brasil.api_voluntario_campanha', cid=c.id, vid=0) }}".replace(/0$/, b.dataset.vid);
-  const r = await fetch(url, { method: b.dataset.acao });
-  r.ok ? location.reload() : (erro(r), b.disabled = false);
-}));
-document.getElementById("ver-matching").addEventListener("click", async () => {
-  const r = await fetch("{{ url_for('brasil.api_matching', crisis_id=c.crisis_id) }}"), lista = r.ok ? await r.json() : [];
-  const ul = document.getElementById("matching");
-  ul.replaceChildren(...lista.map((m) => { const li = document.createElement("li"); li.className = "item-meta";
-    li.textContent = `${m.name} — score ${m.score.toFixed(2)} · ${Math.round(m.distancia_km)} km`; return li; }));
-  if (!lista.length) ul.innerHTML = '<li class="vazio">Nenhum voluntário compatível no raio.</li>';
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="{{ url_for('brasil.malha_js') }}"></script>
+<script id="br-campanha" type="application/json">{{ c|tojson }}</script>
+<script type="module">
+import { el, acao, avisar, rotulo, CONVITE, montarChat, nivel } from "{{ url_for('brasil.static', filename='cliente.js') }}";
+const C = JSON.parse(document.getElementById("br-campanha").textContent);
+const $ = (id) => document.getElementById(id);
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const ativa = C.status === "active";
+let na = [], todos = [];
+
+// minimapa: crise + voluntários da campanha (FR-019)
+const mapa = L.map("minimapa", { zoomControl: true, attributionControl: false }).setView([C.crisis_lat || -15, C.crisis_lon || -50], 6);
+const ufs = window.MALHA ? L.geoJSON(window.MALHA.estados, { interactive: false,
+  style: () => ({ color: css("--uf"), weight: 1, fillColor: css("--mun"), fillOpacity: 1 }) }).addTo(mapa) : null;
+const camada = L.layerGroup().addTo(mapa);
+function desenharMapa() {
+  camada.clearLayers();
+  const pts = [];
+  if (C.crisis_lat != null) {
+    L.circleMarker([C.crisis_lat, C.crisis_lon], { radius: 10, fillColor: css(`--sev${nivel(C.crisis_severity)}`), fillOpacity: .9, color: css("--anel"), weight: 2 })
+      .bindTooltip(C.crisis_title || "Crise").addTo(camada);
+    pts.push([C.crisis_lat, C.crisis_lon]);
+  }
+  for (const v of na) if (v.lat != null) {
+    L.circleMarker([v.lat, v.lon], { radius: 5, fillColor: css("--verde"), fillOpacity: .9, color: css("--anel"), weight: 1 }).bindTooltip(v.name).addTo(camada);
+    pts.push([v.lat, v.lon]);
+  }
+  if (pts.length > 1) mapa.fitBounds(pts, { padding: [24, 24], maxZoom: 9 });
+}
+document.addEventListener("br:tema", () => { ufs?.setStyle({ color: css("--uf"), fillColor: css("--mun") }); desenharMapa(); });
+
+const km = (d) => (d == null ? "—" : `${Math.round(d)} km`);
+const linha = (cels) => el("tr", {}, cels.map((c) => el("td", typeof c === "string" ? { texto: c } : {}, typeof c === "string" ? [] : [c])));
+
+async function carregarNa() {
+  const r = await acao("voluntarios_campanha", { p: { cid: C.id } });
+  if (!r.ok) return avisar($("msg"), r.erro);
+  const dist = new Map(todos.map((v) => [v.id, v.distancia_km]));
+  na = r.dados.map((v) => ({ ...v, distancia_km: dist.get(v.volunteer_id) }));
+  $("na-campanha").replaceChildren(...(na.length ? na.map((v) => linha([v.name, (v.skills || []).join(", ") || "—", km(v.distancia_km),
+    el("span", { class: `selo ${v.status}`, texto: rotulo(CONVITE, v.status) }),
+    ativa ? el("button", { type: "button", class: "botao botao-neutro botao-pequeno", texto: "Remover", onclick: () => mexer("remover_voluntario", v.volunteer_id) }) : ""]))
+    : [el("tr", {}, [el("td", { colspan: "5", class: "vazio", texto: "Nenhum voluntário ainda." })])]));
+  const conf = na.filter((v) => v.status === "confirmed").length;
+  $("resumo").textContent = `${na.filter((v) => v.status !== "declined").length}/${C.target_volunteers} voluntários · ${conf} confirmados`;
+  desenharMapa();
+  filtrar();
+}
+async function carregarTodos() {
+  const r = await acao("voluntarios_disponiveis", { q: { crisis_id: C.crisis_id, raio_km: 5000, incluir_indisponiveis: true } });
+  todos = r.ok ? r.dados : [];
+}
+function filtrar() {
+  const hab = $("f-hab").value.trim().toLowerCase(), nome = $("f-nome").value.trim().toLowerCase();
+  const max = Number($("f-dist").value), soDisp = $("f-disp").value === "sim", ja = new Set(na.map((v) => v.volunteer_id));
+  const lista = todos.filter((v) => !ja.has(v.id) && (!soDisp || v.available) && (v.distancia_km == null || v.distancia_km <= max)
+    && (!hab || (v.skills || []).some((s) => s.toLowerCase().includes(hab))) && (!nome || (v.name || "").toLowerCase().includes(nome)));
+  $("disponiveis").replaceChildren(...(lista.length ? lista.slice(0, 80).map((v) => linha([
+    v.name + (v.available ? "" : " (indisponível)"), (v.skills || []).join(", ") || "—", km(v.distancia_km),
+    ativa ? el("button", { type: "button", class: "botao botao-secundario botao-pequeno", texto: "Convidar", onclick: () => mexer("adicionar_voluntario", v.id) }) : ""]))
+    : [el("tr", {}, [el("td", { colspan: "4", class: "vazio", texto: "Ninguém com esses filtros." })])]));
+}
+async function mexer(nome, vid) {
+  const r = nome === "adicionar_voluntario"
+    ? await acao(nome, { p: { cid: C.id }, corpo: { volunteer_id: vid } })
+    : await acao(nome, { p: { cid: C.id, vid } });
+  if (!r.ok) return avisar($("msg"), r.erro);
+  avisar($("msg"), nome === "adicionar_voluntario" ? "Convite enviado." : "Voluntário removido.", true);
+  carregarNa();
+}
+for (const id of ["f-hab", "f-nome"]) $(id).addEventListener("input", filtrar);
+$("f-disp").addEventListener("change", filtrar);
+$("f-dist").addEventListener("input", (e) => { $("f-dist-valor").textContent = `${e.target.value} km`; filtrar(); });
+
+$("form-editar").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  const r = await acao("editar_campanha", { p: { cid: C.id }, corpo: { ...f, target_volunteers: Number(f.target_volunteers),
+    skills_needed: f.skills_needed.split(",").map((s) => s.trim()).filter(Boolean) } });
+  avisar($("msg"), r.ok ? "Campanha salva." : r.erro, r.ok);
+  if (r.ok) document.querySelector(".pagina-cabeca h1").textContent = r.dados.title;
 });
-document.getElementById("notificar").addEventListener("click", async () => {
-  const r = await fetch("{{ url_for('brasil.api_notificar', crisis_id=c.crisis_id) }}", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ limite: 10 }) });
-  const d = await r.json(), m = document.getElementById("notif-msg");
-  m.textContent = r.ok ? (d.modo === "fila" ? `${d.enfileiradas} mensagens na fila (Telegram fora do ar; o admin vê a fila).` : `${d.enviadas} enviadas, ${d.falhas} falhas.`) : "Não foi possível notificar.";
+$("encerrar")?.addEventListener("click", async () => {
+  if (!confirm("Encerrar esta campanha? Não dá para convidar mais ninguém depois.")) return;
+  const r = await acao("editar_campanha", { p: { cid: C.id }, corpo: { status: "closed" } });
+  if (r.ok) location.reload(); else avisar($("msg"), r.erro);
 });
-document.getElementById("encerrar")?.addEventListener("click", async () => {
-  const r = await fetch("{{ url_for('brasil.api_editar_campanha', cid=c.id) }}", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "closed" }) });
-  r.ok ? location.reload() : erro(r);
+$("ver-matching").addEventListener("click", async () => {
+  const r = await acao("matching", { p: { crisis_id: C.crisis_id } });
+  if (!r.ok) return avisar($("msg"), r.erro);
+  $("matching").replaceChildren(...(r.dados.length ? r.dados.slice(0, 10).map((m) => el("li", {}, [
+    el("div", { class: "item-topo" }, [el("span", { class: "item-titulo", texto: m.name }), el("span", { class: "item-meta", texto: `score ${m.score}` })]),
+    el("span", { class: "item-meta", texto: km(m.distancia_km) }),
+  ])) : [el("li", { class: "vazio", texto: "Nenhum voluntário compatível no Brasil." })]));
 });
+$("notificar").addEventListener("click", async () => {
+  const r = await acao("notificar", { p: { crisis_id: C.crisis_id }, corpo: { limite: 10 } });
+  avisar($("msg"), r.ok ? `${r.dados.matches} voluntários notificados (${r.dados.enfileiradas ?? 0} na fila).` : r.erro, r.ok);
+});
+montarChat($("chat"), { crisis_id: C.crisis_id, saudacao: "Posso montar um plano para esta campanha: habilidades, quantidade de pessoas e próximos passos. O que você precisa?" });
+await carregarTodos();
+await carregarNa();
 </script>
 {% endblock %}

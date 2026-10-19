@@ -1,7 +1,7 @@
 {% extends "brasil/base.html" %}
 {% block titulo %}Previsões · Crisis Monitor Brasil{% endblock %}
-{% block corpo %}
-<div class="pagina">
+{% block principal %}
+<div class="rolagem"><div class="pagina">
   <div class="pagina-cabeca"><h1>Previsões de risco</h1>
     <p>Municípios com risco de nova crise nos próximos 7–30 dias. {{ r.texto }}</p></div>
   <div class="cartao">
@@ -14,5 +14,5 @@
     </table></div>
     {% else %}<p class="vazio">Ainda não há histórico suficiente. As previsões aparecem depois de alguns dias de ingestão.</p>{% endif %}
   </div>
-</div>
+</div></div>
 {% endblock %}

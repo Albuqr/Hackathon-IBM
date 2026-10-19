@@ -1,76 +1,38 @@
 {% extends "brasil/base.html" %}
 {% block titulo %}Painel da ONG · Crisis Monitor Brasil{% endblock %}
-{% block corpo %}
-<div class="pagina">
+{% block principal %}
+<div class="rolagem"><div class="pagina">
   <div class="pagina-cabeca"><h1>Painel da ONG</h1>
-    <p>Campanhas da sua ONG em crises brasileiras, voluntários selecionados e habilidades disponíveis.</p></div>
-  <div class="kpis tres">
-    <div class="kpi"><b>{{ p.voluntarios_selecionados or 0 }}</b><span>voluntários selecionados</span></div>
+    <div class="acoes"><a class="botao botao-primario" href="{{ url_for('brasil.ong_nova') }}">+ Nova campanha</a></div></div>
+  <div class="kpis">
     <div class="kpi"><b>{{ p.campanhas_ativas or 0 }}</b><span>campanhas ativas</span></div>
+    <div class="kpi"><b>{{ p.voluntarios_selecionados or 0 }}</b><span>voluntários nas campanhas</span></div>
+    <div class="kpi"><b>{{ p.voluntarios_disponiveis or 0 }}</b><span>voluntários disponíveis</span></div>
     <div class="kpi"><b>{{ p.crises_apoiadas or 0 }}</b><span>crises apoiadas</span></div>
   </div>
-  <div class="grade-2 secao">
-    <div class="coluna">
-      <div class="cartao">
-        <p class="cartao-titulo">Campanhas</p>
-        {% if p.campanhas %}
-        <ul class="lista">{% for c in p.campanhas %}
-          <li>
-            <div class="item-topo"><a class="item-titulo" href="{{ url_for('brasil.ong_campanha', cid=c.id) }}">{{ c.title }}</a>
-              <span class="selo status {{ c.status }}">{{ 'ativa' if c.status == 'active' else 'encerrada' }}</span></div>
-            <span class="item-meta">{{ c.crisis_title }}{{ ' · ' ~ c.crisis_uf if c.crisis_uf else '' }} · urgência {{ c.urgency }} · {{ c.selecionados }}/{{ c.target_volunteers }} voluntários</span>
-            {% set serie = p.crescimento[c.id|string] %}{% set maximo = serie|map(attribute='n')|max %}
-            <div class="cresc" title="voluntários adicionados nos últimos 7 dias" aria-label="crescimento nos últimos 7 dias">
-              {% for d in serie %}<i style="height:{{ (d.n / maximo * 100) if maximo else 0 }}%" title="{{ d.dia }}: {{ d.n }}"></i>{% endfor %}
-            </div>
-          </li>{% endfor %}</ul>
-        {% else %}<p class="vazio">Nenhuma campanha ainda. Crie a primeira aqui ao lado ou pelo mapa ("Criar campanha").</p>{% endif %}
-      </div>
-      {% if p.habilidades %}
-      <div class="cartao">
-        <p class="cartao-titulo">Habilidades dos voluntários selecionados</p>
-        <div class="barras">{% set top = p.habilidades.values()|max %}{% for h, n in p.habilidades.items() %}
-          <div><span title="{{ h }}">{{ h }}</span><i style="width:{{ n / top * 100 }}%"></i><em>{{ n }}</em></div>{% endfor %}</div>
-      </div>
-      {% endif %}
+  <div class="grade-lateral">
+    <div class="cartao">
+      <p class="cartao-titulo">Campanhas</p>
+      {% if p.campanhas %}
+      <ul class="lista">{% for c in p.campanhas %}
+        <li>
+          <div class="item-topo"><span class="item-titulo">{{ c.title }}</span>
+            <span class="selo {{ c.status }}">{{ 'Ativa' if c.status == 'active' else 'Encerrada' }}</span></div>
+          <span class="item-meta">{{ c.crisis_title }}{{ ' · ' ~ c.crisis_uf if c.crisis_uf else '' }} · urgência {{ c.urgency }} · {{ c.selecionados }}/{{ c.target_volunteers }} voluntários · {{ c.confirmados }} confirmados</span>
+          <div class="acoes">
+            <a class="botao botao-secundario botao-pequeno" href="{{ url_for('brasil.ong_campanha', cid=c.id) }}">Gerenciar</a>
+            <a class="botao botao-neutro botao-pequeno" href="{{ url_for('brasil.ong_campanha', cid=c.id) }}#editar">Editar</a>
+          </div>
+        </li>{% endfor %}</ul>
+      {% else %}<p class="vazio">Nenhuma campanha ainda. Crie uma em "+ Nova campanha" ou pelo popup de uma crise no mapa.</p>{% endif %}
     </div>
-    <div class="cartao" id="nova">
-      <p class="cartao-titulo">Nova campanha</p>
-      <form class="form" id="form-campanha">
-        <p class="aviso" id="msg" role="status" hidden></p>
-        <label>Crise
-          <select name="crisis_id" required>
-            <option value="">escolha uma crise do mapa</option>
-            {% for cr in crises[:400] %}<option value="{{ cr.id }}" {{ 'selected' if cr.id == crise_escolhida else '' }}>[{{ cr.severity|int }}] {{ cr.title }}{{ ' · ' ~ cr.uf if cr.uf else '' }}</option>{% endfor %}
-          </select></label>
-        <label>Título <input name="title" required minlength="3" maxlength="200"></label>
-        <label>Descrição <textarea name="description" rows="3"></textarea></label>
-        <label>Habilidades necessárias (separadas por vírgula) <input name="skills_needed"></label>
-        <div class="linha">
-          <label>Meta de voluntários <input name="target_volunteers" type="number" min="1" value="10"></label>
-          <label>Urgência <select name="urgency"><option value="baixa">baixa</option><option value="media" selected>média</option><option value="alta">alta</option><option value="critica">crítica</option></select></label>
-        </div>
-        <div class="linha">
-          <label>Início <input name="start_date" type="date"></label>
-          <label>Fim <input name="end_date" type="date"></label>
-        </div>
-        <div><button class="botao botao-primario" type="submit">Criar campanha</button></div>
-      </form>
+    <div class="cartao">
+      <p class="cartao-titulo">Habilidades dos voluntários nas campanhas</p>
+      {% if p.habilidades %}
+      <div class="barras">{% set top = p.habilidades.values()|max %}{% for h, n in p.habilidades.items() %}
+        <div><span title="{{ h }}">{{ h }}</span><i style="width:{{ n / top * 100 }}%"></i><span>{{ n }}</span></div>{% endfor %}</div>
+      {% else %}<p class="vazio">Aparece quando houver voluntários nas suas campanhas.</p>{% endif %}
     </div>
   </div>
-</div>
-{% endblock %}
-{% block scripts %}
-<script>
-document.getElementById("form-campanha").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const corpo = Object.fromEntries(new FormData(e.target));
-  corpo.skills_needed = (corpo.skills_needed || "").split(",").map((s) => s.trim()).filter(Boolean);
-  corpo.target_volunteers = Number(corpo.target_volunteers);
-  const r = await fetch("{{ url_for('brasil.api_criar_campanha') }}", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
-  const d = await r.json(), msg = document.getElementById("msg");
-  if (r.ok) { location.href = "{{ url_for('brasil.ong_campanha', cid=0) }}".replace(/0$/, d.id); return; }
-  msg.hidden = false; msg.textContent = typeof d.detail === "string" ? d.detail : "Confira os campos.";
-});
-</script>
+</div></div>
 {% endblock %}

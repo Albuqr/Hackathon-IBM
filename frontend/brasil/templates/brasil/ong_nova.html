@@ -1,0 +1,71 @@
+{% extends "brasil/base.html" %}
+{% block titulo %}Nova campanha · Crisis Monitor Brasil{% endblock %}
+{% block principal %}
+<div class="rolagem"><div class="pagina">
+  <div class="pagina-cabeca"><h1>Nova campanha</h1><p>Escolha a crise e diga do que a campanha precisa.</p></div>
+  <form class="grade-lateral" id="form-campanha">
+    <div class="cartao">
+      <p class="cartao-titulo">Crise</p>
+      <div class="form">
+        <div class="linha">
+          <label>Buscar <input id="busca" type="search" placeholder="título ou município" autocomplete="off"></label>
+          <label>UF <select id="uf"><option value="">Todas</option>{% for s in ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'] %}<option>{{ s }}</option>{% endfor %}</select></label>
+        </div>
+        <ul class="lista" id="crises" role="radiogroup" aria-label="Crise da campanha"></ul>
+      </div>
+    </div>
+    <div class="cartao">
+      <p class="cartao-titulo">Campanha</p>
+      <div class="form">
+        <p class="aviso" id="msg" role="status" hidden></p>
+        <label>Título <input name="title" required minlength="3" maxlength="200"></label>
+        <label>Descrição <textarea name="description" rows="3"></textarea></label>
+        <label>Habilidades necessárias (separadas por vírgula) <input name="skills_needed"></label>
+        <div class="linha">
+          <label>Meta de voluntários <input name="target_volunteers" type="number" min="1" value="10"></label>
+          <label>Urgência <select name="urgency"><option value="baixa">Baixa</option><option value="media" selected>Média</option><option value="alta">Alta</option><option value="critica">Crítica</option></select></label>
+        </div>
+        <div class="linha">
+          <label>Início <input name="start_date" type="date"></label>
+          <label>Fim <input name="end_date" type="date"></label>
+        </div>
+        <div><button class="botao botao-primario" type="submit">Criar campanha</button></div>
+      </div>
+    </div>
+  </form>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script id="br-crise" type="application/json">{{ crise|tojson }}</script>
+<script type="module">
+import { el, acao, avisar, selSev, rotulo, TIPOS } from "{{ url_for('brasil.static', filename='cliente.js') }}";
+const $ = (id) => document.getElementById(id);
+const pre = JSON.parse($("br-crise").textContent);
+let escolhida = pre ? pre.id : "";
+const opcao = (c) => el("li", {}, [el("label", { style: "display:flex;gap:10px;align-items:flex-start;cursor:pointer" }, [
+  el("input", { type: "radio", name: "crisis_id", value: c.id, checked: c.id === escolhida, onchange: () => { escolhida = c.id; } }),
+  el("span", { class: "item-titulo" }, [selSev(c.severity), el("span", {}, [c.title, el("br"), el("span", { class: "item-meta", texto: [rotulo(TIPOS, c.crisis_type), c.uf].filter(Boolean).join(" · ") })])]),
+])]);
+let t;
+async function buscar() {
+  // busca no servidor, em todas as crises ativas (sem corte em 400)
+  const r = await acao("crises", { q: { q: $("busca").value, uf: $("uf").value, limite: 30 } });
+  const lista = r.ok ? r.dados : [];
+  if (pre && !lista.some((c) => c.id === pre.id)) lista.unshift(pre);
+  $("crises").replaceChildren(...(lista.length ? lista.map(opcao) : [el("li", { class: "vazio", texto: r.ok ? "Nenhuma crise encontrada." : r.erro })]));
+}
+$("busca").addEventListener("input", () => { clearTimeout(t); t = setTimeout(buscar, 200); });
+$("uf").addEventListener("change", buscar);
+$("form-campanha").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!escolhida) return avisar($("msg"), "Escolha a crise da campanha.");
+  const f = Object.fromEntries(new FormData(e.target));
+  const corpo = { ...f, crisis_id: escolhida, target_volunteers: Number(f.target_volunteers),
+    skills_needed: (f.skills_needed || "").split(",").map((s) => s.trim()).filter(Boolean) };
+  const r = await acao("criar_campanha", { corpo });
+  if (r.ok) location.href = `{{ url_for('brasil.ong') }}/campanhas/${r.dados.id}`;
+  else avisar($("msg"), r.erro);
+});
+buscar();
+</script>
+{% endblock %}

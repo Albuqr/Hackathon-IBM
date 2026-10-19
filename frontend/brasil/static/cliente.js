@@ -146,3 +146,32 @@ export async function atualizarStatusColeta() {
   const okN = dados.filter((s) => s.ok).length;
   alvo.textContent = `Última coleta ${data(ultima)} · ${okN} de ${dados.length} fontes ok`;
 }
+
+// ---------- chat com o assistente (perfil do voluntário e campanha da ONG) ----------
+// Remove marcação que os agentes às vezes devolvem (**negrito**, cabeçalhos).
+export const limparTexto = (t) => String(t || "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/^#+\s*/gm, "").trim();
+
+export function montarChat(raiz, { saudacao, crisis_id = null } = {}) {
+  const msgs = raiz.querySelector(".chat-msgs");
+  const form = raiz.querySelector("form");
+  const campo = form.querySelector("textarea");
+  const falar = (texto, quem) => {
+    const m = el("div", { class: `msg ${quem}`, texto });
+    msgs.append(m);
+    msgs.scrollTop = msgs.scrollHeight;
+    return m;
+  };
+  if (saudacao) falar(saudacao, "agente");
+  campo.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const texto = campo.value.trim();
+    if (!texto) return;
+    campo.value = "";
+    falar(texto, "eu");
+    const espera = falar("…", "agente digitando");
+    const r = await acao("chat", { corpo: { mensagem: texto, crisis_id } });
+    espera.remove();
+    falar(r.ok ? limparTexto(r.dados.texto) || "Sem resposta." : r.erro, "agente");
+  });
+}
