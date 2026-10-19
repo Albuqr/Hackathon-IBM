@@ -1,10 +1,26 @@
-{% extends "brasil/base.html" %}
-{% block titulo %}Entrar · Crisis Monitor Brasil{% endblock %}
-{% block corpo %}
-<div class="pagina">
-  <div class="entrar cartao">
-    <h1>Entrar no Dash Brasil</h1>
-    <p class="nota">Crises brasileiras por município: INPE, CEMADEN, INMET, notícias de fontes confiáveis e fontes globais filtradas para o Brasil.</p>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Entrar · Crisis Monitor Brasil</title>
+  <script>
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem("br-tema"); } catch (e) {}
+      if (t !== "light" && t !== "dark") t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='lp/public/logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('brasil.static', filename='brasil.css') }}">
+</head>
+<body class="solta">
+  <main class="entrar cartao">
+    <a class="marca" href="{{ url_for('brasil.inicio') }}"><span class="marca-ponto" aria-hidden="true"></span><span class="marca-nome">Crisis Monitor</span><span class="marca-selo">BRASIL</span></a>
+    <h1>Entrar</h1>
+    <p class="vazio">Crises brasileiras de INPE, CEMADEN, INMET, notícias de fontes confiáveis e fontes globais filtradas para o Brasil.</p>
     <form class="form" method="post">
       {% if erro %}<p class="aviso" role="alert">{{ erro }}</p>{% endif %}
       <label>E-mail <input type="email" name="email" required autocomplete="email"></label>
@@ -21,6 +37,6 @@
       </div>
     </div>
     {% endif %}
-  </div>
-</div>
-{% endblock %}
+  </main>
+</body>
+</html>
