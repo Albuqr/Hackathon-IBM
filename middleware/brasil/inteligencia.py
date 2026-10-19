@@ -1,45 +1,39 @@
 """Rotas de IA, notícias, matching e notificações do Dash Brasil (FR-024–FR-035)."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from . import assistentes, db, ingestao, notificacoes, orquestracao
+from .acesso import Acesso
 from .config import Config
 
 
 class Verificacao(BaseModel):
-    user_id: int
     acao: str
     severity: float | None = Field(None, ge=1, le=5)
 
 
 class Chat(BaseModel):
-    user_id: int
     mensagem: str = Field(min_length=1, max_length=2000)
     crisis_id: str | None = None
 
 
 class Notificar(BaseModel):
-    user_id: int
     limite: int = Field(10, ge=1, le=100)
 
 
-def criar_router(cfg: Config) -> APIRouter:
+def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
     r = APIRouter()
-
-    def papel(conn, uid: int) -> str:
-        u = conn.execute("SELECT role FROM users WHERE id=?", (uid,)).fetchone()
-        if not u:
-            raise HTTPException(404, "Usuário não encontrado")
-        return u["role"]
+    admin = acesso.exige("admin")
+    ong_ou_admin = acesso.exige("org", "admin")
 
     def resposta(res: orquestracao.Resposta) -> dict:
         return {"texto": res.texto, "dados": res.dados, "provedor": res.provedor, "avisos": res.avisos}
 
     # ── ingestão pelo orquestrador (FR-027, FR-028) ───────────────────
     @r.post("/ingestao")
-    def disparar_ingestao():
+    def disparar_ingestao(u: dict = Depends(admin)):
         res = orquestracao.executar(cfg, "brasil_orchestrator", "Colete as crises do Brasil e salve no banco do Dash Brasil.")
         rel = res.dados if isinstance(res.dados, dict) and "fontes" in res.dados else {"fontes": {}, "gravadas": 0, "segundos": 0}
         return {**rel, "texto": res.texto, "provedor": res.provedor, "avisos": res.avisos}
@@ -54,7 +48,7 @@ def criar_router(cfg: Config) -> APIRouter:
 
     # ── verificação de crises de notícia (FR-025) ─────────────────────
     @r.get("/crises/nao-verificadas")
-    def nao_verificadas():
+    def nao_verificadas(u: dict = Depends(admin)):
         conn = db.conectar(cfg)
         try:
             return [dict(x) for x in conn.execute(
@@ -65,13 +59,11 @@ def criar_router(cfg: Config) -> APIRouter:
             conn.close()
 
     @r.put("/crises/{crisis_id}/verificacao")
-    def verificar(crisis_id: str, v: Verificacao):
+    def verificar(crisis_id: str, v: Verificacao, u: dict = Depends(admin)):
         if v.acao not in ("confirmar", "descartar"):
             raise HTTPException(422, "Ação inválida; use confirmar ou descartar")
         conn = db.conectar(cfg)
         try:
-            if papel(conn, v.user_id) != "admin":
-                raise HTTPException(403, "Só o admin confirma ou descarta crises de notícia")
             c = conn.execute("SELECT verificacao FROM crises WHERE id=?", (crisis_id,)).fetchone()
             if not c:
                 raise HTTPException(404, "Crise não encontrada")
@@ -87,14 +79,10 @@ def criar_router(cfg: Config) -> APIRouter:
 
     # ── chat (FR-030, FR-031) ─────────────────────────────────────────
     @r.post("/chat")
-    def chat(c: Chat):
-        conn = db.conectar(cfg)
-        try:
-            p = papel(conn, c.user_id)
-        finally:
-            conn.close()
+    def chat(c: Chat, u: dict = Depends(acesso.exige("volunteer", "org"))):
+        p = u["role"]
         if p == "volunteer":
-            ctx = {"recomendacoes": assistentes.recomendar(cfg, c.user_id)}
+            ctx = {"recomendacoes": assistentes.recomendar(cfg, u["id"])}
             return resposta(orquestracao.executar(cfg, "volunteer_agent", c.mensagem, ctx))
         if p == "org":
             if not c.crisis_id:
@@ -105,15 +93,13 @@ def criar_router(cfg: Config) -> APIRouter:
 
     # ── matching e notificações (FR-032, FR-035) ─────────────────────
     @r.get("/crises/{crisis_id}/matching")
-    def ver_matching(crisis_id: str, limite: int = 20):
+    def ver_matching(crisis_id: str, limite: int = 20, u: dict = Depends(ong_ou_admin)):
         return assistentes.matching(cfg, crisis_id, limite)
 
     @r.post("/crises/{crisis_id}/notificar")
-    def notificar(crisis_id: str, n: Notificar):
+    def notificar(crisis_id: str, n: Notificar, u: dict = Depends(ong_ou_admin)):
         conn = db.conectar(cfg)
         try:
-            if papel(conn, n.user_id) not in ("org", "admin"):
-                raise HTTPException(403, "Só ONGs e admins notificam voluntários")
             crise = conn.execute("SELECT * FROM crises WHERE id=?", (crisis_id,)).fetchone()
         finally:
             conn.close()
@@ -123,16 +109,16 @@ def criar_router(cfg: Config) -> APIRouter:
         return {"matches": len(matches), **notificacoes.notificar(cfg, dict(crise), matches)}
 
     @r.get("/notificacoes")
-    def fila():
+    def fila(u: dict = Depends(admin)):
         return notificacoes.pendentes(cfg)
 
     # ── otimização e previsões (FR-033, FR-034) ──────────────────────
     @r.get("/distribuicao")
-    def distribuicao():
+    def distribuicao(u: dict = Depends(admin)):
         return assistentes.distribuicao(cfg)
 
     @r.get("/previsoes")
-    def previsoes():
+    def previsoes(u: dict = Depends(acesso.identidade)):
         ctx = {"previsoes": assistentes.previsoes(cfg)}
         return resposta(orquestracao.executar(cfg, "prediction_agent", "Quais municípios têm risco de nova crise nos próximos 7–30 dias?", ctx))
 

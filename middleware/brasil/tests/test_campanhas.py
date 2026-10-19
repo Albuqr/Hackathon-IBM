@@ -4,6 +4,11 @@ import threading
 from middleware.brasil import ingestao
 
 
+def como(uid) -> dict:
+    """Cabeçalho de identidade que o encaminhador do frontend manda (ADR 0004)."""
+    return {"X-Brasil-Usuario": str(uid)}
+
+
 def ev(id_, lat, lon, sev=3):
     return {"id": id_, "title": id_, "lat": lat, "lon": lon, "severity": sev, "crisis_type": "meteorological", "source": "cemaden"}
 
@@ -24,9 +29,9 @@ def preparar(cli, rotas, n_vol=0):
 
 
 def campanha(cli, ong, **kw):
-    corpo = {"org_id": ong, "title": "Apoio em São Borja", "crisis_id": "cemaden-sb", "target_volunteers": 10,
+    corpo = {"title": "Apoio em São Borja", "crisis_id": "cemaden-sb", "target_volunteers": 10,
              "skills_needed": ["logística"], "urgency": "alta"} | kw
-    return cli.post("/brasil/campanhas", json=corpo)
+    return cli.post("/brasil/campanhas", json=corpo, headers=como(ong))
 
 
 # AC-012.1
@@ -37,7 +42,7 @@ def test_ac_012_1_ong_cria_campanha_para_crise_br(api):
     assert r.status_code == 200
     c = r.json()
     assert c["status"] == "active" and c["crisis_title"] == "cemaden-sb" and c["target_volunteers"] == 10
-    assert [x["id"] for x in cli.get(f"/brasil/campanhas?org_id={ong}").json()] == [c["id"]]
+    assert [x["id"] for x in cli.get(f"/brasil/campanhas?org_id={ong}", headers=como(ong)).json()] == [c["id"]]
 
 
 def test_fr012_crise_inexistente_e_voluntario_nao_cria_e_ong_so_edita_a_sua(api):
@@ -46,8 +51,8 @@ def test_fr012_crise_inexistente_e_voluntario_nao_cria_e_ong_so_edita_a_sua(api)
     assert campanha(cli, ong, crisis_id="nao-existe").status_code == 422
     assert campanha(cli, vol).status_code == 403
     cid = campanha(cli, ong).json()["id"]
-    assert cli.put(f"/brasil/campanhas/{cid}", json={"org_id": vol, "title": "X invadido"}).status_code == 403
-    r = cli.put(f"/brasil/campanhas/{cid}", json={"org_id": ong, "status": "closed", "target_volunteers": 5})
+    assert cli.put(f"/brasil/campanhas/{cid}", json={"title": "X invadido"}, headers=como(vol)).status_code == 403
+    r = cli.put(f"/brasil/campanhas/{cid}", json={"status": "closed", "target_volunteers": 5}, headers=como(ong))
     assert r.json()["status"] == "closed" and r.json()["target_volunteers"] == 5
 
 
@@ -56,15 +61,15 @@ def test_ac_013_1_adicionar_voluntario_gera_convite_pendente(api):
     cli, rotas = api
     ong, vol, _ = preparar(cli, rotas)
     cid = campanha(cli, ong).json()["id"]
-    disp = cli.get("/brasil/voluntarios/disponiveis", params={"crisis_id": "cemaden-sb"}).json()
+    disp = cli.get("/brasil/voluntarios/disponiveis", params={"crisis_id": "cemaden-sb"}, headers=como(ong)).json()
     assert vol in [d["id"] for d in disp] and disp[0]["distancia_km"] is not None
-    assert cli.post(f"/brasil/campanhas/{cid}/voluntarios", json={"org_id": ong, "volunteer_id": vol}).json()["ok"]
-    [na_campanha] = cli.get(f"/brasil/campanhas/{cid}/voluntarios").json()
+    assert cli.post(f"/brasil/campanhas/{cid}/voluntarios", json={"volunteer_id": vol}, headers=como(ong)).json()["ok"]
+    [na_campanha] = cli.get(f"/brasil/campanhas/{cid}/voluntarios", headers=como(ong)).json()
     assert na_campanha["volunteer_id"] == vol and na_campanha["status"] == "selected"
-    [convite] = cli.get(f"/brasil/voluntario/{vol}/campanhas").json()
+    [convite] = cli.get(f"/brasil/voluntario/{vol}/campanhas", headers=como(vol)).json()
     assert convite["status"] == "selected" and convite["org_name"] == "ONG Brasil Solidário"
-    assert cli.delete(f"/brasil/campanhas/{cid}/voluntarios/{vol}", params={"org_id": ong}).json()["ok"]
-    assert cli.get(f"/brasil/campanhas/{cid}/voluntarios").json() == []
+    assert cli.delete(f"/brasil/campanhas/{cid}/voluntarios/{vol}", headers=como(ong)).json()["ok"]
+    assert cli.get(f"/brasil/campanhas/{cid}/voluntarios", headers=como(ong)).json() == []
 
 
 # AC-011.1
@@ -72,12 +77,12 @@ def test_ac_011_1_voluntario_aceita_convite_e_ong_ve(api):
     cli, rotas = api
     ong, vol, extras = preparar(cli, rotas, n_vol=1)
     cid = campanha(cli, ong).json()["id"]
-    cli.post(f"/brasil/campanhas/{cid}/voluntarios", json={"org_id": ong, "volunteer_id": vol})
-    [convite] = cli.get(f"/brasil/voluntario/{vol}/campanhas").json()
-    assert cli.put(f"/brasil/convites/{convite['cv_id']}", json={"user_id": extras[0], "status": "confirmed"}).status_code == 403
-    assert cli.put(f"/brasil/convites/{convite['cv_id']}", json={"user_id": vol, "status": "confirmed"}).json()["status"] == "confirmed"
-    assert cli.get(f"/brasil/campanhas/{cid}/voluntarios").json()[0]["status"] == "confirmed"
-    assert cli.get(f"/brasil/campanhas/{cid}").json()["confirmados"] == 1
+    cli.post(f"/brasil/campanhas/{cid}/voluntarios", json={"volunteer_id": vol}, headers=como(ong))
+    [convite] = cli.get(f"/brasil/voluntario/{vol}/campanhas", headers=como(vol)).json()
+    assert cli.put(f"/brasil/convites/{convite['cv_id']}", json={"status": "confirmed"}, headers=como(extras[0])).status_code == 403
+    assert cli.put(f"/brasil/convites/{convite['cv_id']}", json={"status": "confirmed"}, headers=como(vol)).json()["status"] == "confirmed"
+    assert cli.get(f"/brasil/campanhas/{cid}/voluntarios", headers=como(ong)).json()[0]["status"] == "confirmed"
+    assert cli.get(f"/brasil/campanhas/{cid}", headers=como(ong)).json()["confirmados"] == 1
 
 
 # AC-014.1
@@ -87,10 +92,10 @@ def test_ac_014_1_painel_da_ong_soma_voluntarios_e_habilidades(api):
     c1 = campanha(cli, ong).json()["id"]
     c2 = campanha(cli, ong, title="Apoio POA", crisis_id="cemaden-poa").json()["id"]
     for v in [vol] + extras[:2]:
-        cli.post(f"/brasil/campanhas/{c1}/voluntarios", json={"org_id": ong, "volunteer_id": v})
+        cli.post(f"/brasil/campanhas/{c1}/voluntarios", json={"volunteer_id": v}, headers=como(ong))
     for v in extras[2:7]:
-        cli.post(f"/brasil/campanhas/{c2}/voluntarios", json={"org_id": ong, "volunteer_id": v})
-    p = cli.get(f"/brasil/ong/{ong}/painel").json()
+        cli.post(f"/brasil/campanhas/{c2}/voluntarios", json={"volunteer_id": v}, headers=como(ong))
+    p = cli.get(f"/brasil/ong/{ong}/painel", headers=como(ong)).json()
     assert p["voluntarios_selecionados"] == 8 and p["campanhas_ativas"] == 2 and p["crises_apoiadas"] == 2
     assert p["habilidades"]["resgate"] == 7 and p["habilidades"]["primeiros socorros"] == 1
     assert sum(d["n"] for d in p["crescimento"][str(c2)]) == 5

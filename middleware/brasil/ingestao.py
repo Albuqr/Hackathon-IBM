@@ -210,10 +210,11 @@ def crises_ativas(cfg: Config, agora: datetime | None = None) -> list[dict]:
     conn = db.conectar(cfg)
     try:
         linhas = conn.execute(
-            """SELECT c.*, (SELECT COUNT(*) FROM crisis_associations a WHERE a.crisis_id=c.id) AS inscritos
-               FROM crises c
+            """SELECT c.*, COUNT(a.id) AS inscritos,
+                      COALESCE(SUM(a.role='volunteer'), 0) AS voluntarios, COALESCE(SUM(a.role='org'), 0) AS ongs
+               FROM crises c LEFT JOIN crisis_associations a ON a.crisis_id=c.id
                WHERE (c.expira_em IS NULL OR c.expira_em > ?) AND c.verificacao != 'descartada'
-               ORDER BY c.severity DESC""",
+               GROUP BY c.id ORDER BY c.severity DESC""",
             (iso(agora),),
         ).fetchall()
         out = []
@@ -224,6 +225,50 @@ def crises_ativas(cfg: Config, agora: datetime | None = None) -> list[dict]:
         return out
     finally:
         conn.close()
+
+
+def associados(conn, crisis_id: str) -> dict:
+    r = conn.execute("""SELECT COUNT(*), COALESCE(SUM(role='volunteer'), 0), COALESCE(SUM(role='org'), 0)
+                        FROM crisis_associations WHERE crisis_id=?""", (crisis_id,)).fetchone()
+    return {"inscritos": r[0], "voluntarios": r[1], "ongs": r[2]}
+
+
+def _sem_acento(s: str) -> str:
+    import unicodedata
+    return "".join(ch for ch in unicodedata.normalize("NFD", s or "") if unicodedata.category(ch) != "Mn").lower()
+
+
+def ufs_da_crise(c: dict, m=None) -> set[str]:
+    """UFs que a crise alcança: a do município principal e a de cada município afetado (FR-009)."""
+    m = m or malha.carregar()
+    ufs = {c["uf"]} if c.get("uf") else set()
+    for cod in [c.get("municipio_ibge"), *c.get("municipios_afetados", [])]:
+        info = m.info(int(cod)) if cod else None
+        if info:
+            ufs.add(info["uf"])
+    return ufs
+
+
+def filtrar(crises: list[dict], sev_min: float = 0, uf: str = "", tipo: str = "", fonte: str = "",
+            verificacao: str = "", q: str = "", limite: int = 0) -> list[dict]:
+    """FR-022: os mesmos filtros do mapa (frontend/brasil/static/visao.js)."""
+    m = malha.carregar()
+    termo = _sem_acento(q.strip())
+    out = []
+    for c in crises:
+        if (c.get("severity") or 0) < sev_min or (tipo and c.get("crisis_type") != tipo) \
+                or (fonte and c.get("source") != fonte) or (verificacao and c.get("verificacao") != verificacao):
+            continue
+        if uf and uf.upper() not in ufs_da_crise(c, m):
+            continue
+        if termo:
+            mun = m.info(int(c["municipio_ibge"])) if c.get("municipio_ibge") else None
+            if termo not in _sem_acento(c.get("title", "")) and termo not in _sem_acento(mun["nome"] if mun else ""):
+                continue
+        out.append(c)
+        if limite and len(out) >= limite:
+            break
+    return out
 
 
 def laco_automatico(cfg: Config, parar: threading.Event, executar_fn=None, esperar=None):
