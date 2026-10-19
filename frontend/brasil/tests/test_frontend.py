@@ -150,7 +150,7 @@ def test_ac_014_1_paginas_renderizam_no_shell_com_o_menu_do_perfil(front, logar,
     api.respostas[("GET", "/previsoes")] = (200, {"dados": [], "texto": "", "avisos": [], "provedor": "local"})
     html = cli.get(url).get_data(as_text=True)
     assert 'class="app' in html and "statusbar" in html and "cliente.js" in html
-    assert ("Minhas Campanhas" in html) == (papel == "volunteer")
-    assert ("+ Campanha" in html) == (papel == "org")
+    assert ("Minhas campanhas" in html) == (papel == "volunteer")
+    assert (">Nova campanha<" in html) == (papel == "org")
     assert ('href="/brasil/admin"' in html) == (papel == "admin")
     assert ('id="lateral"' in html) == url.endswith("/mapa")  # só o mapa tem barra lateral

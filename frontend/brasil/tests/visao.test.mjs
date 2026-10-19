@@ -92,3 +92,12 @@ test("cor por tipo: grupos fixos, tipos desconhecidos em outros", () => {
 test("opções contam crises por valor", () => {
   assert.deepEqual(opcoes(TODAS, "source"), [["inmet", 1], ["inpe", 1], ["noticias", 1]]);
 });
+
+test("filtro 'onde falta gente' mostra só as lacunas e vai para a URL", () => {
+  const f = { ...PADRAO, falta: "1" };
+  assert.deepEqual(ids(filtrar(TODAS, f, { ...ctx, lacunas: new Set(["inpe-1"]) })), ["inpe-1"]);
+  assert.deepEqual(ids(filtrar(TODAS, f, ctx)).length, 3);  // sem lacunas carregadas não esconde nada
+  assert.equal(gravarFiltros(f), "?falta=1");
+  assert.equal(lerFiltros("?falta=1").falta, "1");
+  assert.equal(filtrosAtivos(f), 1);
+});

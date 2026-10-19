@@ -252,7 +252,8 @@ def situacao_campanha(cfg: Config, cid: int, agora=None) -> dict:
     ja = {p["volunteer_id"] for p in pessoas}
     recomendados = []
     if ativa and cam["status"] == "active":
-        cands = [r for r in matching(cfg, cam["crisis_id"], 60, agora, habilidades or None) if r["volunteer_id"] not in ja]
+        cands = [r for r in matching(cfg, cam["crisis_id"], 60, agora, habilidades or None)
+                 if r["volunteer_id"] not in ja and (r["habilidades_comuns"] or not habilidades)]
         alvo = {_norm(h) for h in descobertas}
         cands.sort(key=lambda r: (-bool({_norm(x) for x in r["habilidades_comuns"]} & alvo), -r["score"], r["distancia_km"]))
         recomendados = [{k: r[k] for k in ("volunteer_id", "name", "distancia_km", "score", "habilidades_comuns", "historico",

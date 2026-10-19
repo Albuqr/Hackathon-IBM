@@ -156,7 +156,9 @@ def ong_nova():
     if request.args.get("crise"):
         _, lista = como_eu("GET", "/crises")
         crise = next((c for c in lista if c["id"] == request.args["crise"]), None) if isinstance(lista, list) else None
-    return render_template("brasil/ong_nova.html", crise=crise)
+    st, eu = como_eu("GET", f"/usuarios/{session['br_user_id']}")
+    local = {"lat": eu.get("lat") or None, "lon": eu.get("lon") or None} if st == 200 else {"lat": None, "lon": None}
+    return render_template("brasil/ong_nova.html", crise=crise, local=local)
 
 
 @bp.route("/ong/campanhas/<int:cid>")

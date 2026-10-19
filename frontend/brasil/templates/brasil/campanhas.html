@@ -2,15 +2,15 @@
 {% block titulo %}Minhas campanhas · Crisis Monitor Brasil{% endblock %}
 {% block principal %}
 <div class="rolagem"><div class="pagina">
-  <div class="pagina-cabeca"><h1>Minhas campanhas</h1>
+  <div class="abertura"><h1>Minhas campanhas.</h1>
     <p>Convites de ONGs para campanhas em crises brasileiras. Aceite ou recuse cada um.</p></div>
   <p class="aviso" id="msg" role="status" hidden></p>
-  <div class="cartao"><ul class="lista" id="lista"><li class="vazio">Carregando…</li></ul></div>
+  <ul class="lista" id="lista"><li class="vazio">Carregando…</li></ul>
 </div></div>
 {% endblock %}
 {% block scripts %}
 <script type="module">
-import { el, acao, avisar, selSev, rotulo, CONVITE, URGENCIA } from "{{ url_for('brasil.static', filename='cliente.js') }}";
+import { el, acao, avisar, rotulo, CONVITE, URGENCIA } from "{{ url_for('brasil.static', filename='cliente.js') }}";
 const lista = document.getElementById("lista"), msg = document.getElementById("msg");
 async function carregar() {
   const r = await acao("meus_convites");
@@ -18,14 +18,14 @@ async function carregar() {
   const pend = r.dados.filter((c) => c.status === "selected").length, badge = document.getElementById("badge-convites");
   if (badge) { badge.textContent = String(pend); badge.hidden = pend === 0; }
   lista.replaceChildren(...(r.dados.length ? r.dados.map((c) => el("li", {}, [
-    el("div", { class: "item-topo" }, [el("span", { class: "item-titulo" }, [c.crisis_severity ? selSev(c.crisis_severity) : null, c.title]),
-      el("span", { class: `selo ${c.status}`, texto: rotulo(CONVITE, c.status) })]),
-    el("span", { class: "item-meta", texto: `${c.org_name || "ONG"} · ${c.crisis_title || ""}${c.crisis_uf ? " · " + c.crisis_uf : ""} · urgência ${rotulo(URGENCIA, c.urgency)}` }),
-    c.description ? el("span", { class: "vazio", texto: c.description }) : null,
+    el("div", { class: "item-texto" }, [
+      el("span", { class: "item-titulo" }, [c.title, el("span", { class: `selo ${c.status}`, texto: rotulo(CONVITE, c.status) })]),
+      el("span", { class: "item-meta", texto: `${c.org_name || "ONG"} · ${c.crisis_title || ""}${c.crisis_uf ? " · " + c.crisis_uf : ""} · urgência ${rotulo(URGENCIA, c.urgency)}` }),
+      c.description ? el("span", { class: "item-meta", texto: c.description }) : null]),
     c.status === "selected" ? el("div", { class: "acoes" }, [
-      el("button", { type: "button", class: "botao botao-primario botao-pequeno", texto: "Aceitar", onclick: () => responder(c.cv_id, "confirmed") }),
-      el("button", { type: "button", class: "botao botao-neutro botao-pequeno", texto: "Recusar", onclick: () => responder(c.cv_id, "declined") })]) : null,
-  ])) : [el("li", { class: "vazio", texto: "Nenhum convite ainda. Quando uma ONG te chamar, ele aparece aqui." })]));
+      el("button", { type: "button", class: "pilula contorno", texto: "Aceitar", onclick: () => responder(c.cv_id, "confirmed") }),
+      el("button", { type: "button", class: "texto-link pequeno", texto: "Recusar", onclick: () => responder(c.cv_id, "declined") })]) : null,
+  ])) : [el("li", { class: "vazio", texto: "Nenhum convite ainda. Quando uma ONG chamar você, ele aparece aqui." })]));
 }
 async function responder(cv_id, status) {
   const r = await acao("responder_convite", { p: { cv_id }, corpo: { status } });
