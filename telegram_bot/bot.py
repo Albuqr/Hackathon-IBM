@@ -2,8 +2,10 @@ import os
 import sys
 import math
 import json
+import hashlib
+import hmac
 import logging
-import requests
+import requests as _requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CallbackQueryHandler, CommandHandler, MessageHandler,
@@ -12,6 +14,18 @@ from telegram.ext import (
 
 TG_TOKEN = os.environ.get("TG_TOKEN", "")
 API_URL  = os.environ.get("API_URL", "http://middleware:8000")
+
+
+def _sessao_api():
+    """Session com o segredo da API (ADR 0004); mesmo token de middleware/seguranca.py."""
+    s = _requests.Session()
+    chave = os.environ.get("SECRET_KEY", "")
+    if chave and chave != "hktn26-dev-secret":
+        s.headers["X-Crisis-Token"] = hmac.new(chave.encode(), b"crisis-api-v1", hashlib.sha256).hexdigest()
+    return s
+
+
+requests = _sessao_api()  # mesmas chamadas requests.get/post de antes, agora com o cabeçalho
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

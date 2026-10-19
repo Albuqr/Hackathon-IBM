@@ -7,6 +7,7 @@ import os
 from functools import wraps
 
 import requests
+from token_api import cabecalhos  # segredo da API (ADR 0004)
 from flask import Blueprint, Response, abort, jsonify, redirect, render_template, request, session, url_for
 
 API = os.environ.get("API_URL", "http://localhost:8000")
@@ -26,7 +27,7 @@ def dev_login_ligado() -> bool:
 def api(metodo: str, caminho: str, timeout=30, **kw):
     """Chama a API /brasil; devolve (status, json)."""
     try:
-        r = requests.request(metodo, f"{API}/brasil{caminho}", timeout=timeout, **kw)
+        r = requests.request(metodo, f"{API}/brasil{caminho}", timeout=timeout, headers=cabecalhos(), **kw)
         try:
             return r.status_code, r.json()
         except ValueError:
@@ -153,7 +154,7 @@ def malha_js():
     """Malha IBGE vinda da API, servida como script e guardada em memória (muda só com o deploy)."""
     if "js" not in _malha_cache:
         try:
-            r = requests.get(f"{API}/brasil/malha", timeout=60)
+            r = requests.get(f"{API}/brasil/malha", headers=cabecalhos(), timeout=60)
             r.raise_for_status()
         except requests.RequestException:
             return Response("window.MALHA=null;", mimetype="application/javascript", status=503)
