@@ -1,38 +1,56 @@
 {% extends "brasil/base.html" %}
 {% block titulo %}Painel da ONG · Crisis Monitor Brasil{% endblock %}
+{% set cores = {'meteorological': 'meteorologico', 'wildfire': 'queimada', 'hydrological': 'hidrologico', 'drought': 'seca', 'geological': 'geologico', 'seismic': 'geologico'} %}
+{% set pedem = (p.campanhas or [])|selectattr('proximo_passo')|rejectattr('proximo_passo.tipo', 'equalto', 'aguardar')|list %}
+{% set lacunas = p.lacunas_perto or [] %}
 {% block principal %}
-<div class="rolagem"><div class="pagina">
-  <div class="pagina-cabeca"><h1>Painel da ONG</h1>
-    <div class="acoes"><a class="botao botao-primario" href="{{ url_for('brasil.ong_nova') }}">+ Nova campanha</a></div></div>
-  <div class="kpis">
-    <div class="kpi"><b>{{ p.campanhas_ativas or 0 }}</b><span>campanhas ativas</span></div>
-    <div class="kpi"><b>{{ p.voluntarios or 0 }}</b><span>voluntários nas campanhas</span></div>
-    <div class="kpi"><b>{{ p.voluntarios_disponiveis or 0 }}</b><span>deles, disponíveis</span></div>
-    <div class="kpi"><b>{{ p.crises_apoiadas or 0 }}</b><span>crises apoiadas</span></div>
+<div class="rolagem"><div class="pagina larga">
+  <div class="abertura">
+    <h1>{{ 'O que precisa de você.' if pedem or lacunas else 'Tudo em dia.' }}</h1>
+    <p>{% if pedem %}{{ pedem|length }} campanha{{ 's pedem' if pedem|length > 1 else ' pede' }} uma ação{% else %}Nenhuma campanha pede ação agora{% endif %}{% if lacunas %}, e {{ lacunas|length }} crise{{ 's' if lacunas|length > 1 }} perto de você {{ 'estão' if lacunas|length > 1 else 'está' }} sem gente{% endif %}.</p>
   </div>
-  <div class="grade-lateral">
-    <div class="cartao">
-      <p class="cartao-titulo">Campanhas</p>
+  <div class="pilha">
+    {% if pedem %}
+    <section class="secao" aria-labelledby="t-acao"><h2 id="t-acao">Campanhas que pedem ação</h2>
+      <ul class="lista">{% for c in pedem %}
+        <li><div class="item-texto"><span class="item-titulo">{{ c.title }}</span><span class="item-meta">{{ c.proximo_passo.titulo }}</span></div>
+          <a class="pilula contorno" href="{{ url_for('brasil.ong_campanha', cid=c.id) }}">Resolver</a></li>{% endfor %}
+      </ul></section>
+    {% endif %}
+    <section class="secao" aria-labelledby="t-lac"><h2 id="t-lac">Crises perto de você sem gente</h2>
+      {% if lacunas %}
+      <ul class="lista">{% for l in lacunas %}
+        <li><div class="item-texto">
+            <span class="item-titulo"><i class="ponto-tipo" style="background:var(--tipo-{{ cores.get(l.crisis_type, 'outros') }})"></i>{{ l.title }}</span>
+            <span class="item-meta">{{ (l.distancia_km|string ~ ' km · ') if l.distancia_km is not none }}severidade {{ l.severity }} · {{ l.voluntarios }} de {{ l.meta }} voluntários</span>
+            {% if l.verificacao == 'nao_verificada' %}<span class="selo selo-nv">Não verificada</span>{% endif %}</div>
+          <a class="pilula contorno" href="{{ url_for('brasil.ong_nova', crise=l.crisis_id) }}">Criar campanha</a></li>{% endfor %}
+      </ul>
+      {% else %}<p class="vazio">Nenhuma crise grave sem gente agora. Veja todas no <a href="{{ url_for('brasil.mapa') }}">mapa</a>.</p>{% endif %}
+    </section>
+    <section class="secao" aria-labelledby="t-ong"><h2 id="t-ong">Sua ONG</h2>
+      <div class="numeros">
+        <div><b>{{ p.voluntarios or 0 }}</b><span>voluntários nas campanhas</span></div>
+        <div><b>{{ p.voluntarios_disponiveis or 0 }}</b><span>deles, disponíveis</span></div>
+        <div><b>{{ p.campanhas_ativas or 0 }}</b><span>campanhas ativas</span></div>
+        <div><b>{{ p.crises_apoiadas or 0 }}</b><span>crises apoiadas</span></div>
+      </div>
+      {% if p.habilidades %}
+      <div class="cobertura"><p class="cob-total">Habilidades dos seus voluntários</p>
+        <div class="barras">{% set top = p.habilidades.values()|max %}{% for h, n in p.habilidades.items() %}
+          <div><span title="{{ h }}">{{ h }}</span><i style="width:{{ n / top * 100 }}%"></i><span>{{ n }}</span></div>{% endfor %}</div></div>
+      {% endif %}
+    </section>
+    <section class="secao" aria-labelledby="t-todas"><div class="secao-topo"><h2 id="t-todas">Todas as campanhas</h2>
+        <a class="texto-link seta pequeno" href="{{ url_for('brasil.ong_nova') }}">Nova campanha</a></div>
       {% if p.campanhas %}
       <ul class="lista">{% for c in p.campanhas %}
-        <li>
-          <div class="item-topo"><span class="item-titulo">{{ c.title }}</span>
-            <span class="selo {{ c.status }}">{{ 'Ativa' if c.status == 'active' else 'Encerrada' }}</span></div>
-          <span class="item-meta">{{ c.crisis_title }}{{ ' · ' ~ c.crisis_uf if c.crisis_uf else '' }} · urgência {{ c.urgency }} · {{ c.selecionados }}/{{ c.target_volunteers }} voluntários · {{ c.confirmados }} confirmados</span>
-          <div class="acoes">
-            <a class="botao botao-secundario botao-pequeno" href="{{ url_for('brasil.ong_campanha', cid=c.id) }}">Gerenciar</a>
-            <a class="botao botao-neutro botao-pequeno" href="{{ url_for('brasil.ong_campanha', cid=c.id) }}#editar">Editar</a>
-          </div>
-        </li>{% endfor %}</ul>
-      {% else %}<p class="vazio">Nenhuma campanha ainda. Crie uma em "+ Nova campanha" ou pelo popup de uma crise no mapa.</p>{% endif %}
-    </div>
-    <div class="cartao">
-      <p class="cartao-titulo">Habilidades dos voluntários nas campanhas</p>
-      {% if p.habilidades %}
-      <div class="barras">{% set top = p.habilidades.values()|max %}{% for h, n in p.habilidades.items() %}
-        <div><span title="{{ h }}">{{ h }}</span><i style="width:{{ n / top * 100 }}%"></i><span>{{ n }}</span></div>{% endfor %}</div>
-      {% else %}<p class="vazio">Aparece quando houver voluntários nas suas campanhas.</p>{% endif %}
-    </div>
+        <li><div class="item-texto"><span class="item-titulo">{{ c.title }}</span>
+            <span class="item-meta">{{ 'ativa' if c.status == 'active' else 'encerrada' }} · {{ c.confirmados }} de {{ c.target_volunteers }} confirmados · {{ c.crisis_title }}{{ ' · ' ~ c.crisis_uf if c.crisis_uf else '' }}</span></div>
+          <a class="texto-link seta pequeno" href="{{ url_for('brasil.ong_campanha', cid=c.id) }}">Abrir</a></li>{% endfor %}
+      </ul>
+      {% else %}<p class="vazio">Nenhuma campanha ainda. Comece por uma crise sem gente acima ou pelo mapa.</p>{% endif %}
+    </section>
   </div>
 </div></div>
 {% endblock %}

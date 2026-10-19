@@ -71,6 +71,13 @@ export async function acao(nome, { p, q, corpo } = {}) {
   return r.ok ? { ok: true, status: r.status, dados, erro: null } : { ok: false, status: r.status, dados, erro: mensagemDeErro(r.status, dados) };
 }
 
+// Aviso curto no rodapé da tela (some sozinho).
+export function toast(texto) {
+  const t = el("div", { class: "toast", role: "status", texto });
+  document.body.append(t);
+  setTimeout(() => t.remove(), 3200);
+}
+
 // Mostra um aviso (ok/erro) num elemento .aviso.
 export function avisar(alvo, texto, ok = false) {
   if (!alvo) return;
@@ -158,7 +165,8 @@ export async function atualizarStatusColeta() {
 // Remove marcação que os agentes às vezes devolvem (**negrito**, cabeçalhos).
 export const limparTexto = (t) => String(t || "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/^#+\s*/gm, "").trim();
 
-export function montarChat(raiz, { saudacao, crisis_id = null } = {}) {
+// `aplicar(texto)`: quando a resposta traz um plano que dá para aplicar, a mensagem ganha o botão "Aplicar ao plano".
+export function montarChat(raiz, { saudacao, crisis_id = null, aplicar = null, podeAplicar = () => true } = {}) {
   const msgs = raiz.querySelector(".chat-msgs");
   const form = raiz.querySelector("form");
   const campo = form.querySelector("textarea");
@@ -179,6 +187,11 @@ export function montarChat(raiz, { saudacao, crisis_id = null } = {}) {
     const espera = falar("…", "agente digitando");
     const r = await acao("chat", { corpo: { mensagem: texto, crisis_id } });
     espera.remove();
-    falar(r.ok ? limparTexto(r.dados.texto) || "Sem resposta." : r.erro, "agente");
+    const resposta = r.ok ? limparTexto(r.dados.texto) || "Sem resposta." : r.erro;
+    const m = falar(resposta, "agente");
+    if (r.ok && aplicar && podeAplicar(resposta)) {
+      m.append(el("button", { type: "button", class: "botao botao-secundario botao-pequeno", texto: "Aplicar ao plano", onclick: (e) => {
+        aplicar(resposta); e.currentTarget.textContent = "Aplicado"; e.currentTarget.disabled = true; } }));
+    }
   });
 }

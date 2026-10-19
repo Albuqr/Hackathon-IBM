@@ -3,8 +3,8 @@
 // Marcadores, pixels, barra lateral e legenda só desenham a saída daqui, então nunca discordam.
 // A regra de UF é a mesma da API (middleware/brasil/ingestao.py: filtrar / ufs_da_crise).
 
-export const PADRAO = Object.freeze({ sev: 1, uf: "", tipo: "", fonte: "", verif: "", q: "", modo: "municipios" });
-const CHAVES = { sev: "sev", uf: "uf", tipo: "tipo", fonte: "fonte", verif: "verif", q: "q", modo: "modo" };
+export const PADRAO = Object.freeze({ sev: 1, uf: "", tipo: "", fonte: "", verif: "", q: "", falta: "", modo: "municipios" });
+const CHAVES = { sev: "sev", uf: "uf", tipo: "tipo", fonte: "fonte", verif: "verif", q: "q", falta: "falta", modo: "modo" };
 
 export const nivel = (s) => Math.max(1, Math.min(5, Math.round(Number(s) || 1)));
 
@@ -20,6 +20,7 @@ export function lerFiltros(busca) {
   f.sev = nivel(f.sev);
   f.uf = f.uf.toUpperCase();
   if (f.modo !== "pixels") f.modo = "municipios";
+  f.falta = f.falta === "1" ? "1" : "";
   return f;
 }
 
@@ -30,7 +31,7 @@ export function gravarFiltros(f) {
   return s ? `?${s}` : "";
 }
 
-export const filtrosAtivos = (f) => ["sev", "uf", "tipo", "fonte", "verif", "q"].filter((k) => String(f[k]) !== String(PADRAO[k])).length;
+export const filtrosAtivos = (f) => ["sev", "uf", "tipo", "fonte", "verif", "q", "falta"].filter((k) => String(f[k]) !== String(PADRAO[k])).length;
 
 // ---------- regras (FR-008, FR-009) ----------
 // UFs que a crise alcança: a do município principal e a de cada município afetado.
@@ -43,9 +44,11 @@ export function ufsDaCrise(c, ufDe) {
   return ufs;
 }
 
-export function filtrar(crises, f, { ufDe = () => null, nomeDe = () => "" } = {}) {
+// `lacunas`: ids das crises onde falta gente (distribuição); com f.falta, só elas aparecem.
+export function filtrar(crises, f, { ufDe = () => null, nomeDe = () => "", lacunas = null } = {}) {
   const termo = semAcento(f.q).trim();
   return crises.filter((c) => {
+    if (f.falta && lacunas && !lacunas.has(c.id)) return false;
     if ((Number(c.severity) || 0) < f.sev) return false;
     if (f.tipo && c.crisis_type !== f.tipo) return false;
     if (f.fonte && c.source !== f.fonte) return false;

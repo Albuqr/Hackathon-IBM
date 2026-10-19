@@ -1,93 +1,147 @@
 {% extends "brasil/base.html" %}
-{% block titulo %}Admin · Crisis Monitor Brasil{% endblock %}
+{% block titulo %}Rotina · Crisis Monitor Brasil{% endblock %}
 {% block principal %}
 <div class="rolagem"><div class="pagina">
-  <div class="pagina-cabeca"><h1>Admin</h1>
-    <p>Ingestão de dados, crises de notícia, distribuição de voluntários e fila de notificações.</p></div>
-
-  <div class="cartao">
-    <div class="item-topo" style="align-items:center;margin-bottom:10px">
-      <p class="cartao-titulo" style="margin:0">Fontes de dados</p>
-      <button class="botao botao-primario" id="atualizar" type="button">Atualizar dados</button>
-    </div>
-    <p class="aviso ok" id="msg" role="status" hidden style="margin-bottom:10px"></p>
-    <div class="tabela-caixa"><table class="tabela">
-      <thead><tr><th>Fonte</th><th>Última coleta</th><th>Situação</th><th>Eventos</th><th>Último sucesso</th></tr></thead>
-      <tbody id="status"></tbody>
-    </table></div>
-  </div>
-
-  <div class="grade-2 secao">
-    <div class="cartao">
-      <p class="cartao-titulo">Crises de notícia</p>
-      <p class="item-meta" style="margin-bottom:10px">Ficam não verificadas até você confirmar ou descartar; sem decisão, saem em 7 dias.</p>
-      <ul class="lista" id="nao-verificadas"></ul>
-    </div>
-    <div class="cartao" id="distribuicao"><p class="cartao-titulo">Distribuição de voluntários</p></div>
-  </div>
-
-  <div class="cartao secao">
-    <p class="cartao-titulo">Fila de notificações</p>
-    <p class="item-meta" style="margin-bottom:10px">Com BRASIL_NOTIFICACOES=fila, nenhuma mensagem sai: elas ficam aqui até o Telegram voltar.</p>
-    <div class="tabela-caixa"><table class="tabela"><thead><tr><th>Quando</th><th>Canal</th><th>Voluntário</th><th>Crise</th></tr></thead><tbody id="fila"></tbody></table></div>
+  <p class="aviso" id="msg" role="alert" hidden></p>
+  <div id="etapas"></div>
+  <div class="pilha" style="margin-top:12px">
+    <details class="recolhe secao-d" id="fontes">
+      <summary>Fontes de dados</summary>
+      <div class="recolhe-corpo"><div class="tabela-caixa"><table class="tabela">
+        <thead><tr><th>Fonte</th><th>Última coleta</th><th>Situação</th><th>Eventos</th><th>Último sucesso</th></tr></thead>
+        <tbody id="status"></tbody>
+      </table></div></div>
+    </details>
+    <details class="recolhe secao-d" id="fila-caixa">
+      <summary>Fila de notificações</summary>
+      <div class="recolhe-corpo">
+        <p class="dica">Com BRASIL_NOTIFICACOES=fila nenhuma mensagem sai: elas ficam aqui até o Telegram voltar.</p>
+        <div class="tabela-caixa"><table class="tabela"><thead><tr><th>Quando</th><th>Canal</th><th>Voluntário</th><th>Mensagem</th></tr></thead><tbody id="fila"></tbody></table></div>
+      </div>
+    </details>
   </div>
 </div></div>
 {% endblock %}
 {% block scripts %}
 <script type="module">
-import { el as mk, acao, avisar, data as fmt, selSev, rotulo, TIPOS, FONTES, atualizarStatusColeta, linkSeguro } from "{{ url_for('brasil.static', filename='cliente.js') }}";
-async function carregar() {
-  const { ok, dados } = await acao("status_coleta"), linhas = ok ? dados : [];
-  const tb = document.getElementById("status");
-  tb.replaceChildren(...linhas.map((s) => mk("tr", {}, [
-    mk("td", { texto: rotulo(FONTES, s.fonte) }), mk("td", { texto: fmt(s.tentativa_em) }),
-    mk("td", { class: s.ok ? "ok" : "erro", texto: s.ok ? "ok" : "falha: " + (s.erro || "").slice(0, 160) }),
-    mk("td", { class: "num", texto: String(s.eventos ?? 0) }), mk("td", { texto: fmt(s.ultimo_ok_em) })])));
-  if (!linhas.length) tb.replaceChildren(mk("tr", {}, [mk("td", { colspan: "5", texto: 'Nenhuma coleta ainda. Clique em "Atualizar dados".' })]));
+import { el, acao, avisar, data as fmt, rotulo, TIPOS, FONTES, atualizarStatusColeta, linkSeguro, toast } from "{{ url_for('brasil.static', filename='cliente.js') }}";
+import { checklist, continuar } from "{{ url_for('brasil.static', filename='etapas.js') }}";
+const $ = (id) => document.getElementById(id);
+const msg = $("msg");
+const linhaAcoes = (...f) => el("div", { class: "acoes" }, f.filter(Boolean));
+let coleta = [], noticias = [], decididas = { confirmar: 0, descartar: 0 }, dist = null, fila = [];
+
+function resumoColeta() {
+  if (!coleta.length) return "Nenhuma coleta ainda";
+  const ultima = coleta.map((s) => s.tentativa_em).filter(Boolean).sort().pop();
+  return `${coleta.filter((s) => s.ok).length} de ${coleta.length} fontes ok · ${fmt(ultima)}`;
 }
-document.getElementById("atualizar").addEventListener("click", async (e) => {
-  const b = e.currentTarget, msg = document.getElementById("msg");
-  b.disabled = true; avisar(msg, "Coletando… pode levar até 2 minutos.", true);
-  const r = await acao("atualizar_dados");
-  b.disabled = false;
-  avisar(msg, r.ok ? `Pronto: ${r.dados.gravadas} crises gravadas em ${r.dados.segundos}s (orquestrador: ${r.dados.provedor}${r.dados.avisos?.length ? " — " + r.dados.avisos.join("; ") : ""}).` : r.erro, r.ok);
-  carregar(); atualizarStatusColeta(); naoVerificadas();
+function pintarFontes() {
+  $("status").replaceChildren(...(coleta.length ? coleta.map((s) => el("tr", {}, [
+    el("td", { texto: rotulo(FONTES, s.fonte) }), el("td", { texto: fmt(s.tentativa_em) }),
+    el("td", { class: s.ok ? "ok" : "erro", texto: s.ok ? "ok" : "falha: " + (s.erro || "").slice(0, 160) }),
+    el("td", { class: "num", texto: String(s.eventos ?? 0) }), el("td", { texto: fmt(s.ultimo_ok_em) })]))
+    : [el("tr", {}, [el("td", { colspan: "5", texto: "Nenhuma coleta ainda." })])]));
+}
+function pintarFila() {
+  $("fila").replaceChildren(...(fila.length ? fila.slice(0, 100).map((n) => el("tr", {}, [el("td", { texto: fmt(n.criada_em) }), el("td", { texto: n.canal }),
+    el("td", { texto: n.nome || String(n.user_id) }), el("td", { texto: (n.mensagem || "").split("\n")[0].slice(0, 120) })]))
+    : [el("tr", {}, [el("td", { colspan: "4", texto: "Fila vazia." })])]));
+}
+
+const etapaColeta = {
+  nome: "Atualizar dados", pergunta: "Atualize os dados.", ajuda: "Coleta INPE, CEMADEN, INMET, notícias e as fontes globais filtradas para o Brasil.",
+  resumo: resumoColeta,
+  corpo(c, ok) {
+    const prog = el("div", { class: "progresso-coleta", hidden: true }, [el("div", { class: "barra-coleta" }, [el("i")]), el("span", { class: "dica", texto: "Coletando… pode levar até 2 minutos." })]);
+    const res = el("div");
+    const b = continuar("Atualizar agora");
+    const pular = coleta.length ? el("button", { type: "button", class: "texto-link pequeno", texto: "Usar a coleta de " + fmt(coleta.map((s) => s.tentativa_em).sort().pop()), onclick: ok }) : null;
+    c.append(prog, res, linhaAcoes(b, pular));
+    b.addEventListener("click", async () => {
+      if (b.dataset.feito) return ok();
+      b.disabled = true; prog.hidden = false;
+      const r = await acao("atualizar_dados");
+      prog.hidden = true; b.disabled = false;
+      if (!r.ok) return avisar(msg, r.erro);
+      const sc = await acao("status_coleta"); coleta = sc.ok ? sc.dados : coleta; pintarFontes(); atualizarStatusColeta();
+      const falhas = coleta.filter((s) => !s.ok).map((s) => rotulo(FONTES, s.fonte));
+      res.replaceChildren(el("div", { class: "numeros" }, [
+        el("div", {}, [el("b", { texto: String(r.dados.gravadas) }), el("span", { texto: "crises gravadas" })]),
+        el("div", {}, [el("b", { texto: `${coleta.length - falhas.length}/${coleta.length}` }), el("span", { texto: "fontes ok" })]),
+        el("div", {}, [el("b", { texto: `${r.dados.segundos} s` }), el("span", { texto: "duração" })])]),
+        el("p", { class: "dica", texto: falhas.length ? `Falharam: ${falhas.join(", ")}. As outras responderam.` : "Todas as fontes responderam." }));
+      b.textContent = "Continuar"; b.dataset.feito = "1"; pular?.remove();
+      await carregarNoticias();
+    });
+  },
+};
+
+async function carregarNoticias() { const r = await acao("nao_verificadas"); noticias = r.ok ? r.dados : []; }
+const etapaNoticias = {
+  nome: "Verificar notícias", pergunta: "Confirme ou descarte as notícias.", ajuda: "Crises que vieram de notícia ficam marcadas até você decidir; sem decisão, saem em 7 dias.",
+  resumo: () => (decididas.confirmar || decididas.descartar ? `${decididas.confirmar} confirmada(s), ${decididas.descartar} descartada(s)` : noticias.length ? `${noticias.length} esperando` : "Nenhuma notícia esperando"),
+  corpo(c, ok) {
+    const lista = el("ul", { class: "lista" });
+    const b = continuar("Continuar", () => !noticias.length);
+    const desenhar = () => {
+      lista.replaceChildren(...(noticias.length ? noticias.map((n) => el("li", {}, [
+        el("div", { class: "item-texto" }, [el("span", { class: "item-titulo", texto: n.title }),
+          el("span", { class: "item-meta", texto: [n.uf, rotulo(TIPOS, n.crisis_type), `severidade ${Math.round(n.severity)}`, n.expira_em ? `expira ${fmt(n.expira_em)}` : null].filter(Boolean).join(" · ") }),
+          linkSeguro(n.link_fonte) ? el("a", { class: "texto-link pequeno", href: linkSeguro(n.link_fonte), target: "_blank", rel: "noopener", texto: "Ler a notícia ↗" }) : null]),
+        el("div", { class: "acoes" }, [
+          el("button", { type: "button", class: "pilula contorno", texto: "Confirmar", onclick: () => decidir(n, "confirmar") }),
+          el("button", { type: "button", class: "texto-link pequeno", texto: "Descartar", onclick: () => decidir(n, "descartar") })]),
+      ])) : [el("li", { class: "vazio", texto: "Nenhuma crise de notícia esperando decisão." })]));
+      b.disabled = noticias.length > 0;
+    };
+    async function decidir(n, a) {
+      const r = await acao("verificar", { p: { crisis_id: n.id }, corpo: { acao: a } });
+      if (!r.ok) return avisar(msg, r.erro);
+      decididas[a]++; noticias = noticias.filter((x) => x.id !== n.id); toast(a === "confirmar" ? "Notícia confirmada." : "Notícia descartada.");
+      desenhar();
+    }
+    desenhar();
+    c.append(lista, linhaAcoes(b, noticias.length ? el("button", { type: "button", class: "texto-link pequeno", texto: "Decidir depois", onclick: ok }) : null));
+    b.addEventListener("click", ok);
+  },
+};
+
+const etapaDistribuicao = {
+  nome: "Distribuição e avisos", pergunta: "Confira onde falta gente.", ajuda: "Crises graves sem voluntários, sugestões de realocação e mensagens esperando o Telegram.",
+  resumo: () => (dist ? `${Math.round(dist.cobertura * 100)}% das crises com alguém · ${dist.lacunas.length} lacunas · ${fila.length} avisos na fila` : "Conferido"),
+  corpo(c, ok) {
+    if (!dist) { c.append(el("p", { class: "vazio", texto: "Distribuição indisponível agora." })); }
+    else {
+      c.append(el("div", { class: "numeros" }, [
+        el("div", {}, [el("b", { texto: `${Math.round(dist.cobertura * 100)}%` }), el("span", { texto: "das crises ativas têm alguém" })]),
+        el("div", {}, [el("b", { texto: String(dist.lacunas.length) }), el("span", { texto: "lacunas" })]),
+        el("div", {}, [el("b", { texto: String(fila.length) }), el("span", { texto: "avisos na fila" })])]));
+      if (dist.lacunas.length) c.append(el("div", { class: "rotulo" }, ["Lacunas: crises graves com pouca gente", el("ul", { class: "lista" }, dist.lacunas.slice(0, 8).map((l) =>
+        el("li", {}, [el("div", { class: "item-texto" }, [el("span", { class: "item-titulo", texto: l.title }), el("span", { class: "item-meta", texto: `severidade ${l.severity} · ${l.voluntarios} de ${l.meta} voluntários` })])])))]));
+      if (dist.sugestoes.length) c.append(el("div", { class: "rotulo" }, ["Sugestões de realocação", el("ul", { class: "lista" }, dist.sugestoes.slice(0, 8).map((s) =>
+        el("li", {}, [el("div", { class: "item-texto" }, [el("span", { class: "item-titulo", texto: s.texto }), el("span", { class: "item-meta", texto: `${s.distancia_km} km` })])])))]));
+    }
+    const b = continuar("Concluir rotina");
+    c.append(linhaAcoes(b, el("button", { type: "button", class: "texto-link pequeno", texto: "Ver a fila de notificações", onclick: () => { $("fila-caixa").open = true; $("fila-caixa").scrollIntoView({ behavior: "smooth" }); } })));
+    b.addEventListener("click", ok);
+  },
+};
+
+const [sc, , d, f] = await Promise.all([acao("status_coleta"), carregarNoticias(), acao("distribuicao"), acao("notificacoes")]);
+coleta = sc.ok ? sc.dados : []; dist = d.ok ? d.dados : null; fila = f.ok ? f.dados : [];
+pintarFontes(); pintarFila();
+// coleta de menos de 6 h conta como feita: a rotina começa nas notícias
+const ultima = coleta.map((s) => s.tentativa_em).filter(Boolean).sort().pop();
+const recente = ultima && Date.now() - new Date(ultima).getTime() < 6 * 36e5;
+checklist($("etapas"), {
+  titulo: "Rotina de hoje.",
+  sub: "Três passos mantêm o mapa confiável para voluntários e ONGs.",
+  etapas: [etapaColeta, etapaNoticias, etapaDistribuicao],
+  inicio: { feitas: recente ? [0] : [], atual: recente ? 1 : 0 },
+  final: () => el("section", { class: "final" }, [el("h2", { texto: "Rotina concluída." }),
+    el("p", { texto: "Dados de hoje no mapa, notícias decididas e lacunas conferidas. As previsões de risco estão prontas para consulta." }),
+    linhaAcoes(el("a", { class: "pilula", href: "{{ url_for('brasil.mapa') }}", texto: "Abrir o mapa" }), el("a", { class: "texto-link seta", href: "{{ url_for('brasil.previsoes') }}", texto: "Ver previsões" }))]),
 });
-async function naoVerificadas() {
-  const r = await acao("nao_verificadas"), lista = r.ok ? r.dados : [];
-  const ul = document.getElementById("nao-verificadas");
-  const decidir = async (id, acaoNome) => {
-    const r = await acao("verificar", { p: { crisis_id: id }, corpo: { acao: acaoNome } });
-    if (!r.ok) avisar(document.getElementById("msg"), r.erro);
-    naoVerificadas();
-  };
-  ul.replaceChildren(...lista.map((c) => mk("li", {}, [
-    mk("div", { class: "item-topo" }, [mk("span", { class: "item-titulo" }, [selSev(c.severity), c.title]), mk("span", { class: "selo selo-nv", texto: "não verificada" })]),
-    mk("span", { class: "item-meta", texto: `${c.uf || ""} · ${rotulo(TIPOS, c.crisis_type)} · expira ${fmt(c.expira_em)}` }),
-    linkSeguro(c.link_fonte) ? mk("a", { class: "item-meta", href: linkSeguro(c.link_fonte), target: "_blank", rel: "noopener", texto: "ler a notícia ↗" }) : null,
-    mk("div", { class: "acoes" }, [mk("button", { type: "button", class: "botao botao-primario botao-pequeno", texto: "Confirmar", onclick: () => decidir(c.id, "confirmar") }),
-                                    mk("button", { type: "button", class: "botao botao-neutro botao-pequeno", texto: "Descartar", onclick: () => decidir(c.id, "descartar") })]),
-  ])));
-  if (!lista.length) ul.replaceChildren(mk("li", { class: "vazio", texto: r.ok ? "Nenhuma crise de notícia esperando decisão." : r.erro }));
-}
-async function distribuicao() {
-  const r = await acao("distribuicao"), d = r.ok ? r.dados : null, box = document.getElementById("distribuicao");
-  if (!d) return box.append(mk("p", { class: "vazio", texto: r.erro }));
-  const lista = (titulo, itens, f) => [mk("p", { class: "item-titulo", style: "margin-top:12px", texto: titulo }),
-    itens.length ? mk("ul", { class: "lista" }, itens.slice(0, 10).map((x) => mk("li", { class: "item-meta", texto: f(x) }))) : mk("p", { class: "vazio", texto: "nenhuma" })];
-  box.replaceChildren(mk("p", { class: "cartao-titulo", texto: "Distribuição de voluntários" }),
-    mk("div", { class: "kpi" }, [mk("b", { texto: Math.round(d.cobertura * 100) + "%" }), mk("span", { texto: "das crises ativas têm alguém" })]),
-    ...lista("Sugestões de realocação", d.sugestoes, (s) => `${s.texto} (${s.distancia_km} km)`),
-    ...lista("Lacunas", d.lacunas, (l) => `${l.title} — severidade ${l.severity}, ${l.voluntarios}/${l.meta} voluntários`),
-    ...lista("Redundâncias", d.redundancias, (x) => `${x.title} — ${x.voluntarios} para meta ${x.meta}`));
-}
-async function fila() {
-  const r = await acao("notificacoes"), linhas = r.ok ? r.dados : [];
-  const tb = document.getElementById("fila");
-  tb.replaceChildren(...linhas.map((n) => mk("tr", {}, [mk("td", { texto: fmt(n.criada_em) }), mk("td", { texto: n.canal }),
-    mk("td", { texto: n.nome || String(n.user_id) }), mk("td", { texto: n.crisis_id })])));
-  if (!linhas.length) tb.replaceChildren(mk("tr", {}, [mk("td", { colspan: "4", texto: "Fila vazia." })]));
-}
-carregar(); naoVerificadas(); distribuicao(); fila();
 </script>
 {% endblock %}
