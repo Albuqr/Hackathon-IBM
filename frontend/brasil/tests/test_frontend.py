@@ -80,7 +80,20 @@ def test_acao_desconhecida_e_parametro_que_escapa_do_caminho(front, logar):
     api.respostas[("PUT", "/crises/")] = (200, {"ok": True})
     cli.post("/brasil/acao/verificar", json={"p": {"crisis_id": "../usuarios/1"}, "corpo": {"acao": "confirmar"}})
     assert api.chamadas[-1][1] == "/crises/..%2Fusuarios%2F1/verificacao"
+    n = len(api.chamadas)
     assert cli.post("/brasil/acao/verificar", json={"corpo": {}}).status_code == 400
+    assert cli.post("/brasil/acao/verificar", json={"p": {"crisis_id": ".."}}).status_code == 400
+    assert cli.post("/brasil/acao/crises", json=[1]).status_code == 400
+    assert cli.post("/brasil/acao/crises", json={"p": "x"}).status_code == 400
+    assert len(api.chamadas) == n  # nada disso chega à API
+
+
+def test_encaminhador_so_aceita_json_csrf(front, logar):
+    cli, api = front
+    logar(cli, "admin", uid=1)
+    r = cli.post("/brasil/acao/atualizar_dados", data="x", content_type="text/plain")
+    assert r.status_code == 415 and api.chamadas == []
+    assert cli.application.config["SESSION_COOKIE_SAMESITE"] == "Lax"
 
 
 def test_consulta_e_corpo_sao_repassados(front, logar):

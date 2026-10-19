@@ -278,8 +278,12 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
             return {
                 "voluntarios_selecionados": sum(c["selecionados"] for c in campanhas),
                 "campanhas_ativas": sum(1 for c in campanhas if c["status"] == "active"),
+                # voluntários distintos nas campanhas desta ONG e, deles, os disponíveis (AC-017.1)
+                "voluntarios": len(vols),
                 "voluntarios_disponiveis": conn.execute(
-                    "SELECT COUNT(*) FROM users WHERE role='volunteer' AND available=1").fetchone()[0],
+                    """SELECT COUNT(DISTINCT u.id) FROM campaign_volunteers cv JOIN campaigns cam ON cam.id=cv.campaign_id
+                       JOIN users u ON u.id=cv.volunteer_id WHERE cam.org_id=? AND cv.status IN ('selected','confirmed')
+                       AND u.available=1""", (org_id,)).fetchone()[0],
                 "crises_apoiadas": len(crises),
                 "habilidades": dict(sorted(habilidades.items(), key=lambda kv: -kv[1])),
                 "campanhas": campanhas,

@@ -115,7 +115,7 @@ def _gravar(conn, ev: dict, cod, uf, agora: datetime):
         (ev["id"], ev.get("title", ""), "Brasil", "BRA", float(ev["lat"]), float(ev["lon"]),
          sev, ev.get("urgency") or "monitoring", ev.get("crisis_type") or "humanitarian",
          ev["source"], int(ev.get("people_affected") or 0), iso(agora), iso(agora), cod, uf,
-         ev.get("link_fonte"), json.dumps(ev.get("municipios_afetados") or ([cod] if cod else [])),
+         link_seguro(ev.get("link_fonte")), json.dumps(ev.get("municipios_afetados") or ([cod] if cod else [])),
          iso(visto), iso(expira) if expira else None, "nao_verificada" if noticia else "verificada"),
     )
     # histórico diário por crise (FR-034: previsões por recorrência)
@@ -190,6 +190,11 @@ def executar(cfg: Config, fontes: dict | None = None, agora: datetime | None = N
         conn.close()
     relatorio["segundos"] = round(time.monotonic() - inicio, 1)
     return relatorio
+
+
+def link_seguro(link):
+    """Só guarda links http(s); o resto (javascript:, data:) vira None."""
+    return link if isinstance(link, str) and link.lower().startswith(("http://", "https://")) else None
 
 
 def ev_fonte(nome: str, eventos: list) -> str:

@@ -2,8 +2,8 @@
 // Crises são marcadores separados (nada é agregado por município). Dois modos de fundo:
 //   Municípios: malha IBGE neutra, nome no hover.   Pixels: cada crise acende os pixels em volta, pela severidade.
 import { PADRAO, lerFiltros, gravarFiltros, filtrosAtivos, filtrar, numeros, opcoes, ordemDeDesenho,
-  raioMarcador, raioKm, acender, celulaEm, nivel } from "./visao.js";
-import { el, acao, avisar, data, rotulo, TIPOS, FONTES, SEVERIDADE, VERIFICACAO, atualizarStatusColeta } from "./cliente.js";
+  raioMarcador, raioKm, acender, nivel, grupoDe, GRUPOS } from "./visao.js";
+import { el, acao, avisar, data, rotulo, textoSeguro, linkSeguro, TIPOS, FONTES, SEVERIDADE, VERIFICACAO, atualizarStatusColeta } from "./cliente.js";
 
 const CFG = JSON.parse(document.getElementById("br-config").textContent);
 const PAPEL = CFG.papel;
@@ -17,11 +17,15 @@ function lerCores() {
     sev: [1, 2, 3, 4, 5].map((n) => css(`--sev${n}`)),
     mun: css("--mun"), munTraco: css("--mun-traco"), munFoco: css("--mun-foco"), uf: css("--uf"),
     area: css("--area"), pixel: css("--pixel"), anel: css("--anel"),
+    tipo: Object.fromEntries(GRUPOS.map((g) => [g, css(`--tipo-${g}`)])),
   };
 }
 const corSev = (s) => CORES.sev[nivel(s) - 1];
+const corTipo = (tipo) => CORES.tipo[grupoDe(tipo)];
 
 let estado = lerFiltros(location.search);
+// o modo também fica lembrado fora da URL (FR-002): o link "Mapa" do cabeçalho não leva a query
+try { if (!new URLSearchParams(location.search).has("modo") && localStorage.getItem("br-modo") === "pixels") estado.modo = "pixels"; } catch { /* sem armazenamento */ }
 let CRISES = [], VISIVEIS = [], INSCRITO = new Set();
 let M = null, UF_DE = () => null, NOME_DE = () => "";
 let mapa, camadaMun, camadaUf, marcadores, area = null;
@@ -69,7 +73,7 @@ async function carregar() {
   window.__brasil = { mapa, estado: () => ({ ...estado }), visiveis: () => VISIVEIS.map((c) => c.id), abrir: abrirCrise,
     marcadores: () => marcadores.getLayers().map((l) => l.options.criseId),
     area: () => (area ? area.getLayers().length : 0),
-    pixelsAcesos: () => PIX.acesas.filter(Boolean).length };
+    pixelsAcesos: () => (PIX ? PIX.foco.filter((f) => f >= 0).length : 0) };
   document.body.dataset.pronto = "1";
 }
 
@@ -103,7 +107,7 @@ function montarMapa() {
     renderer: render,
     style: () => ({ fillColor: CORES.mun, fillOpacity: 1, color: CORES.munTraco, weight: 0.4, opacity: 1 }),
     onEachFeature(f, layer) {
-      layer.bindTooltip(`${f.properties.nome} · ${f.properties.uf}`, { sticky: true, direction: "top", offset: [0, -6] });
+      layer.bindTooltip(textoSeguro(`${f.properties.nome} · ${f.properties.uf}`), { sticky: true, direction: "top", offset: [0, -6] });
       layer.on({
         mouseover: () => layer.setStyle({ color: CORES.munFoco, weight: 1.5 }),
         mouseout: () => camadaMun.resetStyle(layer),
@@ -119,10 +123,11 @@ function montarMapa() {
 
   mapa.on("popupopen", (e) => mostrarArea(e.popup._criseId));
   mapa.on("popupclose", () => mostrarArea(null));
-  mapa.on("moveend zoomend resize", () => estado.modo === "pixels" && desenharPixels());
+  mapa.on("zoomstart", () => { if (estado.modo === "pixels") tela.style.visibility = "hidden"; });
+  mapa.on("moveend resize", pedirPixels);
   mapa.on("mousemove", pairarPixel);
   mapa.on("click", clicarPixel);
-  window.addEventListener("resize", () => { mapa.invalidateSize(); if (estado.modo === "pixels") desenharPixels(); });
+  window.addEventListener("resize", () => { mapa.invalidateSize(); pedirPixels(); });
   document.addEventListener("br:tema", () => {
     lerCores();
     camadaMun.setStyle(() => ({ fillColor: CORES.mun, fillOpacity: 1, color: CORES.munTraco, weight: 0.4, opacity: 1 }));
@@ -154,6 +159,7 @@ function sincronizarControles() {
 }
 function mudar(parcial, opcoes = {}) {
   estado = { ...estado, ...parcial };
+  try { localStorage.setItem("br-modo", estado.modo); } catch { /* sem armazenamento */ }
   history.replaceState(null, "", location.pathname + gravarFiltros(estado));
   desenhar(opcoes);
 }
@@ -197,48 +203,68 @@ function desenharMarcadores() {
   for (const c of ordemDeDesenho(VISIVEIS)) {
     const nv = c.verificacao === "nao_verificada";
     L.circleMarker([c.lat, c.lon], {
-      pane: "marcas", radius: raioMarcador(c.severity), fillColor: corSev(c.severity), fillOpacity: 0.92,
+      pane: "marcas", radius: raioMarcador(c.severity), fillColor: corTipo(c.crisis_type), fillOpacity: 0.9,
       color: nv ? css("--acento") : CORES.anel, weight: nv ? 1.5 : 1.2, dashArray: nv ? "3 2" : null, criseId: c.id,
-    }).bindTooltip(c.title, { direction: "top", offset: [0, -4] })
+    }).bindTooltip(textoSeguro(c.title), { direction: "top", offset: [0, -4] })
       .on("click", () => abrirCrise(c.id))
       .addTo(marcadores);
   }
 }
 
 // ---------- pixels (FR-005) ----------
+// Desempenho: a forma do Brasil vira uma máscara lat/lon calculada uma vez; cada redesenho só lê a máscara
+// (lon por coluna e lat por linha, porque na projeção do mapa elas são independentes), acende as células
+// perto das crises visíveis na tela e pinta tudo em poucos caminhos por cor.
 const tela = $("pixels");
 const ctx2d = tela.getContext("2d");
-let PIX = { celulas: [], acesas: [], indice: new Map() };
+let PIX = null;          // { grade, foco, k, focos }
+let MASCARA = null;      // { w, h, lon0, lat1, passo, dados }
 
-function limparPixels() { ctx2d.clearRect(0, 0, tela.width, tela.height); PIX = { celulas: [], acesas: [], indice: new Map() }; }
-
-// Recorta a grade ao Brasil desenhando as UFs num canvas fora da tela e lendo onde há tinta.
-function celulasNoBrasil(w, h) {
+function montarMascara() {
+  const passo = 0.04;  // graus (~4 km)
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const aneis = [];
+  for (const f of M.estados.features) {
+    const g = f.geometry;
+    for (const pl of g.type === "Polygon" ? [g.coordinates] : g.coordinates) for (const anel of pl) {
+      aneis.push(anel);
+      for (const [lon, lat] of anel) { x0 = Math.min(x0, lon); x1 = Math.max(x1, lon); y0 = Math.min(y0, lat); y1 = Math.max(y1, lat); }
+    }
+  }
+  const w = Math.ceil((x1 - x0) / passo) + 1, h = Math.ceil((y1 - y0) / passo) + 1;
   const off = document.createElement("canvas");
   off.width = w; off.height = h;
   const o = off.getContext("2d");
-  o.fillStyle = "#000";
-  for (const f of M.estados.features) {
-    const g = f.geometry;
-    const polys = g.type === "Polygon" ? [g.coordinates] : g.coordinates;
-    o.beginPath();
-    for (const pl of polys) for (const anel of pl) {
-      anel.forEach(([lon, lat], i) => {
-        const p = mapa.latLngToContainerPoint([lat, lon]);
-        i ? o.lineTo(p.x, p.y) : o.moveTo(p.x, p.y);
-      });
-      o.closePath();
-    }
-    o.fill("evenodd");
-  }
+  o.beginPath();
+  for (const anel of aneis) anel.forEach(([lon, lat], i) => {
+    const x = (lon - x0) / passo, y = (y1 - lat) / passo;
+    i ? o.lineTo(x, y) : o.moveTo(x, y);
+  });
+  o.fill("evenodd");
   const img = o.getImageData(0, 0, w, h).data;
-  const celulas = [];
-  for (let y = LADO / 2; y < h; y += LADO) {
-    for (let x = LADO / 2; x < w; x += LADO) {
-      if (img[(Math.floor(y) * w + Math.floor(x)) * 4 + 3] > 0) celulas.push({ x, y });
+  const dados = new Uint8Array(w * h);
+  for (let p = 0; p < w * h; p++) dados[p] = img[p * 4 + 3] > 0 ? 1 : 0;
+  MASCARA = { w, h, lon0: x0, lat1: y1, passo, dados };
+}
+
+function limparPixels() { ctx2d.clearRect(0, 0, tela.width, tela.height); PIX = null; }
+
+function gradeNaTela(t) {
+  if (!MASCARA) montarMascara();
+  const cols = Math.ceil(t.x / LADO), lins = Math.ceil(t.y / LADO);
+  const colX = new Int32Array(cols), linY = new Int32Array(lins);
+  for (let i = 0; i < cols; i++) colX[i] = Math.floor((mapa.containerPointToLatLng([i * LADO + LADO / 2, 0]).lng - MASCARA.lon0) / MASCARA.passo);
+  for (let j = 0; j < lins; j++) linY[j] = Math.floor((MASCARA.lat1 - mapa.containerPointToLatLng([0, j * LADO + LADO / 2]).lat) / MASCARA.passo);
+  const dentro = new Uint8Array(cols * lins);
+  for (let j = 0; j < lins; j++) {
+    const y = linY[j];
+    if (y < 0 || y >= MASCARA.h) continue;
+    for (let i = 0; i < cols; i++) {
+      const x = colX[i];
+      if (x >= 0 && x < MASCARA.w) dentro[j * cols + i] = MASCARA.dados[y * MASCARA.w + x];
     }
   }
-  return celulas;
+  return { cols, lins, lado: LADO, dentro };
 }
 
 function kmPorPx() {
@@ -255,30 +281,60 @@ function desenharPixels() {
   L.DomUtil.setPosition(tela, mapa.containerPointToLayerPoint([0, 0]));
   ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx2d.clearRect(0, 0, t.x, t.y);
-  const celulas = celulasNoBrasil(t.x, t.y);
+  const grade = gradeNaTela(t);
   const escala = kmPorPx();
-  const focos = VISIVEIS.map((c) => {
+  const focos = [];
+  for (const c of VISIVEIS) {
+    // alcance em km, mas limitado em px: com zoom alto as crises continuam separadas em vez de inundar a tela
     const p = mapa.latLngToContainerPoint([c.lat, c.lon]);
-    return { id: c.id, sev: c.severity, x: p.x, y: p.y, r: raioKm(c.severity) / escala };
-  });
-  const acesas = acender(celulas, focos, LADO);
-  const indice = new Map();
-  celulas.forEach((c, i) => indice.set(celulaEm(c.x, c.y, LADO), i));
-  PIX = { celulas, acesas, indice };
-  for (let i = 0; i < celulas.length; i++) {
-    const c = celulas[i], a = acesas[i];
-    const tam = a ? LADO * (0.45 + 0.5 * a.k) : LADO * 0.32;
-    ctx2d.fillStyle = a ? corSev(a.sev) : CORES.pixel;
-    ctx2d.globalAlpha = a ? 0.55 + 0.45 * a.k : 1;
-    ctx2d.fillRect(c.x - tam / 2, c.y - tam / 2, tam, tam);
+    const r = Math.min(raioKm(c.severity) / escala, LADO * (2.5 + 1.5 * nivel(c.severity)));
+    if (p.x + r < 0 || p.y + r < 0 || p.x - r > t.x || p.y - r > t.y) continue;  // fora da tela
+    focos.push({ id: c.id, sev: c.severity, grupo: grupoDe(c.crisis_type), x: p.x, y: p.y, r });
+  }
+  const { foco, k } = acender(grade, focos);
+  PIX = { grade, foco, k, focos };
+  // um caminho para as células apagadas e um por (tipo, faixa de intensidade) para as acesas
+  const caminhos = new Map();
+  const apagadas = new Path2D();
+  const { cols, lins } = grade, base = LADO * 0.3;
+  for (let j = 0; j < lins; j++) for (let i = 0; i < cols; i++) {
+    const idx = j * cols + i;
+    if (!grade.dentro[idx]) continue;
+    const cx = i * LADO + LADO / 2, cy = j * LADO + LADO / 2;
+    const f = foco[idx];
+    if (f < 0) { apagadas.rect(cx - base / 2, cy - base / 2, base, base); continue; }
+    const faixa = Math.min(3, Math.floor(k[idx] * 4));          // 0–3
+    const chave = focos[f].grupo + faixa;
+    let c = caminhos.get(chave);
+    if (!c) caminhos.set(chave, (c = { grupo: focos[f].grupo, faixa, p: new Path2D() }));
+    const tam = LADO * (0.62 + 0.11 * faixa);                    // acesas quase cheias: o mapa ganha cor
+    c.p.rect(cx - tam / 2, cy - tam / 2, tam, tam);
+  }
+  ctx2d.fillStyle = CORES.pixel;
+  ctx2d.fill(apagadas);
+  for (const c of caminhos.values()) {
+    ctx2d.globalAlpha = 0.55 + 0.15 * c.faixa;
+    ctx2d.fillStyle = CORES.tipo[c.grupo];
+    ctx2d.fill(c.p);
   }
   ctx2d.globalAlpha = 1;
+  tela.style.visibility = "";
+}
+
+// Redesenho em no máximo um quadro; durante o zoom animado os pixels somem (não escalam com o mapa).
+let pedido = 0;
+function pedirPixels() {
+  if (estado.modo !== "pixels" || pedido) return;
+  pedido = requestAnimationFrame(() => { pedido = 0; desenharPixels(); });
 }
 
 function criseNoPixel(e) {
-  if (estado.modo !== "pixels" || !PIX.celulas.length) return null;
-  const i = PIX.indice.get(celulaEm(e.containerPoint.x, e.containerPoint.y, LADO));
-  return i === undefined ? null : PIX.acesas[i];
+  if (estado.modo !== "pixels" || !PIX) return null;
+  const { cols, lins, lado } = PIX.grade;
+  const i = Math.floor(e.containerPoint.x / lado), j = Math.floor(e.containerPoint.y / lado);
+  if (i < 0 || j < 0 || i >= cols || j >= lins) return null;
+  const f = PIX.foco[j * cols + i];
+  return f < 0 ? null : PIX.focos[f];
 }
 function pairarPixel(e) {
   const a = criseNoPixel(e);
@@ -322,7 +378,7 @@ function conteudo(c) {
       el("span", { class: "pop-titulo", texto: c.title }),
     ]),
     el("div", { class: "pop-meta" }, [
-      el("span", { texto: rotulo(TIPOS, c.crisis_type) }),
+      el("span", {}, [el("i", { class: "ponto-tipo", style: `background:${corTipo(c.crisis_type)}` }), rotulo(TIPOS, c.crisis_type)]),
       el("span", { texto: rotulo(FONTES, c.source) }),
       el("span", { texto: `${SEVERIDADE[nivel(c.severity)]}` }),
       mun ? el("span", { texto: `${mun} · ${c.uf || ""}` }) : null,
@@ -331,7 +387,7 @@ function conteudo(c) {
     ]),
     el("div", {}, [
       el("span", { class: nv ? "selo selo-nv" : "selo verificada", texto: rotulo(VERIFICACAO, c.verificacao || "verificada") }),
-      c.link_fonte ? el("a", { class: "item-meta", href: c.link_fonte, target: "_blank", rel: "noopener", texto: " fonte ↗" }) : null,
+      linkSeguro(c.link_fonte) ? el("a", { class: "item-meta", href: linkSeguro(c.link_fonte), target: "_blank", rel: "noopener", texto: " fonte ↗" }) : null,
     ]),
     el("div", { class: "pop-assoc" }, [
       el("span", {}, [el("b", { "data-n": "voluntarios", texto: String(c.voluntarios ?? 0) }), "voluntários"]),

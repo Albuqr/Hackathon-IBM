@@ -23,7 +23,7 @@
 </head>
 {% set atual = request.endpoint %}
 {% set tem_lateral = self.lateral() | trim | length > 0 %}
-<body class="app{{ ' com-lateral' if tem_lateral }}">
+<body class="app">
   <a class="skip" href="#conteudo">Pular para o conteúdo</a>
   <header class="topo">
     <div class="topo-esq">
@@ -62,12 +62,13 @@
   </div>
 
   <footer class="statusbar">
-    <span class="status-online">SISTEMA ONLINE</span>
+    <span class="status-online" id="status-sistema">VERIFICANDO…</span>
     <span class="status-coleta" id="status-coleta">Carregando status da coleta…</span>
-    <span class="status-legenda" aria-label="Legenda de severidade">
-      {% for n, nome in [(5, 'Extrema'), (4, 'Crítica'), (3, 'Alta'), (2, 'Moderada'), (1, 'Baixa')] %}
-      <span><i style="background:var(--sev{{ n }})"></i>{{ nome }}</span>
+    <span class="status-legenda" aria-label="Legenda: cor = tipo de crise, tamanho = severidade">
+      {% for g, nome in [('meteorologico', 'Meteorológico'), ('queimada', 'Queimada'), ('hidrologico', 'Hidrológico'), ('seca', 'Seca'), ('geologico', 'Geológico'), ('outros', 'Outros')] %}
+      <span><i style="background:var(--tipo-{{ g }})"></i>{{ nome }}</span>
       {% endfor %}
+      <span class="legenda-tamanho">tamanho = severidade</span>
     </span>
   </footer>
 

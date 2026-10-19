@@ -37,6 +37,11 @@ export function el(tag, attrs = {}, filhos = []) {
   return n;
 }
 
+// Conteúdo seguro para tooltips/popups do Leaflet (string vira innerHTML lá dentro).
+export const textoSeguro = (s) => el("span", { texto: String(s ?? "") });
+// Só links http(s) viram href (bloqueia javascript: vindo de feeds/eventos).
+export const linkSeguro = (u) => (/^https?:\/\//i.test(String(u || "")) ? u : null);
+
 // Selo de severidade colorido pela escala do tema.
 export const selSev = (s) => el("span", { class: `sev s${nivel(s)}`, style: `background:var(--sev${nivel(s)})`, title: `Severidade ${nivel(s)}`, texto: String(nivel(s)) });
 
@@ -141,6 +146,8 @@ export async function atualizarStatusColeta() {
   const alvo = document.getElementById("status-coleta");
   if (!alvo) return;
   const { ok, dados } = await acao("status_coleta");
+  const sis = document.getElementById("status-sistema");
+  if (sis) { sis.textContent = ok ? "SISTEMA ONLINE" : "API INDISPONÍVEL"; sis.classList.toggle("fora", !ok); }
   if (!ok || !Array.isArray(dados) || !dados.length) { alvo.textContent = ok ? "Nenhuma coleta ainda" : "Status da coleta indisponível"; return; }
   const ultima = dados.map((s) => s.tentativa_em).filter(Boolean).sort().pop();
   const okN = dados.filter((s) => s.ok).length;

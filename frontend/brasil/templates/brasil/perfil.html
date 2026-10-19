@@ -19,8 +19,8 @@
             <div class="acoes"><input id="nova-hab" placeholder="Nova habilidade" style="flex:1"><button class="botao botao-neutro botao-pequeno" type="button" id="add-hab">+ Adicionar</button></div>
           </div>
           <div class="linha">
-            <label>Latitude <input name="lat" type="number" step="any" value="{{ u.lat }}"></label>
-            <label>Longitude <input name="lon" type="number" step="any" value="{{ u.lon }}"></label>
+            <label>Latitude <input name="lat" type="number" step="any" value="{{ u.lat if u.lat else '' }}"></label>
+            <label>Longitude <input name="lon" type="number" step="any" value="{{ u.lon if u.lon else '' }}"></label>
           </div>
           <label class="campo"><span class="campo-linha">Raio de atuação <output id="raio-valor">{{ u.radius_km|int }} km</output></span>
             <input type="range" name="radius_km" id="raio" min="10" max="2000" step="10" value="{{ u.radius_km|int }}"></label>
@@ -78,8 +78,9 @@ $("copiar")?.addEventListener("click", (e) => { navigator.clipboard?.writeText("
 $("form-perfil").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
-  const r = await acao("salvar_perfil", { corpo: { name: f.get("name"), phone: f.get("phone"), skills,
-    lat: Number(f.get("lat")), lon: Number(f.get("lon")), radius_km: Number(f.get("radius_km")), available: f.get("available") === "on" } });
+  const corpo = { name: f.get("name"), phone: f.get("phone"), skills, radius_km: Number(f.get("radius_km")), available: f.get("available") === "on" };
+  if (f.get("lat") !== "" && f.get("lon") !== "") { corpo.lat = Number(f.get("lat")); corpo.lon = Number(f.get("lon")); }  // sem local: salva o resto
+  const r = await acao("salvar_perfil", { corpo });
   avisar($("msg"), r.ok ? "Perfil salvo." : r.erro, r.ok);
   if (r.ok) { P.lat = r.dados.lat; P.lon = r.dados.lon; noRaio(); }
 });

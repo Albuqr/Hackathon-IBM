@@ -1,6 +1,6 @@
-"""Semeia crises fixas no brasil.db para o teste E2E do mapa (frontend/brasil/tests/e2e/mapa.spec.mjs).
+"""Semeia crises e convites fixos no brasil.db para o E2E (frontend/brasil/tests/e2e/app.spec.mjs).
 
-Uso: BRASIL_DB_PATH=data/brasil-e2e.db python -m middleware.brasil.semear_teste
+Uso: BRASIL_DB_PATH=data/brasil-e2e.db BRASIL_DEV_LOGIN=1 python -m middleware.brasil.semear_teste
 Recusa rodar sem BRASIL_DB_PATH explícito, para nunca misturar com dados reais.
 """
 import os
@@ -40,6 +40,8 @@ CRISES = [
 def main():
     if not os.environ.get("BRASIL_DB_PATH"):
         sys.exit("defina BRASIL_DB_PATH (ex.: data/brasil-e2e.db)")
+    if os.environ.get("BRASIL_DEV_LOGIN") != "1":
+        sys.exit("defina BRASIL_DEV_LOGIN=1 (a semente usa os usuários de teste)")
     cfg = carregar()
     agora = datetime.now(timezone.utc)
     visto = (agora - timedelta(hours=1)).isoformat()
