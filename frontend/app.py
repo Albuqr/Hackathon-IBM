@@ -594,4 +594,6 @@ def api_chat():
 app.register_blueprint(__import__("brasil").bp)  # Dash Brasil (ADR 0001)
 # ── Run ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=os.environ.get("FLASK_DEBUG") == "1")  # nunca debug em produção
+    # Dev server only, loopback by default. The container runs gunicorn (Dockerfile.frontend).
+    app.run(host=os.environ.get("FLASK_HOST", "127.0.0.1"), port=5000,
+            debug=os.environ.get("FLASK_DEBUG") == "1")  # nunca debug em produção

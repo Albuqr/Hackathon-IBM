@@ -23,7 +23,10 @@ _last_ingest = {"ts": 0, "count": 0}
 load_dotenv()
 
 app = FastAPI(title="HKTN26 Crisis API")
-app.add_middleware(CORSMiddleware, allow_origins=["*"],
+# The browser only talks to the Flask frontend (same origin); the frontend calls this API server to
+# server. Cross-origin access is for local development, or set CORS_ORIGINS (comma separated).
+_cors = os.environ.get("CORS_ORIGINS", "http://localhost:5000,http://localhost:5173")
+app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in _cors.split(",") if o.strip()],
     allow_methods=["*"], allow_headers=["*"])
 
 DB = os.environ.get("DB_PATH", "data/crisis.db")

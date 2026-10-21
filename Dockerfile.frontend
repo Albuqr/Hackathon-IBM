@@ -9,4 +9,6 @@ RUN pip install --no-cache-dir -r frontend/requirements.txt && \
 
 EXPOSE 5000
 
-CMD ["python", "frontend/app.py"]
+# gunicorn, not the Flask dev server. One worker with threads keeps the single-process behaviour
+# the app had; the long timeout covers the 60 s orchestrator calls. --pythonpath keeps cwd at /app.
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "8", "--timeout", "120", "--pythonpath", "frontend", "app:app"]
