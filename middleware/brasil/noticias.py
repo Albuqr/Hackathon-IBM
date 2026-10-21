@@ -141,7 +141,7 @@ def extrair(itens: list[dict], dominios: list[str], agora: datetime | None = Non
         vistos.add((cod, tipo))
         publicado = it.get("publicado_em") or agora.isoformat()
         eventos.append({
-            "id": "noticia-" + hashlib.sha1(it["link"].encode(), usedforsecurity=False).hexdigest()[:12],
+            "id": "noticia-" + hashlib.sha256(it["link"].encode()).hexdigest()[:12],
             "title": it["titulo"][:200],
             "lat": round(centro[0], 5), "lon": round(centro[1], 5),
             "severity": SEVERIDADE_MAX if re.search(GRAVE, norm) else 2,
@@ -166,6 +166,22 @@ def ja_coberto_por_api(cfg: Config, eventos: list[dict], agora: datetime) -> lis
     return [e for e in eventos if (e["municipio_ibge"], e["crisis_type"]) not in cobertos]
 
 
+def reaproveitar_ids(cfg: Config, eventos: list[dict]) -> list[dict]:
+    """Uma notícia que já está gravada mantém o ID que tem. Os IDs antigos eram o SHA-1 do link e
+    os novos são o SHA-256; reaproveitar o ID gravado (casando pelo link) evita duplicar a notícia
+    e preserva o que aponta para ela (associações, campanhas) até ela expirar."""
+    if not eventos:
+        return eventos
+    from .ingestao import link_seguro
+    conn = db.conectar(cfg)
+    try:
+        gravados = {r[0]: r[1] for r in conn.execute(
+            "SELECT link_fonte, id FROM crises WHERE source='noticias' AND id LIKE 'noticia-%'")}
+    finally:
+        conn.close()
+    return [{**e, "id": gravados.get(link_seguro(e.get("link_fonte")), e["id"])} for e in eventos]
+
+
 def coletar(cfg: Config, buscar=None, agora: datetime | None = None) -> list[dict]:
     """Fonte "noticias" da ingestão no modo local."""
     from .ingestao import _tools, executar_ferramenta
@@ -179,4 +195,4 @@ def coletar(cfg: Config, buscar=None, agora: datetime | None = None) -> list[dic
         itens = buscar(fontes["feeds"])
     if itens and all(i.get("error") for i in itens):
         return [{"error": itens[0]["error"], "source": "noticias"}]
-    return ja_coberto_por_api(cfg, extrair(itens, fontes["dominios"], agora), agora)
+    return reaproveitar_ids(cfg, ja_coberto_por_api(cfg, extrair(itens, fontes["dominios"], agora), agora))
