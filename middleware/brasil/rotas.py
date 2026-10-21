@@ -29,7 +29,21 @@ USUARIOS_TESTE = {
     "admin": {"email": "admin@teste.brasil", "role": "admin", "name": "Admin de Teste", "lat": -15.7939, "lon": -47.8828},
 }
 
-CAMPOS_USUARIO = "id, email, role, name, phone, skills, languages, lat, lon, radius_km, org_name, available, link_code"
+SQL_USUARIO = (
+    "SELECT id, email, role, name, phone, skills, languages, lat, lon, radius_km, org_name, "
+    "available, link_code FROM users WHERE id=?"
+)
+# One literal statement per editable field, so no SQL is built from strings.
+ATUALIZAR_USUARIO = {
+    "name": "UPDATE users SET name=? WHERE id=?",
+    "phone": "UPDATE users SET phone=? WHERE id=?",
+    "skills": "UPDATE users SET skills=? WHERE id=?",
+    "languages": "UPDATE users SET languages=? WHERE id=?",
+    "lat": "UPDATE users SET lat=? WHERE id=?",
+    "lon": "UPDATE users SET lon=? WHERE id=?",
+    "radius_km": "UPDATE users SET radius_km=? WHERE id=?",
+    "available": "UPDATE users SET available=? WHERE id=?",
+}
 
 
 def _hash(pw: str) -> str:
@@ -42,7 +56,7 @@ def _link_code() -> str:
 
 
 def _usuario(conn, uid: int) -> dict:
-    r = conn.execute(f"SELECT {CAMPOS_USUARIO} FROM users WHERE id=?", (uid,)).fetchone()
+    r = conn.execute(SQL_USUARIO, (uid,)).fetchone()
     if not r:
         raise HTTPException(404, "Usuário não encontrado")
     u = dict(r)
@@ -143,7 +157,8 @@ def atualizar_usuario(uid: int, p: Perfil, u: dict = Depends(ACESSO.identidade))
     try:
         _usuario(conn, uid)
         if dados:
-            conn.execute(f"UPDATE users SET {', '.join(f'{k}=?' for k in dados)} WHERE id=?", (*dados.values(), uid))
+            for campo, valor in dados.items():
+                conn.execute(ATUALIZAR_USUARIO[campo], (valor, uid))
             conn.commit()
         return _usuario(conn, uid)
     finally:

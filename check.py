@@ -1,8 +1,8 @@
 import requests
 
-print('STATS:', requests.get('http://localhost:8000/stats').json())
+print('STATS:', requests.get('http://localhost:8000/stats', timeout=30).json())
 print()
-events = requests.get('http://localhost:8000/events').json()
+events = requests.get('http://localhost:8000/events', timeout=30).json()
 for e in events:
     sev = e['severity']
     tipo = e['crisis_type']

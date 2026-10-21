@@ -35,7 +35,7 @@ print("=" * 50)
 for tool in tools:
     print(f"\n>> {tool}")
     result = subprocess.run(
-        [orchestrate, "tools", "import", "-k", "python", "-f", tool],
+        [orchestrate, "tools", "import", "-k", "python", "-f", tool, "-r", "tools/requirements.txt"],
         capture_output=True, text=True
     )
     if result.returncode == 0:

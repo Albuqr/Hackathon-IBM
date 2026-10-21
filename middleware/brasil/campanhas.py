@@ -35,6 +35,27 @@ class NovaCampanha(BaseModel):
     convidados: list[int] = []  # publicar e convidar numa chamada só
 
 
+# One literal statement per editable field, so no SQL is built from strings.
+ATUALIZAR_CAMPANHA = {
+    "title": "UPDATE campaigns SET title=? WHERE id=?",
+    "description": "UPDATE campaigns SET description=? WHERE id=?",
+    "skills_needed": "UPDATE campaigns SET skills_needed=? WHERE id=?",
+    "target_volunteers": "UPDATE campaigns SET target_volunteers=? WHERE id=?",
+    "start_date": "UPDATE campaigns SET start_date=? WHERE id=?",
+    "end_date": "UPDATE campaigns SET end_date=? WHERE id=?",
+    "urgency": "UPDATE campaigns SET urgency=? WHERE id=?",
+    "status": "UPDATE campaigns SET status=? WHERE id=?",
+}
+VOLUNTARIOS_BASE = (
+    "SELECT id, name, email, skills, lat, lon, radius_km, available FROM users "
+    "WHERE role='volunteer' AND lat!=0 AND lon!=0"
+)
+VOLUNTARIOS_DISPONIVEIS = (
+    "SELECT id, name, email, skills, lat, lon, radius_km, available FROM users "
+    "WHERE role='volunteer' AND lat!=0 AND lon!=0 AND available=1"
+)
+
+
 class EdicaoCampanha(BaseModel):
     title: str | None = Field(None, min_length=3, max_length=200)
     description: str | None = None
@@ -164,10 +185,11 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
             org_id = u["id"]  # a ONG só vê as próprias
         conn = conectar()
         try:
-            q, p = "SELECT id FROM campaigns", ()
             if org_id is not None:
-                q, p = q + " WHERE org_id=?", (org_id,)
-            return [campanha_completa(conn, row["id"]) for row in conn.execute(q + " ORDER BY created_at DESC", p)]
+                linhas = conn.execute("SELECT id FROM campaigns WHERE org_id=? ORDER BY created_at DESC", (org_id,))
+            else:
+                linhas = conn.execute("SELECT id FROM campaigns ORDER BY created_at DESC")
+            return [campanha_completa(conn, row["id"]) for row in linhas]
         finally:
             conn.close()
 
@@ -192,8 +214,8 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
             dados = e.model_dump(exclude_none=True)
             if "skills_needed" in dados:
                 dados["skills_needed"] = json.dumps([s.strip() for s in dados["skills_needed"] if s.strip()], ensure_ascii=False)
-            if dados:
-                conn.execute(f"UPDATE campaigns SET {', '.join(f'{k}=?' for k in dados)} WHERE id=?", (*dados.values(), cid))
+            for campo, valor in dados.items():
+                conn.execute(ATUALIZAR_CAMPANHA[campo], (valor, cid))
             if dados.get("status") == "closed" and antes["status"] == "active":  # avisa os confirmados
                 conf = [dict(x) for x in conn.execute(
                     """SELECT u.id AS volunteer_id, u.name, u.telegram_id, u.phone FROM campaign_volunteers cv
@@ -292,9 +314,7 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
         try:
             alvo = conn.execute("SELECT lat, lon FROM crises WHERE id=?", (crisis_id,)).fetchone() if crisis_id else None
             out = []
-            filtro = "" if incluir_indisponiveis else " AND available=1"
-            for u in conn.execute("SELECT id, name, email, skills, lat, lon, radius_km, available FROM users "
-                                  "WHERE role='volunteer' AND lat!=0 AND lon!=0" + filtro):
+            for u in conn.execute(VOLUNTARIOS_BASE if incluir_indisponiveis else VOLUNTARIOS_DISPONIVEIS):
                 d = dict(u) | {"skills": json.loads(u["skills"] or "[]"), "distancia_km": None}
                 if alvo:
                     d["distancia_km"] = round(_haversine_km(alvo["lat"], alvo["lon"], u["lat"], u["lon"]), 1)

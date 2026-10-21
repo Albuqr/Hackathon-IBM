@@ -43,7 +43,7 @@ def cabecalhos(env=None) -> dict:
 def instalar(app):
     """Registra a checagem no app FastAPI. Avisa uma vez, na subida, se ficou aberta."""
     if segredo() is None:
-        log.warning("API sem proteção: defina SECRET_KEY (diferente do padrão) para exigir %s", CABECALHO)
+        log.warning("API sem proteção: defina SECRET_KEY (diferente do padrão) para exigir o cabeçalho de acesso")
 
     @app.middleware("http")
     async def exigir_token(request, call_next):

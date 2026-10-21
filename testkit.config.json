@@ -1,0 +1,17 @@
+{
+  "project": { "name": "Hackathon-IBM" },
+  "auth": { "strategy": "none", "roles": [] },
+  "links": { "checkExternal": false },
+  "python": {
+    "enabled": true,
+    "excludePaths": [".venv", "venv", "node_modules", "Crisis/node_modules", "build", "dist", "testkit"],
+    "commands": {
+      "install": "pip install -r middleware/requirements.txt -r frontend/requirements.txt -r telegram_bot/requirements.txt",
+      "lint": "ruff check --select E9,F63,F7,F82 {src}",
+      "format": null,
+      "typecheck": null,
+      "test": "python -m pytest -q --ignore=testkit",
+      "audit": "pip-audit -r middleware/requirements.txt -r frontend/requirements.txt -r telegram_bot/requirements.txt"
+    }
+  }
+}

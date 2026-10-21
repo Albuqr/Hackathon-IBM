@@ -1,5 +1,5 @@
 import requests
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from ibm_watsonx_orchestrate.agent_builder.tools import tool
 
 

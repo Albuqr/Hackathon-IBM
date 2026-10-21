@@ -68,8 +68,8 @@ def voluntarios(cfg):
     import json
     conn = db.conectar(cfg)
     try:
-        semente = "SELECT id FROM users WHERE email LIKE 'semente-%@teste.brasil'"
-        conn.execute(f"DELETE FROM campaign_volunteers WHERE volunteer_id IN ({semente})")
+        conn.execute("DELETE FROM campaign_volunteers WHERE volunteer_id IN "
+                     "(SELECT id FROM users WHERE email LIKE 'semente-%@teste.brasil')")
         conn.execute("DELETE FROM users WHERE email LIKE 'semente-%@teste.brasil'")
         for i, (nome, habs, lat, lon) in enumerate(VOLUNTARIOS):
             conn.execute("INSERT INTO users (email, password_hash, role, name, skills, lat, lon, radius_km) VALUES (?,?,?,?,?,?,?,?)",

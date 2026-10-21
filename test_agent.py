@@ -16,7 +16,7 @@ def get_token():
         data={
             "grant_type": "urn:ibm:params:oauth:grant-type:apikey",
             "apikey": os.environ["WO_API_KEY"]
-        }
+        }, timeout=30
     )
     return r.json()["access_token"]
 
@@ -49,7 +49,7 @@ def test_agent(message: str):
         time.sleep(5)
         r2 = requests.get(
             f"{base}/v1/orchestrate/runs/{run_id}",
-            headers=headers
+            headers=headers, timeout=30
         )
         if r2.status_code == 200:
             run_data = r2.json()
@@ -75,7 +75,7 @@ def test_agent(message: str):
     print("\nBuscando no thread...")
     r3 = requests.get(
         f"{base}/v1/orchestrate/threads/{thread_id}/messages",
-        headers=headers
+        headers=headers, timeout=30
     )
     if r3.status_code == 200:
         msgs = r3.json()

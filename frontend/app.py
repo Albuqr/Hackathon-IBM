@@ -1,5 +1,5 @@
 # frontend/app.py
-import os, json, hashlib, sqlite3, requests, threading, secrets, string
+import os, json, hashlib, sqlite3, requests, threading, secrets, string, math
 from functools import wraps
 from flask import (Flask, render_template, request,
                    redirect, session, jsonify)
@@ -179,7 +179,12 @@ def register():
         password = request.form.get("password", "")
         skill    = request.form.get("skill", "")
         org_name = request.form.get("org_name", "")
-        radius   = float(request.form.get("radius", 500))
+        try:
+            radius = float(request.form.get("radius", 500))
+        except ValueError:
+            radius = 500.0
+        if math.isnan(radius) or math.isinf(radius):  # rejeita nan/inf
+            radius = 500.0
         try:
             db = get_db()
             link_code = _generate_link_code() if role == 'volunteer' else None
@@ -589,4 +594,6 @@ def api_chat():
 app.register_blueprint(__import__("brasil").bp)  # Dash Brasil (ADR 0001)
 # ── Run ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=os.environ.get("FLASK_DEBUG") == "1")  # nunca debug em produção
+    # Dev server only, loopback by default. The container runs gunicorn (Dockerfile.frontend).
+    app.run(host=os.environ.get("FLASK_HOST", "127.0.0.1"), port=5000,
+            debug=os.environ.get("FLASK_DEBUG") == "1")  # nunca debug em produção
