@@ -5,12 +5,14 @@ from flask import (Flask, render_template, request,
                    redirect, session, jsonify)
 from dotenv import load_dotenv
 from token_api import cabecalhos  # segredo da API (ADR 0004)
+from csrf import instalar as instalar_csrf
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "hktn26-dev-secret")
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # cookie de sessão não vai em POST de outro site (CSRF)
+instalar_csrf(app)  # token CSRF nos formulários e no fetch; CSRF_MODE=report|enforce|off
 
 API        = os.environ.get("API_URL", "http://localhost:8000")
 DB         = os.environ.get("DB_PATH", "data/crisis.db")
@@ -21,6 +23,14 @@ def get_db():
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
     return conn
+
+def _raio(valor, padrao=500.0):
+    """Raio em km vindo do formulário; texto, nan e inf viram o padrão."""
+    try:
+        raio = float(valor)
+    except (TypeError, ValueError):
+        return padrao
+    return padrao if math.isnan(raio) or math.isinf(raio) else raio
 
 def get_events_from_db():
     """Read crises directly from SQLite — bypasses middleware entirely."""
@@ -179,12 +189,7 @@ def register():
         password = request.form.get("password", "")
         skill    = request.form.get("skill", "")
         org_name = request.form.get("org_name", "")
-        try:
-            radius = float(request.form.get("radius", 500))
-        except ValueError:
-            radius = 500.0
-        if math.isnan(radius) or math.isinf(radius):  # rejeita nan/inf
-            radius = 500.0
+        radius   = _raio(request.form.get("radius", 500))
         try:
             db = get_db()
             link_code = _generate_link_code() if role == 'volunteer' else None

@@ -73,6 +73,20 @@ def test_fr024_noticia_coberta_por_api_e_descartada(api):
     assert evs == []
 
 
+def test_fr024_noticia_ja_gravada_com_id_antigo_mantem_o_id_e_a_nova_usa_sha256(api):
+    import hashlib
+    _, rotas = api
+    novo = noticias.extrair([item("Deslizamento deixa mortos em Petrópolis (RJ)")], DOMINIOS, AGORA)[0]
+    assert novo["id"] == "noticia-" + hashlib.sha256(novo["link_fonte"].encode()).hexdigest()[:12]
+    antigo = {**novo, "id": "noticia-aaaaaaaaaaaa"}  # o formato SHA-1 que já pode estar no banco
+    ingestao.executar(rotas.CFG, fontes={"noticias": lambda: [antigo]}, agora=AGORA)
+    evs = noticias.coletar(rotas.CFG, buscar=lambda feeds: [item("Deslizamento deixa mortos em Petrópolis (RJ)")], agora=AGORA)
+    assert [e["id"] for e in evs] == ["noticia-aaaaaaaaaaaa"]  # mesmo link: mantém o ID gravado
+    outra = item("Deslizamento deixa mortos em Teresópolis (RJ)", link="https://agenciabrasil.ebc.com.br/geral/noticia/2026-10/outra")
+    [e2] = noticias.coletar(rotas.CFG, buscar=lambda feeds: [outra], agora=AGORA)
+    assert e2["id"] == "noticia-" + hashlib.sha256(outra["link"].encode()).hexdigest()[:12]  # link novo: SHA-256
+
+
 def gravar_noticia(cfg, sev=3):
     e = noticias.extrair([item("Deslizamento deixa mortos em Petrópolis (RJ)")], DOMINIOS, AGORA)[0]
     e["severity"] = 5  # mesmo que venha mais alto, o teto é 3

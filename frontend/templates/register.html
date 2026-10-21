@@ -36,6 +36,7 @@ input::placeholder{color:#2a2a2a}
   <div class="logo">🛰 Crisis Monitor — Cadastro</div>
   {% if error %}<div class="error">{{ error }}</div>{% endif %}
   <form method="POST" id="regForm">
+    {% csrf_token %}
     <input type="hidden" name="role" id="roleInput" value="volunteer">
     <label>Tipo de conta</label>
     <div class="role-tabs">

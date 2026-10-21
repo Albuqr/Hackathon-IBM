@@ -27,6 +27,7 @@ textarea{resize:vertical;min-height:80px}
 
   <div class="form-card">
     <form method="POST" action="/org/campaigns/new">
+      {% csrf_token %}
 
       <div class="form-group">
         <label>Título da campanha *</label>

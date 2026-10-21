@@ -45,6 +45,8 @@ label{display:block;color:#555;font-size:11px;margin-bottom:5px}
 .form-group{margin-bottom:16px}
 </style>
 {% block head %}{% endblock %}
+  <meta name="csrf-token" content="{{ csrf_value() }}">
+  <script src="{{ url_for('static', filename='csrf.js') }}"></script>
 </head>
 <body>
 <header>

@@ -1,6 +1,8 @@
 import io
 import csv
 import zipfile
+from urllib.parse import urlsplit
+
 import requests
 from ibm_watsonx_orchestrate.agent_builder.tools import tool
 
@@ -56,9 +58,10 @@ def _fetch_gdelt_events(max_events: int = 200) -> list[dict]:
     """Download latest GDELT v2 Events 15-min update and extract conflict events."""
     # Get URL of latest update
     meta = requests.get(
-        "http://data.gdeltproject.org/gdeltv2/lastupdate.txt", timeout=15
+        "https://data.gdeltproject.org/gdeltv2/lastupdate.txt", timeout=15
     )
     export_url = meta.text.strip().split("\n")[0].split(" ")[-1]
+    export_url = urlsplit(export_url)._replace(scheme="https").geturl()  # the list has http links; the host serves https
 
     r = requests.get(export_url, timeout=30)
     r.raise_for_status()

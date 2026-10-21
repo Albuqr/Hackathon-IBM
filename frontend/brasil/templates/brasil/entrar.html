@@ -22,6 +22,7 @@
     <h1>Entrar</h1>
     <p class="vazio">Crises brasileiras de INPE, CEMADEN, INMET, notícias de fontes confiáveis e fontes globais filtradas para o Brasil.</p>
     <form class="form" method="post">
+      {% csrf_token %}
       {% if erro %}<p class="aviso" role="alert">{{ erro }}</p>{% endif %}
       <label>E-mail <input type="email" name="email" required autocomplete="email"></label>
       <label>Senha <input type="password" name="senha" required autocomplete="current-password"></label>
