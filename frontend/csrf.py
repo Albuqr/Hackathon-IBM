@@ -58,7 +58,7 @@ def verificar():
     esperado = session.get("_csrf", "")
     if esperado and hmac.compare_digest(enviado.encode(), esperado.encode()):
         return None
-    log.warning("CSRF: token ausente ou inválido em %s %s (modo %s)", request.method, request.path, m)
+    log.warning("CSRF: verificação falhou em %s %s (modo %s)", request.method, request.path, m)
     if m == "enforce":
         abort(400, "CSRF token ausente ou inválido")
     return None

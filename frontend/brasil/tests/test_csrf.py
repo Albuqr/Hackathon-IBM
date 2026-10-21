@@ -41,7 +41,7 @@ def test_modo_padrao_report_nao_bloqueia_e_registra_o_aviso(front, monkeypatch, 
     with caplog.at_level("WARNING", logger="crisis.csrf"):
         r = cli.post(ENTRAR, data=DADOS)
     assert r.status_code == 200  # a página volta com o erro de credencial; nada foi barrado
-    assert "CSRF: token ausente ou inválido em POST /brasil/entrar (modo report)" in caplog.text
+    assert "CSRF: verificação falhou em POST /brasil/entrar (modo report)" in caplog.text
 
 
 def test_enforce_bloqueia_sem_token_ou_com_token_errado(front, monkeypatch):

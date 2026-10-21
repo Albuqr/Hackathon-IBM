@@ -13,7 +13,7 @@
     if (escrita.test(metodo) && mesmoSite) {
       var headers = new Headers(init.headers || (input && input.headers) || {});
       headers.set("X-CSRF-Token", token);
-      init = Object.assign({}, init, { headers: headers });
+      init.headers = headers;
     }
     return original.call(this, input, init);
   };

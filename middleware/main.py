@@ -9,6 +9,7 @@ import time
 import asyncio
 import requests
 from datetime import datetime
+from urllib.parse import urlsplit
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -723,8 +724,8 @@ def _ingest_fallback():
         meta = requests.get(
             "https://data.gdeltproject.org/gdeltv2/lastupdate.txt", timeout=15
         )
-        # lastupdate.txt lists http:// links; the same host serves https
-        export_url = meta.text.strip().split("\n")[0].split(" ")[-1].replace("http://", "https://", 1)
+        export_url = meta.text.strip().split("\n")[0].split(" ")[-1]
+        export_url = urlsplit(export_url)._replace(scheme="https").geturl()  # the list has http links; the host serves https
         rz = requests.get(export_url, timeout=30)
         conflict_count = 0
         with _zip.ZipFile(_io.BytesIO(rz.content)) as z:
