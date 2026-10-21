@@ -24,6 +24,14 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+def _raio(valor, padrao=500.0):
+    """Raio em km vindo do formulário; texto, nan e inf viram o padrão."""
+    try:
+        raio = float(valor)
+    except (TypeError, ValueError):
+        return padrao
+    return padrao if math.isnan(raio) or math.isinf(raio) else raio
+
 def get_events_from_db():
     """Read crises directly from SQLite — bypasses middleware entirely."""
     try:
@@ -181,12 +189,7 @@ def register():
         password = request.form.get("password", "")
         skill    = request.form.get("skill", "")
         org_name = request.form.get("org_name", "")
-        try:
-            radius = float(request.form.get("radius", 500))
-            if math.isnan(radius) or math.isinf(radius):  # rejeita nan/inf
-                raise ValueError("raio não finito")
-        except ValueError:
-            radius = 500.0
+        radius   = _raio(request.form.get("radius", 500))
         try:
             db = get_db()
             link_code = _generate_link_code() if role == 'volunteer' else None
