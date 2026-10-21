@@ -4,7 +4,8 @@ import requests
 from datetime import datetime
 from ibm_watsonx_orchestrate.agent_builder.tools import tool
 
-VPS_API_URL = os.environ.get("VPS_API_URL", "http://31.97.83.21:17291")
+# No default: the tool runs in IBM's cloud and needs a URL it can reach, over https if it is public.
+VPS_API_URL = os.environ.get("VPS_API_URL", "")
 
 
 @tool
@@ -40,6 +41,9 @@ def save_classification(event_json: str, classification_json: str) -> str:
             "source":          event.get("source", "manual"),
             "people_affected": int(event.get("people_affected", 0)),
         }
+
+        if not VPS_API_URL:
+            raise RuntimeError("VPS_API_URL nao configurada: informe a URL da API que o agente consegue alcancar")
 
         r = requests.post(
             f"{VPS_API_URL}/save_events",

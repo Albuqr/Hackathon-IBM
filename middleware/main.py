@@ -878,12 +878,14 @@ def trigger_ingest():
     Fallback: direct tool calls if Orchestrate fails or times out.
     """
     global _last_ingest
-    vps_url    = os.environ.get("VPS_API_URL", "http://31.97.83.21:17291")
+    # No default: the agent runs in IBM's cloud, so this must be a URL it can reach. The API is
+    # internal-only now, so without VPS_API_URL the direct fallback below is used.
+    vps_url    = os.environ.get("VPS_API_URL", "")
     agent_id   = os.environ.get("MONITORING_AGENT_ID",
                                 os.environ.get("ORCHESTRATOR_AGENT_ID", ""))
 
     # ── Primary: Orchestrate ──────────────────────────────────────────
-    if agent_id:
+    if agent_id and vps_url:
         try:
             message = (
                 f"Fetch all crisis data from USGS, GDACS, EONET and conflict APIs, "
@@ -900,7 +902,7 @@ def trigger_ingest():
         except Exception as e:
             print(f"[ingest] Orchestrate exception: {e} — falling back")
     else:
-        print("[ingest] No agent_id configured — using fallback directly")
+        print("[ingest] No agent_id or VPS_API_URL configured — using fallback directly")
 
     # ── Fallback: direct tool calls ───────────────────────────────────
     print("[ingest] Running fallback (direct tool calls)")
