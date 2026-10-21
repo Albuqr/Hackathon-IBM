@@ -20,6 +20,8 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" integrity="sha384-c6Rcwz4e4CITMbu/NBmnNS8yN2sC3cUElMEMfP3vqqKFp7GOYaaBBCqmaWBjmkjb" crossorigin="anonymous">
   <link rel="stylesheet" href="{{ url_for('brasil.static', filename='brasil.css') }}">
   {% block cabeca %}{% endblock %}
+  <meta name="csrf-token" content="{{ csrf_value() }}">
+  <script src="{{ url_for('static', filename='csrf.js') }}"></script>
 </head>
 {% set atual = request.endpoint %}
 {% set tem_lateral = self.lateral() | trim | length > 0 %}

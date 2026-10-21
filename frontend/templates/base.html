@@ -154,6 +154,8 @@ input[type=range]{width:100%;accent-color:#3b82f6}
 .popup-enlist.enrolled{background:transparent;border:1px solid #22c55e;color:#22c55e;cursor:default}
 .popup-enlist:disabled{opacity:.6;cursor:wait}
 </style>
+  <meta name="csrf-token" content="{{ csrf_value() }}">
+  <script src="{{ url_for('static', filename='csrf.js') }}"></script>
 </head>
 <body>
 

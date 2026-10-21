@@ -5,12 +5,14 @@ from flask import (Flask, render_template, request,
                    redirect, session, jsonify)
 from dotenv import load_dotenv
 from token_api import cabecalhos  # segredo da API (ADR 0004)
+from csrf import instalar as instalar_csrf
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "hktn26-dev-secret")
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # cookie de sessão não vai em POST de outro site (CSRF)
+instalar_csrf(app)  # token CSRF nos formulários e no fetch; CSRF_MODE=report|enforce|off
 
 API        = os.environ.get("API_URL", "http://localhost:8000")
 DB         = os.environ.get("DB_PATH", "data/crisis.db")
