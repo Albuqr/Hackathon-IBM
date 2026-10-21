@@ -721,9 +721,10 @@ def _ingest_fallback():
 
         # Get latest 15-min update URL
         meta = requests.get(
-            "http://data.gdeltproject.org/gdeltv2/lastupdate.txt", timeout=15
+            "https://data.gdeltproject.org/gdeltv2/lastupdate.txt", timeout=15
         )
-        export_url = meta.text.strip().split("\n")[0].split(" ")[-1]
+        # lastupdate.txt lists http:// links; the same host serves https
+        export_url = meta.text.strip().split("\n")[0].split(" ")[-1].replace("http://", "https://", 1)
         rz = requests.get(export_url, timeout=30)
         conflict_count = 0
         with _zip.ZipFile(_io.BytesIO(rz.content)) as z:

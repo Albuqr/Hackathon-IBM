@@ -56,9 +56,10 @@ def _fetch_gdelt_events(max_events: int = 200) -> list[dict]:
     """Download latest GDELT v2 Events 15-min update and extract conflict events."""
     # Get URL of latest update
     meta = requests.get(
-        "http://data.gdeltproject.org/gdeltv2/lastupdate.txt", timeout=15
+        "https://data.gdeltproject.org/gdeltv2/lastupdate.txt", timeout=15
     )
-    export_url = meta.text.strip().split("\n")[0].split(" ")[-1]
+    # lastupdate.txt lists http:// links; the same host serves https
+    export_url = meta.text.strip().split("\n")[0].split(" ")[-1].replace("http://", "https://", 1)
 
     r = requests.get(export_url, timeout=30)
     r.raise_for_status()
