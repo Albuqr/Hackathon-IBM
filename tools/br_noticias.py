@@ -1,4 +1,4 @@
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from email.utils import parsedate_to_datetime
 
 import requests
