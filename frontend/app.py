@@ -183,7 +183,7 @@ def register():
             radius = float(request.form.get("radius", 500))
         except ValueError:
             radius = 500.0
-        if not math.isfinite(radius):  # rejeita nan/inf
+        if math.isnan(radius) or math.isinf(radius):  # rejeita nan/inf
             radius = 500.0
         try:
             db = get_db()
