@@ -1123,26 +1123,24 @@ def get_campaign_growth(campaign_id: int):
 @app.put("/campaigns/{campaign_id}")
 def update_campaign(campaign_id: int, upd: CampaignUpdate):
     db = get_db()
-    sets, params = [], []
-    if upd.title is not None:
-        sets.append("title=?"); params.append(upd.title)
-    if upd.description is not None:
-        sets.append("description=?"); params.append(upd.description)
-    if upd.skills_needed is not None:
-        sets.append("skills_needed=?"); params.append(json.dumps(upd.skills_needed))
-    if upd.target_volunteers is not None:
-        sets.append("target_volunteers=?"); params.append(upd.target_volunteers)
-    if upd.urgency is not None:
-        sets.append("urgency=?"); params.append(upd.urgency)
-    if upd.status is not None:
-        sets.append("status=?"); params.append(upd.status)
-    if upd.start_date is not None:
-        sets.append("start_date=?"); params.append(upd.start_date)
-    if upd.end_date is not None:
-        sets.append("end_date=?"); params.append(upd.end_date)
-    if sets:
-        params.append(campaign_id)
-        db.execute(f"UPDATE campaigns SET {', '.join(sets)} WHERE id=?", params)
+    # One literal statement per editable field, so no SQL is built from strings.
+    updates = {
+        "title": ("UPDATE campaigns SET title=? WHERE id=?", upd.title),
+        "description": ("UPDATE campaigns SET description=? WHERE id=?", upd.description),
+        "skills_needed": ("UPDATE campaigns SET skills_needed=? WHERE id=?",
+                          None if upd.skills_needed is None else json.dumps(upd.skills_needed)),
+        "target_volunteers": ("UPDATE campaigns SET target_volunteers=? WHERE id=?", upd.target_volunteers),
+        "urgency": ("UPDATE campaigns SET urgency=? WHERE id=?", upd.urgency),
+        "status": ("UPDATE campaigns SET status=? WHERE id=?", upd.status),
+        "start_date": ("UPDATE campaigns SET start_date=? WHERE id=?", upd.start_date),
+        "end_date": ("UPDATE campaigns SET end_date=? WHERE id=?", upd.end_date),
+    }
+    changed = False
+    for statement, value in updates.values():
+        if value is not None:
+            db.execute(statement, (value, campaign_id))
+            changed = True
+    if changed:
         db.commit()
     db.close()
     return {"status": "ok"}
