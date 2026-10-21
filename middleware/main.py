@@ -112,7 +112,7 @@ def get_wxo_token():
     r = requests.post(
         "https://iam.cloud.ibm.com/identity/token",
         data={"grant_type": "urn:ibm:params:oauth:grant-type:apikey",
-              "apikey": os.environ["WO_API_KEY"]}
+              "apikey": os.environ["WO_API_KEY"]}, timeout=30
     )
     r.raise_for_status()
     d = r.json()
@@ -147,7 +147,7 @@ def call_orchestrate(message: str, agent_id: str = None, max_wait: int = 120) ->
         elapsed = time.time() - start
         r2 = requests.get(
             f"{base}/v1/orchestrate/runs/{run_id}",
-            headers=headers
+            headers=headers, timeout=30
         )
         if r2.status_code == 200:
             run_data = r2.json()
@@ -573,7 +573,7 @@ def save_events(events: list):
 
 def _ingest_fallback():
     """Direct tool calls used as fallback when Orchestrate is unavailable."""
-    import xml.etree.ElementTree as ET
+    import defusedxml.ElementTree as ET
     import re as _re
     events = []
     now = datetime.utcnow().isoformat()

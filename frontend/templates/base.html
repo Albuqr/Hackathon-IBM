@@ -7,7 +7,7 @@
 <link rel="shortcut icon" href="{{ url_for('static', filename='lp/public/logo.png') }}">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='lp/public/logo.png') }}">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;background:#000;font-family:'Inter',system-ui,sans-serif;color:#fff;display:flex;flex-direction:column}
@@ -275,7 +275,7 @@ input[type=range]{width:100%;accent-color:#3b82f6}
   </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
 <script>
 // ── Data ──
 const crisisData = {{ events|tojson }};

@@ -141,7 +141,7 @@ def extrair(itens: list[dict], dominios: list[str], agora: datetime | None = Non
         vistos.add((cod, tipo))
         publicado = it.get("publicado_em") or agora.isoformat()
         eventos.append({
-            "id": "noticia-" + hashlib.sha1(it["link"].encode()).hexdigest()[:12],
+            "id": "noticia-" + hashlib.sha1(it["link"].encode(), usedforsecurity=False).hexdigest()[:12],
             "title": it["titulo"][:200],
             "lat": round(centro[0], 5), "lon": round(centro[1], 5),
             "severity": SEVERIDADE_MAX if re.search(GRAVE, norm) else 2,
