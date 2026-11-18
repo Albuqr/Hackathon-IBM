@@ -13,8 +13,8 @@ from flask import (Blueprint, Response, abort, current_app, jsonify, redirect, r
 from .api_cliente import ApiHttp
 from .encaminhador import Recusa, encaminhar
 
-PERFIS = {"voluntario": "volunteer", "ong": "org", "admin": "admin"}
-NOME_PAPEL = {"volunteer": "Voluntário", "org": "ONG", "admin": "Admin"}
+PERFIS = {"voluntario": "volunteer", "ong": "org", "admin": "admin", "gestor": "gestor_abrigo", "gestor2": "gestor_abrigo"}
+NOME_PAPEL = {"volunteer": "Voluntário", "org": "ONG", "admin": "Admin", "gestor_abrigo": "Gestor de Abrigo"}
 
 bp = Blueprint("brasil", __name__, url_prefix="/brasil",
                template_folder="templates", static_folder="static", static_url_path="/static")

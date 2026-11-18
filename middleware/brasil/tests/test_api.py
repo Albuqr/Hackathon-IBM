@@ -36,6 +36,13 @@ def test_ac_005_1_dev_login_cria_os_3_perfis(api):
     assert cli.post("/brasil/dev/usuario/ong").json()["id"] == cli.post("/brasil/dev/usuario/ong").json()["id"]
 
 
+def test_dev_login_cria_dois_gestores_de_abrigo_distintos(api):
+    cli, _ = api
+    g1, g2 = (cli.post(f"/brasil/dev/usuario/{p}").json() for p in ("gestor", "gestor2"))
+    assert g1["role"] == g2["role"] == "gestor_abrigo" and g1["id"] != g2["id"]
+    assert g1["link_code"] is None  # código do Telegram é só de voluntário
+
+
 # AC-005.2
 def test_ac_005_2_dev_login_desligado_responde_404(api, monkeypatch):
     import importlib

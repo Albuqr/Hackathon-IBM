@@ -27,6 +27,11 @@ USUARIOS_TESTE = {
     "ong": {"email": "ong@teste.brasil", "role": "org", "name": "ONG de Teste", "org_name": "ONG Brasil Solidário",
             "lat": -23.5505, "lon": -46.6333},
     "admin": {"email": "admin@teste.brasil", "role": "admin", "name": "Admin de Teste", "lat": -15.7939, "lon": -47.8828},
+    # dois gestores de abrigo fictícios no RS, para testar que um não vê o abrigo do outro
+    "gestor": {"email": "gestor@teste.brasil", "role": "gestor_abrigo", "name": "Gestora de Abrigo de Teste",
+               "lat": -30.0346, "lon": -51.2177},
+    "gestor2": {"email": "gestor2@teste.brasil", "role": "gestor_abrigo", "name": "Gestor de Abrigo de Teste 2",
+                "lat": -29.9177, "lon": -51.1836},
 }
 
 SQL_USUARIO = (

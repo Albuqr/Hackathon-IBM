@@ -9,7 +9,7 @@ import re
 from typing import NamedTuple
 from urllib.parse import quote
 
-TODOS = ("volunteer", "org", "admin")
+TODOS = ("volunteer", "org", "admin", "gestor_abrigo")
 
 
 class Regra(NamedTuple):

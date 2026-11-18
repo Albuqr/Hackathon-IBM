@@ -52,7 +52,7 @@ def _casos():
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
     pol = import_module("brasil.encaminhador").POLITICA
     for nome, regra in pol.items():
-        for papel in ("volunteer", "org", "admin"):
+        for papel in ("volunteer", "org", "admin", "gestor_abrigo"):
             yield nome, regra, papel
 
 
@@ -154,3 +154,12 @@ def test_ac_014_1_paginas_renderizam_no_shell_com_o_menu_do_perfil(front, logar,
     assert (">Nova campanha<" in html) == (papel == "org")
     assert ('href="/brasil/admin"' in html) == (papel == "admin")
     assert ('id="lateral"' in html) == url.endswith("/mapa")  # só o mapa tem barra lateral
+
+
+def test_dev_login_de_gestor_de_abrigo(front, monkeypatch):
+    monkeypatch.setenv("BRASIL_DEV_LOGIN", "1")
+    cli, api = front
+    api.respostas[("POST", "/dev/usuario/gestor2")] = (200, {"id": 9, "role": "gestor_abrigo", "name": "Gestor 2", "email": "gestor2@teste.brasil"})
+    assert cli.get("/brasil/dev-login/gestor2").status_code == 302
+    with cli.session_transaction() as s:
+        assert s["br_role"] == "gestor_abrigo" and s["br_user_id"] == 9
