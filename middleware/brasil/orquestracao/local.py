@@ -29,4 +29,9 @@ class LocalProvedor(Provedor):
             texto = (f"{len(prev)} municípios com risco de nova crise nos próximos 7–30 dias, pela recorrência dos últimos 30 dias."
                      if prev else "Sem recorrência suficiente nos últimos 30 dias para prever riscos.")
             return Resposta(texto, prev, self.nome)
+        if agente == "itens_duplicados":  # ADR 0007: só sinaliza, nunca une nem renomeia
+            from ..estoque import duplicados  # import tardio: estoque.py usa esta camada
+            achados = duplicados(mensagem, contexto.get("itens", []))
+            texto = f"Possível duplicado de: {', '.join(i['nome'] for i in achados)}" if achados else "Nenhum item parecido."
+            return Resposta(texto, achados, self.nome)
         raise ValueError(f"agente desconhecido: {agente}")
