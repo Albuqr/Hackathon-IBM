@@ -27,6 +27,7 @@
       <label>Senha <input type="password" name="senha" required autocomplete="current-password"></label>
       <button class="botao botao-primario" type="submit">Entrar</button>
     </form>
+    <p class="dica">Gerencia um abrigo? <a class="texto-link pequeno seta" href="{{ url_for('brasil.cadastro') }}">Cadastrar meu abrigo</a></p>
     {% if dev_login %}
     <div class="teste">
       <p class="cartao-titulo">Logins de teste (BRASIL_DEV_LOGIN=1)</p>

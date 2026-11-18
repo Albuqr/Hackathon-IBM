@@ -36,6 +36,34 @@ def crise(rotas, id_="cemaden-poa"):
     conn.close()
 
 
+def test_cadastro_cria_so_gestor_de_abrigo_e_email_repetido_409(api):
+    cli, rotas = api
+    r = cli.post("/brasil/cadastro", json={"name": "Maria Fictícia", "email": " Maria@Teste.Brasil ", "phone": "51 99999-0000",
+                                           "senha": "senha-forte-1", "role": "admin"})
+    assert r.status_code == 200
+    u = r.json()
+    assert u["role"] == "gestor_abrigo" and u["email"] == "maria@teste.brasil" and u["phone"] == "51 99999-0000"
+    assert "password_hash" not in u and u["link_code"] is None
+    conn = db.conectar(rotas.CFG)
+    assert conn.execute("SELECT password_hash FROM users WHERE id=?", (u["id"],)).fetchone()[0] == rotas._hash("senha-forte-1")
+    conn.close()
+    assert cli.post("/brasil/login", json={"email": "maria@teste.brasil", "senha": "senha-forte-1"}).json()["id"] == u["id"]
+    dup = cli.post("/brasil/cadastro", json={"name": "Outra", "email": "MARIA@teste.brasil", "senha": "outra-senha-2"})
+    assert dup.status_code == 409
+    # já pode criar abrigo
+    assert cli.post("/brasil/abrigos", json=novo(), headers=como(u["id"])).status_code == 200
+
+
+@pytest.mark.parametrize("corpo", [
+    {"name": "Maria", "email": "m@teste.brasil", "senha": "curta"},
+    {"name": "Maria", "email": "sem-arroba", "senha": "senha-forte-1"},
+    {"name": "", "email": "m@teste.brasil", "senha": "senha-forte-1"},
+])
+def test_cadastro_invalido_422(api, corpo):
+    cli, _ = api
+    assert cli.post("/brasil/cadastro", json=corpo).status_code == 422
+
+
 def test_cria_abrigo_nao_verificado_com_municipio_e_uf(gestores):
     cli, _, g1, _ = gestores
     r = cli.post("/brasil/abrigos", json=novo(), headers=como(g1))

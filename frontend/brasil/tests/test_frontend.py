@@ -228,3 +228,27 @@ def test_paginas_do_abrigo_so_para_gestor(front, logar, papel):
 def test_abrigo_exige_login(front):
     cli, _ = front
     assert cli.get("/brasil/abrigo").headers["Location"].endswith("/brasil/entrar")
+
+
+def test_cadastro_de_gestor_entra_e_vai_para_o_abrigo(front):
+    cli, api = front
+    assert "Cadastrar meu abrigo" in cli.get("/brasil/entrar").get_data(as_text=True)
+    assert cli.get("/brasil/cadastro").status_code == 200
+    api.respostas[("POST", "/cadastro")] = (200, {"id": 12, "role": "gestor_abrigo", "name": "Maria Fictícia", "email": "m@teste.brasil"})
+    r = cli.post("/brasil/cadastro", data={"nome": "Maria Fictícia", "email": "m@teste.brasil", "telefone": "", "senha": "senha-forte-1"})
+    assert r.status_code == 302 and r.headers["Location"].endswith("/brasil/abrigo")
+    assert api.chamadas[-1][3] == {"name": "Maria Fictícia", "email": "m@teste.brasil", "phone": None, "senha": "senha-forte-1"}
+    with cli.session_transaction() as s:
+        assert s["br_user_id"] == 12 and s["br_role"] == "gestor_abrigo"
+
+
+def test_cadastro_com_erro_mostra_a_mensagem_e_nao_entra(front):
+    cli, api = front
+    api.respostas[("POST", "/cadastro")] = (409, {"detail": "Já existe uma conta com este e-mail. Entre com a sua senha."})
+    html = cli.post("/brasil/cadastro", data={"nome": "Maria", "email": "m@teste.brasil", "senha": "senha-forte-1"}).get_data(as_text=True)
+    assert "Já existe uma conta com este e-mail" in html and 'value="m@teste.brasil"' in html
+    n = len(api.chamadas)
+    html = cli.post("/brasil/cadastro", data={"nome": "Maria", "email": "m@teste.brasil", "senha": "curta"}).get_data(as_text=True)
+    assert "pelo menos 8 caracteres" in html and len(api.chamadas) == n  # nem chega à API
+    with cli.session_transaction() as s:
+        assert "br_user_id" not in s

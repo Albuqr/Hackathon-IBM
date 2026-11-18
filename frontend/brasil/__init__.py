@@ -87,6 +87,27 @@ def entrar():
     return render_template("brasil/entrar.html", erro=erro, dev_login=dev_login_ligado())
 
 
+@bp.route("/cadastro", methods=["GET", "POST"])
+def cadastro():
+    """Cadastro aberto, só para gestor de abrigo (ADR 0005); entra e vai direto para o abrigo."""
+    erro, f = None, request.form
+    if request.method == "POST":
+        corpo = {"name": f.get("nome", "").strip(), "email": f.get("email", "").strip(),
+                 "phone": f.get("telefone", "").strip() or None, "senha": f.get("senha", "")}
+        if len(corpo["name"]) < 2:
+            erro = "Informe seu nome."
+        elif len(corpo["senha"]) < 8:
+            erro = "A senha precisa ter pelo menos 8 caracteres."
+        else:
+            st, d = api()("POST", "/cadastro", json=corpo)
+            if st == 200:
+                _entrar(d)
+                return redirect(_destino())
+            detalhe = d.get("detail") if isinstance(d, dict) else None
+            erro = detalhe if isinstance(detalhe, str) else "Não foi possível cadastrar. Confira os dados."
+    return render_template("brasil/cadastro.html", erro=erro, f=f)
+
+
 @bp.route("/dev-login/<perfil>")
 def dev_login(perfil):
     """Login de teste sem senha, só com BRASIL_DEV_LOGIN=1."""

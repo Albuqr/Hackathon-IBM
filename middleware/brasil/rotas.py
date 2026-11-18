@@ -1,12 +1,14 @@
 """Rotas /brasil/... da API (ADR 0001). Só abre o brasil.db."""
 import hashlib
 import json
+import re
 import secrets
+import sqlite3
 import string
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import abrigos, campanhas, db, ingestao, inteligencia, malha, noticias
 from .acesso import Acesso
@@ -95,6 +97,38 @@ def login(d: Login):
         if not r:
             raise HTTPException(401, "E-mail ou senha inválidos")
         return _usuario(conn, r["id"])
+    finally:
+        conn.close()
+
+
+class Cadastro(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    email: str = Field(max_length=254)
+    phone: str | None = Field(None, max_length=40)
+    senha: str = Field(min_length=8, max_length=200)
+
+
+EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+EMAIL_REPETIDO = "Já existe uma conta com este e-mail. Entre com a sua senha."
+
+
+@router.post("/cadastro")
+def cadastro(d: Cadastro):
+    """Cadastro aberto, só de gestor de abrigo (ADR 0005). Voluntário, ONG e admin continuam como estão."""
+    email = d.email.strip().lower()
+    if not EMAIL.match(email):
+        raise HTTPException(422, "Informe um e-mail válido")
+    conn = db.conectar(CFG)
+    try:
+        if conn.execute("SELECT 1 FROM users WHERE lower(email)=?", (email,)).fetchone():
+            raise HTTPException(409, EMAIL_REPETIDO)
+        try:
+            cur = conn.execute("INSERT INTO users (email, password_hash, role, name, phone, lat, lon) VALUES (?,?,?,?,?,?,?)",
+                               (email, _hash(d.senha), "gestor_abrigo", d.name.strip(), (d.phone or "").strip() or None, 0, 0))
+            conn.commit()
+        except sqlite3.IntegrityError:  # e-mail repetido (também na corrida entre dois cadastros)
+            raise HTTPException(409, EMAIL_REPETIDO)
+        return _usuario(conn, cur.lastrowid)
     finally:
         conn.close()
 
