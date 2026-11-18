@@ -517,3 +517,26 @@ body.solta { min-height: 100dvh; display: grid; place-items: center; padding: 24
   .entrar { padding: 28px 22px; }
   .abrigo { padding: 24px 22px; }
 }
+
+/* ---------- estoque do abrigo (ADR 0007): status por texto e forma; só Urgente ganha cor ---------- */
+.estoque { display: grid; gap: 12px; }
+.estoque .grupo-t { font-size: 15px; font-weight: 600; color: var(--tinta-2); letter-spacing: -0.01em; margin-top: 6px; }
+.estado { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: var(--r-pilula); font-size: 12px; font-weight: 500;
+  white-space: nowrap; letter-spacing: 0; background: var(--cartao-2); color: var(--tinta-2); border: 1px solid transparent; flex-shrink: 0; }
+.estado.urgente { background: none; color: var(--acento); border-color: currentColor; font-weight: 700; }
+.estado.urgente::before { content: "!"; }
+.estado.precisa { background: none; color: var(--tinta); border-color: var(--linha); font-weight: 600; }
+.estado.ok::before { content: "✓"; }
+.estado.sobrando::before { content: "+"; }
+.item-linha { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; background: none; border: 0; padding: 0; margin: 0;
+  color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.item-linha:hover .item-titulo { text-decoration: underline; text-underline-offset: 3px; }
+.sugestoes { display: grid; gap: 12px; }
+.sugestoes:empty { display: none; }
+.duplicado { display: grid; gap: 10px; padding: 14px 16px; border-radius: var(--r-pequeno); background: var(--cartao-2); color: var(--tinta); }
+.editor { display: grid; gap: 18px; padding-top: 18px; border-top: 1px solid var(--linha-suave); }
+.editor-topo { display: grid; gap: 2px; }
+.editor-topo h3 { font-size: 21px; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.com-unidade { display: flex; align-items: center; gap: 10px; }
+.com-unidade input { max-width: 180px; }
+.com-unidade span { color: var(--tinta-2); font-size: 15px; }

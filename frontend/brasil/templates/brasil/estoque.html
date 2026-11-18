@@ -1,0 +1,23 @@
+{% extends "brasil/base.html" %}
+{% block titulo %}Estoque · {{ a.nome }} · Crisis Monitor Brasil{% endblock %}
+{% block leaflet %}{% endblock %}
+{% block principal %}
+<div class="rolagem"><div class="pagina">
+  <p style="margin-bottom:16px"><a class="voltar" href="{{ url_for('brasil.abrigo') }}">‹ Meus abrigos</a></p>
+  <div class="pagina-cabeca">
+    <h1>Estoque</h1>
+    <p>{{ a.nome }}. Marque o que falta e o que sobra, com a quantidade aproximada.</p>
+  </div>
+  {% if erro %}<p class="aviso" role="alert">{{ erro }}</p>{% endif %}
+  <p class="aviso" id="msg" role="alert" hidden></p>
+  <div class="estoque" id="estoque"><p class="dica">Carregando…</p></div>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script id="br-estoque" type="application/json">{{ dados|tojson }}</script>
+<script type="module">
+import { iniciarEstoque } from "{{ url_for('brasil.static', filename='estoque.js') }}";
+const dados = JSON.parse(document.getElementById("br-estoque").textContent);
+iniciarEstoque(document.getElementById("estoque"), { msg: document.getElementById("msg"), ...dados });
+</script>
+{% endblock %}
