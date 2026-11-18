@@ -416,6 +416,16 @@ body.solta { min-height: 100dvh; display: grid; place-items: center; padding: 24
 .entrar h1 { font-size: 40px; letter-spacing: -0.03em; }
 .teste { display: grid; gap: 10px; border-top: 1px solid var(--linha-suave); padding-top: 18px; }
 
+/* ---------- gestor de abrigo ---------- */
+.abrigos { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.abrigo { background: var(--cartao); border-radius: var(--r-card); padding: 28px 32px; display: grid; gap: 14px; min-width: 0; }
+.abrigo-topo { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.abrigo h2 { font-size: 24px; letter-spacing: -0.02em; line-height: 1.2; overflow-wrap: anywhere; }
+.abrigo .selo-nv { font-size: 14px; }
+.abrigo-teste { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; border-top: 1px solid var(--linha-suave); padding-top: 14px; }
+.municipio-achado { font-size: 16px; font-weight: 500; color: var(--tinta); }
+.municipio-achado.falta { font-weight: 400; color: var(--tinta-2); }
+
 /* ---------- colunas que só existem no desktop ----------
    No celular os invólucros somem (display: contents) e "order" devolve a ordem de leitura de uma coluna só. */
 .checklist { display: grid; gap: 12px; }
@@ -468,6 +478,7 @@ body.solta { min-height: 100dvh; display: grid; place-items: center; padding: 24
   .lista.grade-cartoes > li { border-radius: var(--r-card); padding: 28px; flex-direction: column; align-items: flex-start; gap: 18px; }
   .lista.grade-cartoes > li .item-texto { flex: none; width: 100%; }
   .lista.grade-cartoes > li.vazio { grid-column: 1 / -1; }
+  .abrigos { grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 16px; }
 }
 
 /* ---------- celular: barra lateral vira gaveta, menu compacto ---------- */
@@ -504,4 +515,5 @@ body.solta { min-height: 100dvh; display: grid; place-items: center; padding: 24
   .lista .item-texto { flex: 1 1 60%; }
   .cob-linha, .barras div { grid-template-columns: minmax(0, 110px) minmax(0, 1fr) auto; }
   .entrar { padding: 28px 22px; }
+  .abrigo { padding: 24px 22px; }
 }

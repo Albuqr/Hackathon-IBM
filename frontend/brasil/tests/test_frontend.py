@@ -163,3 +163,68 @@ def test_dev_login_de_gestor_de_abrigo(front, monkeypatch):
     assert cli.get("/brasil/dev-login/gestor2").status_code == 302
     with cli.session_transaction() as s:
         assert s["br_role"] == "gestor_abrigo" and s["br_user_id"] == 9
+
+
+# ── gestor de abrigo (ADR 0005) ──────────────────────────────────────
+ABRIGO = {"id": 4, "gestor_id": 9, "nome": "Ginásio Fictício", "endereco": "Rua de Teste, 1", "lat": -30.03, "lon": -51.22,
+          "municipio_ibge": 4314902, "municipio": "Porto Alegre", "uf": "RS", "capacidade": 120, "tipo": "temporario",
+          "ativo": True, "sensivel": False, "verificado": False, "verificado_em": None, "crises": []}
+
+
+def test_gestor_entra_e_cai_no_abrigo(front, monkeypatch, logar):
+    monkeypatch.setenv("BRASIL_DEV_LOGIN", "1")
+    cli, api = front
+    api.respostas[("POST", "/dev/usuario/gestor")] = (200, {"id": 9, "role": "gestor_abrigo", "name": "Gestora", "email": "gestor@teste.brasil"})
+    assert cli.get("/brasil/dev-login/gestor").headers["Location"].endswith("/brasil/abrigo")
+    assert cli.get("/brasil/").headers["Location"].endswith("/brasil/abrigo")
+    api.respostas[("POST", "/login")] = (200, {"id": 9, "role": "gestor_abrigo", "name": "Gestora", "email": "gestor@teste.brasil"})
+    assert cli.post("/brasil/entrar", data={"email": "gestor@teste.brasil", "senha": "x"}).headers["Location"].endswith("/brasil/abrigo")
+
+
+def test_abrigo_sem_abrigo_mostra_o_cadastro_em_etapas(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    api.respostas[("GET", "/abrigos")] = (200, [])
+    html = cli.get("/brasil/abrigo").get_data(as_text=True)
+    assert 'id="etapas"' in html and "abrigo.js" in html and "leaflet" not in html.lower()
+    assert ">Meu abrigo<" in html and api.chamadas[-1][:3] == ("GET", "/abrigos", 9)
+
+
+def test_abrigo_com_abrigos_mostra_o_painel_e_marca_nao_verificado(front, logar, monkeypatch):
+    monkeypatch.delenv("BRASIL_DEV_LOGIN", raising=False)
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    api.respostas[("GET", "/abrigos")] = (200, [ABRIGO, {**ABRIGO, "id": 5, "nome": "Escola Fictícia", "verificado": True}])
+    html = cli.get("/brasil/abrigo").get_data(as_text=True)
+    assert 'id="etapas"' not in html and "Ginásio Fictício" in html and "Porto Alegre · RS" in html
+    assert html.count(">Não verificado<") == 1 and html.count(">Verificado<") == 1
+    assert 'href="/brasil/abrigo/4/pessoas"' in html and 'href="/brasil/abrigo/4/estoque"' in html
+    assert 'href="/brasil/abrigo/4/editar"' in html and "Novo abrigo" in html
+    assert "data-verificar" not in html  # botão de teste só com o login de teste
+    monkeypatch.setenv("BRASIL_DEV_LOGIN", "1")
+    assert 'data-verificar="4"' in cli.get("/brasil/abrigo").get_data(as_text=True)
+    assert 'id="etapas"' in cli.get("/brasil/abrigo?novo=1").get_data(as_text=True)
+
+
+def test_editar_abrigo_de_outro_gestor_da_404(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    api.respostas[("GET", "/abrigos/4")] = (200, ABRIGO)
+    html = cli.get("/brasil/abrigo/4/editar").get_data(as_text=True)
+    assert '"municipio_ibge": 4314902' in html and 'id="etapas"' in html  # o abrigo vai para as etapas já preenchidas
+    assert cli.get("/brasil/abrigo/77/editar").status_code == 404  # a API respondeu 404
+
+
+@pytest.mark.parametrize("papel", ["volunteer", "org", "admin"])
+def test_paginas_do_abrigo_so_para_gestor(front, logar, papel):
+    cli, api = front
+    logar(cli, papel)
+    assert cli.get("/brasil/abrigo").status_code == 403
+    assert cli.get("/brasil/abrigo/4/editar").status_code == 403
+    assert ">Meu abrigo<" not in cli.get("/brasil/mapa").get_data(as_text=True)
+    assert api.chamadas == []
+
+
+def test_abrigo_exige_login(front):
+    cli, _ = front
+    assert cli.get("/brasil/abrigo").headers["Location"].endswith("/brasil/entrar")
