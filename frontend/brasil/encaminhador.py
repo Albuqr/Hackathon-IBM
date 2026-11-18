@@ -59,6 +59,13 @@ POLITICA: dict[str, Regra] = {
     "abrigo": Regra("GET", "/abrigos/{abrigo_id}", ("gestor_abrigo",)),
     "editar_abrigo": Regra("PUT", "/abrigos/{abrigo_id}", ("gestor_abrigo",)),
     "dev_verificar_abrigo": Regra("POST", "/dev/abrigos/{abrigo_id}/verificar", ("gestor_abrigo",)),
+    # estoque e necessidades do abrigo (ADR 0007)
+    "sugerir_itens": Regra("GET", "/itens/sugestoes", ("gestor_abrigo",)),
+    "grupos_itens": Regra("GET", "/itens/grupos", ("gestor_abrigo",)),
+    "criar_item": Regra("POST", "/itens", ("gestor_abrigo",)),
+    "estoque_abrigo": Regra("GET", "/abrigos/{abrigo_id}/estoque", ("gestor_abrigo",)),
+    "atualizar_estoque": Regra("PUT", "/abrigos/{abrigo_id}/estoque/{item_id}", ("gestor_abrigo",)),
+    "remover_estoque": Regra("DELETE", "/abrigos/{abrigo_id}/estoque/{item_id}", ("gestor_abrigo",)),
 }
 
 _PARAM = re.compile(r"\{(\w+)\}")

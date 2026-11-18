@@ -37,6 +37,13 @@ Cadastro aberto em `/brasil/cadastro` (cria só `gestor_abrigo`). Em `/brasil/ab
 (nome e tipo, local por GPS ou lat/lon, capacidade, situação, crises) e vê um painel por abrigo. O abrigo funciona na hora,
 marcado "Não verificado". API em `middleware/brasil/abrigos.py` (`/brasil/abrigos...`); abrigo de outro gestor responde 404.
 
+### Estoque do abrigo (ADR 0007)
+Em `/brasil/abrigo/<id>/estoque` o gestor vê o que precisa agora, procura o item ("Que item?", sugestões ao digitar) e marca
+Urgente/Precisa/OK/Sobrando com a quantidade aproximada. Se o item não existe, cria com grupo e unidade, e ele passa a valer para
+todos os abrigos. Profissionais e veículos são só pedidos (Urgente/Precisa com quantos precisa). Nome parecido com um item que
+existe aparece como "Possível duplicado de: …" (agente `itens_duplicados`, regra no provedor `local`); nada é unido sozinho.
+API em `middleware/brasil/estoque.py` (`/brasil/itens...`, `/brasil/abrigos/{id}/estoque...`).
+
 ## Rodar local
 ```bash
 python init_db.py                                   # banco do Crisis (se ainda não existe)

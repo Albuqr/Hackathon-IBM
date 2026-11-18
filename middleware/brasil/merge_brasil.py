@@ -26,10 +26,14 @@ REFERENCIAS = {
     "notificacoes_pendentes": {"user_id": "users"},
     "abrigos": {"gestor_id": "users"},
     "abrigo_crises": {"abrigo_id": "abrigos"},  # sem id próprio: a chave (abrigo_id, crisis_id) é remapeada
+    "itens": {"criado_por": "users"},
+    "abrigo_itens": {"abrigo_id": "abrigos", "item_id": "itens"},
 }
+# tabela com id próprio e uma coluna UNIQUE: a linha que já existe no Crisis é reaproveitada (ADR 0007)
+CHAVE_NATURAL = {"itens": "nome_busca"}
 ORDEM = ["campaigns", "campaign_volunteers", "crisis_associations", "missions", "matches",
          "subscriptions", "classifications_log", "telegram_subscribers", "notificacoes_pendentes",
-         "abrigos", "abrigo_crises"]
+         "abrigos", "abrigo_crises", "itens", "abrigo_itens"]
 
 
 def _colunas(conn, banco: str, tabela: str) -> list[str]:
@@ -112,6 +116,11 @@ def unir(crisis_path: str, brasil_path: str, simular: bool = False, forcar: bool
                     f"INSERT OR IGNORE INTO main.{tabela} ({', '.join(outras)}) VALUES ({', '.join('?' * len(outras))})", valores)
                 if tem_id and cur.rowcount:
                     mapa[tabela][linha["id"]] = cur.lastrowid
+                elif tem_id and tabela in CHAVE_NATURAL:  # ignorada pelo UNIQUE: aponta para a do Crisis
+                    col = CHAVE_NATURAL[tabela]
+                    existe = conn.execute(f"SELECT id FROM main.{tabela} WHERE {col}=?", (linha[col],)).fetchone()
+                    if existe:
+                        mapa[tabela][linha["id"]] = existe["id"]
                 n += cur.rowcount
             rel[tabela] = n
 

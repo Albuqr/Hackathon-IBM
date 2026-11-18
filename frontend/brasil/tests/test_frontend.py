@@ -252,3 +252,53 @@ def test_cadastro_com_erro_mostra_a_mensagem_e_nao_entra(front):
     assert "pelo menos 8 caracteres" in html and len(api.chamadas) == n  # nem chega à API
     with cli.session_transaction() as s:
         assert "br_user_id" not in s
+
+
+# ── estoque do abrigo (ADR 0007) ─────────────────────────────────────
+GRUPOS = [{"id": "sustento", "nome": "Sustento"}, {"id": "profissionais", "nome": "Profissionais"},
+          {"id": "energia_mobilidade", "nome": "Energia e Mobilidade"}, {"id": "estrutura_ativos", "nome": "Estrutura e Ativos"}]
+
+
+def test_estoque_do_abrigo_renderiza_leve_com_a_lista_e_os_grupos(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    agua = {"id": 3, "nome": "Água", "grupo": "sustento", "grupo_nome": "Sustento", "unidade": "litros", "so_necessidade": False,
+            "status": "urgente", "status_nome": "Urgente", "quantidade": 500, "atualizado_em": "2026-11-18T10:00:00+00:00"}
+    api.respostas[("GET", "/abrigos/4/estoque")] = (200, [agua])  # antes de "/abrigos/4": a ApiFalsa casa por prefixo
+    api.respostas[("GET", "/abrigos/4")] = (200, ABRIGO)
+    api.respostas[("GET", "/itens/grupos")] = (200, GRUPOS)
+    html = cli.get("/brasil/abrigo/4/estoque").get_data(as_text=True)
+    assert "estoque.js" in html and "leaflet" not in html.lower() and "Ginásio Fictício" in html
+    import json, re
+    dados = json.loads(re.search(r'<script id="br-estoque" type="application/json">(.*?)</script>', html, re.S).group(1))
+    assert dados == {"abrigo": {"id": 4, "nome": "Ginásio Fictício"}, "estoque": [agua], "grupos": GRUPOS}
+    assert 'href="/brasil/abrigo"' in html
+    assert [c[:3] for c in api.chamadas] == [("GET", "/abrigos/4", 9), ("GET", "/abrigos/4/estoque", 9), ("GET", "/itens/grupos", 9)]
+    assert 'aria-current=page' in html and ">Meu abrigo<" in html
+
+
+def test_estoque_de_abrigo_de_outro_gestor_da_404_e_outros_perfis_403(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    assert cli.get("/brasil/abrigo/77/estoque").status_code == 404  # a API respondeu 404
+    for papel in ("volunteer", "org", "admin"):
+        logar(cli, papel)
+        n = len(api.chamadas)
+        assert cli.get("/brasil/abrigo/4/estoque").status_code == 403 and len(api.chamadas) == n
+
+
+def test_estoque_com_api_fora_mostra_aviso(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    api.respostas[("GET", "/abrigos/4/estoque")] = (503, {"detail": "fora"})
+    api.respostas[("GET", "/abrigos/4")] = (200, ABRIGO)
+    assert "Não foi possível carregar o estoque agora" in cli.get("/brasil/abrigo/4/estoque").get_data(as_text=True)
+
+
+def test_politica_do_estoque_so_para_gestor():
+    from importlib import import_module
+    pol = import_module("brasil.encaminhador").POLITICA
+    for nome in ("sugerir_itens", "grupos_itens", "criar_item", "estoque_abrigo", "atualizar_estoque", "remover_estoque"):
+        assert pol[nome].papeis == ("gestor_abrigo",), nome
+    assert (pol["atualizar_estoque"].metodo, pol["atualizar_estoque"].caminho) == ("PUT", "/abrigos/{abrigo_id}/estoque/{item_id}")
+    assert pol["remover_estoque"].metodo == "DELETE"

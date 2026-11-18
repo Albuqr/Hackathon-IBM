@@ -217,6 +217,21 @@ def abrigo_editar(aid):
     return render_template("brasil/abrigo.html", abrigos=[a], criar=True, editar=a, erro=None, dev_login=dev_login_ligado())
 
 
+@bp.route("/abrigo/<int:aid>/estoque")
+@exige_login("gestor_abrigo")
+def abrigo_estoque(aid):
+    """Estoque e necessidades do abrigo (ADR 0007). Abrigo de outro gestor: a API responde 404."""
+    st, a = como_eu("GET", f"/abrigos/{aid}")
+    if st != 200:
+        abort(404)
+    st_e, estoque = como_eu("GET", f"/abrigos/{aid}/estoque")
+    st_g, grupos = como_eu("GET", "/itens/grupos")
+    erro = None if st_e == 200 and st_g == 200 else "Não foi possível carregar o estoque agora. Tente de novo."
+    dados = {"abrigo": {"id": a["id"], "nome": a["nome"]}, "estoque": estoque if st_e == 200 else [],
+             "grupos": grupos if st_g == 200 else []}
+    return render_template("brasil/estoque.html", a=a, dados=dados, erro=erro)
+
+
 @bp.route("/admin")
 @exige_login("admin")
 def admin():
