@@ -1,7 +1,7 @@
 # Dash Brasil
 
 Crises brasileiras por município, dentro do Crisis Monitor, em `/brasil/` (frontend) e `/brasil/...` (API).
-Decisões: `docs/adr/0001` a `0005`. Requisitos: spec da feature `brasil-dash`.
+Decisões: `docs/adr/0001` a `0007`. Roteiro da gestão de abrigos: `WALKTHROUGH.md`. Requisitos: spec da feature `brasil-dash`.
 
 ## O que tem
 | Parte | Onde |
@@ -37,6 +37,13 @@ Cadastro aberto em `/brasil/cadastro` (cria só `gestor_abrigo`). Em `/brasil/ab
 (nome e tipo, local por GPS ou lat/lon, capacidade, situação, crises) e vê um painel por abrigo. O abrigo funciona na hora,
 marcado "Não verificado". API em `middleware/brasil/abrigos.py` (`/brasil/abrigos...`); abrigo de outro gestor responde 404.
 
+### Pessoas do abrigo (ADR 0006)
+Em `/brasil/abrigo/<id>/pessoas` o gestor vê a lotação (presentes x capacidade), registra a chegada em etapas (uma pessoa
+ou um grupo, que vira família; nome e nome da mãe obrigatórios, CPF opcional com 11 dígitos, necessidades especiais),
+registra a saída e busca por nome sem acento. A busca vale para todos os abrigos se algum abrigo do gestor estiver
+verificado; senão só para os dele; CPF só de gente dos próprios abrigos. Voluntário, ONG e admin nunca veem pessoas (403).
+API em `middleware/brasil/abrigados.py` (`/brasil/abrigos/{id}/chegadas|pessoas|lotacao`, `/brasil/abrigados...`).
+
 ### Estoque do abrigo (ADR 0007)
 Em `/brasil/abrigo/<id>/estoque` o gestor vê o que precisa agora, procura o item ("Que item?", sugestões ao digitar) e marca
 Urgente/Precisa/OK/Sobrando com a quantidade aproximada. Se o item não existe, cria com grupo e unidade, e ele passa a valer para
@@ -51,7 +58,9 @@ export BRASIL_DEV_LOGIN=1                           # liga os logins de teste
 uvicorn middleware.main:app --port 8000 &
 API_URL=http://localhost:8000 python frontend/app.py
 ```
-Abra http://localhost:5000/brasil/ e entre por um dos links de teste (Voluntário, ONG, Admin).
+Abra http://localhost:5000/brasil/ e entre por um dos links de teste (Voluntário, ONG, Admin, Gestor de Abrigo e
+Gestor de Abrigo 2, perfis `gestor` e `gestor2`). Abrigos, pessoas e estoque fictícios desses dois gestores (e as crises
+de teste): `BRASIL_DB_PATH=... BRASIL_DEV_LOGIN=1 python -m middleware.brasil.semear_teste` (pode repetir; recria).
 No Admin, "Atualizar dados" faz a primeira ingestão (≈ 15 s).
 
 ## Configuração
