@@ -1,7 +1,7 @@
 # Dash Brasil
 
 Crises brasileiras por município, dentro do Crisis Monitor, em `/brasil/` (frontend) e `/brasil/...` (API).
-Decisões: `docs/adr/0001` a `0003`. Requisitos: spec da feature `brasil-dash`.
+Decisões: `docs/adr/0001` a `0005`. Requisitos: spec da feature `brasil-dash`.
 
 ## O que tem
 | Parte | Onde |
@@ -32,6 +32,11 @@ Começar (voluntário), Nova campanha e acompanhamento da campanha (ONG) e Rotin
 Próximo passo, nesta ordem: crise saiu do mapa › agravou (sugere a meta da nova severidade) › faltam pessoas › convites
 sem resposta há 24 h › equipe completa. Regras em `middleware/brasil/assistentes.py` (`proximo_passo`, `situacao_campanha`).
 
+### Gestor de abrigo (ADR 0005)
+Cadastro aberto em `/brasil/cadastro` (cria só `gestor_abrigo`). Em `/brasil/abrigo` o gestor cadastra o abrigo em etapas
+(nome e tipo, local por GPS ou lat/lon, capacidade, situação, crises) e vê um painel por abrigo. O abrigo funciona na hora,
+marcado "Não verificado". API em `middleware/brasil/abrigos.py` (`/brasil/abrigos...`); abrigo de outro gestor responde 404.
+
 ## Rodar local
 ```bash
 python init_db.py                                   # banco do Crisis (se ainda não existe)
@@ -46,7 +51,7 @@ No Admin, "Atualizar dados" faz a primeira ingestão (≈ 15 s).
 | Variável | Padrão | Valores |
 |---|---|---|
 | `BRASIL_DB_PATH` | `brasil.db` ao lado de `DB_PATH` | caminho; não pode ser igual a `DB_PATH` |
-| `BRASIL_DEV_LOGIN` | desligado | `1` liga `/brasil/dev-login/<voluntario/ong/admin>`. Nunca em produção. |
+| `BRASIL_DEV_LOGIN` | desligado | `1` liga `/brasil/dev-login/<voluntario/ong/admin/gestor/gestor2>` e a verificação de teste do abrigo. Nunca em produção. |
 | `BRASIL_ORQUESTRADOR` | `local` | `local`, `watsonx`, `claude` |
 | `BRASIL_INGESTAO_AUTO_MIN` | `0` (só manual) | `0` ou `15`–`1440` |
 | `BRASIL_NOTIFICACOES` | `fila` | `fila` (nada sai; fila visível ao admin), `enviar` |
