@@ -33,8 +33,8 @@
       <p class="item-meta">{{ 'Permanente' if a.tipo == 'permanente' else 'Temporário' }} · {{ 'Ativo' if a.ativo else 'Inativo' }}{% if a.sensivel %} · Sensível{% endif %}{% if a.crises %} · {{ a.crises|map(attribute='title')|join(', ') }}{% endif %}</p>
       {% if not a.verificado %}<p class="dica">Ainda não verificado: o abrigo já funciona, mas a busca de pessoas fica restrita aos seus abrigos até um deles ser verificado.</p>{% endif %}
       <div class="acoes">
-        <a class="pilula" href="{{ url_for('brasil.abrigo') }}/{{ a.id }}/pessoas">Pessoas</a>
-        <a class="pilula contorno" href="{{ url_for('brasil.abrigo') }}/{{ a.id }}/estoque">Estoque</a>
+        <a class="botao botao-primario" href="{{ url_for('brasil.abrigo') }}/{{ a.id }}/pessoas">Pessoas</a>
+        <a class="botao botao-secundario" href="{{ url_for('brasil.abrigo') }}/{{ a.id }}/estoque">Estoque</a>
         <a class="texto-link pequeno" href="{{ url_for('brasil.abrigo_editar', aid=a.id) }}">Editar</a>
       </div>
       {% if dev_login %}

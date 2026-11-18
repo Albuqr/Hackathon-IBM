@@ -185,7 +185,7 @@ export function iniciarPainel({ msg }) {
       b.disabled = true;
       const r = await acao("dev_verificar_abrigo", { p: { abrigo_id: b.dataset.verificar } });
       if (!r.ok) { avisar(msg, r.erro); b.disabled = false; return; }
-      location.reload();
+      location.href = location.pathname;  // sem ?criado=, que fala em "não verificado"
     });
   }
 }
