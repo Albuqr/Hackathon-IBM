@@ -230,6 +230,19 @@ def abrigo_estoque(aid):
     dados = {"abrigo": {"id": a["id"], "nome": a["nome"]}, "estoque": estoque if st_e == 200 else [],
              "grupos": grupos if st_g == 200 else []}
     return render_template("brasil/estoque.html", a=a, dados=dados, erro=erro)
+@bp.route("/abrigo/<int:aid>/pessoas")
+@exige_login("gestor_abrigo")
+def abrigo_pessoas(aid):
+    """Pessoas do abrigo (ADR 0006): lotação, registrar chegada em etapas, saída e busca por nome.
+    A lista de abrigos diz também se a busca vale para todos (algum abrigo do gestor verificado)."""
+    st, lista = como_eu("GET", "/abrigos")
+    if st != 200 or not isinstance(lista, list):
+        abort(st if st in (401, 403, 404) else 502)
+    abrigos = lista
+    a = next((x for x in abrigos if x.get("id") == aid), None)
+    if a is None:
+        abort(404)
+    return render_template("brasil/pessoas.html", a=a, busca_todos=any(x.get("verificado") for x in abrigos))
 
 
 @bp.route("/admin")

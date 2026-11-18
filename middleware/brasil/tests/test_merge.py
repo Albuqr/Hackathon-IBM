@@ -142,3 +142,27 @@ def test_itens_e_estoque_entram_no_merge_reaproveitando_o_item_que_o_crisis_ja_t
     assert sorted(linhas(crisis, "SELECT abrigo_id, item_id, status, quantidade FROM abrigo_itens")) == sorted(
         [(aid, agua_cr, "urgente", 300.0), (aid, fraldas, "precisa", None)])
     assert agua_cr != agua_br
+def test_familias_e_abrigados_entram_no_merge_com_abrigo_e_familia_remapeados(bancos):
+    crisis, brasil = bancos
+    b = sqlite3.connect(brasil)
+    b.execute("INSERT INTO users (email, password_hash, role, name) VALUES ('gestor@br.org','h','gestor_abrigo','G')")  # id 4
+    b.execute("""INSERT INTO abrigos (gestor_id, nome, lat, lon, municipio_ibge, uf, capacidade, tipo)
+                 VALUES (4, 'Abrigo Fictício', -30.03, -51.22, 4314902, 'RS', 80, 'temporario')""")  # id 1
+    b.execute("INSERT INTO familias (abrigo_id) VALUES (1)")  # id 1
+    b.execute("""INSERT INTO abrigados (abrigo_id, familia_id, nome, nome_mae, cpf, nome_busca, entrada_em)
+                 VALUES (1, 1, 'Pessoa Fictícia Um', 'Mãe Fictícia', '12345678901', 'pessoa ficticia um', '2026-11-18T10:00:00')""")
+    b.execute("""INSERT INTO abrigados (abrigo_id, nome, nome_mae, nome_busca, entrada_em)
+                 VALUES (1, 'Pessoa Fictícia Dois', 'Mãe Fictícia Dois', 'pessoa ficticia dois', '2026-11-18T11:00:00')""")
+    b.commit(); b.close()
+    c = sqlite3.connect(crisis)  # o Crisis já tem abrigo e família com id 1: os do Brasil ganham outros ids
+    _preparar_crisis(c)
+    c.execute("INSERT INTO abrigos (gestor_id, nome, lat, lon, capacidade, tipo) VALUES (7,'Do Crisis',-23,-46,10,'permanente')")
+    c.execute("INSERT INTO familias (abrigo_id) VALUES (1)")
+    c.commit(); c.close()
+    rel = unir(crisis, brasil)
+    assert rel["familias"] == 1 and rel["abrigados"] == 2
+    [(aid,)] = linhas(crisis, "SELECT id FROM abrigos WHERE nome='Abrigo Fictício'")
+    [(fid, fab)] = linhas(crisis, "SELECT id, abrigo_id FROM familias WHERE id > 1")
+    assert aid != 1 and fid != 1 and fab == aid
+    assert linhas(crisis, "SELECT abrigo_id, familia_id, cpf, origem FROM abrigados ORDER BY id") == [
+        (aid, fid, "12345678901", "brasil"), (aid, None, None, "brasil")]

@@ -89,6 +89,8 @@ def completo(conn, a: dict) -> dict:
     a["crises"] = [dict(r) for r in conn.execute(
         """SELECT c.id, c.title, c.uf FROM abrigo_crises ac JOIN crises c ON c.id=ac.crisis_id
            WHERE ac.abrigo_id=? ORDER BY c.title""", (a["id"],))]
+    # abrigados (ADR 0006): só a contagem, nunca dados das pessoas
+    a["presentes"] = conn.execute("SELECT COUNT(*) FROM abrigados WHERE abrigo_id=? AND saida_em IS NULL", (a["id"],)).fetchone()[0]
     return a
 
 
