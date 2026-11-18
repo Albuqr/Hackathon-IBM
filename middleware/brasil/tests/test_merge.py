@@ -108,3 +108,37 @@ def test_abrigos_entram_no_merge_com_gestor_e_abrigo_remapeados(bancos):
     [(aid, gid, verificado, origem)] = linhas(crisis, "SELECT id, gestor_id, verificado, origem FROM abrigos WHERE nome='Abrigo Fictício'")
     assert aid != 1 and (gid, verificado, origem) == (g[0], 0, "brasil")
     assert linhas(crisis, "SELECT abrigo_id, crisis_id FROM abrigo_crises") == [(aid, "cemaden-1")]
+
+
+def test_itens_e_estoque_entram_no_merge_reaproveitando_o_item_que_o_crisis_ja_tem(bancos):
+    """ADR 0007: `itens.nome_busca` é único. Item da lista base que o Crisis já tem é reaproveitado (o estoque passa
+    a apontar para o id do Crisis); item novo do gestor ganha id novo e o criador remapeado."""
+    crisis, brasil = bancos
+    b = sqlite3.connect(brasil)
+    b.execute("INSERT INTO users (email, password_hash, role, name) VALUES ('gestor@br.org','h','gestor_abrigo','G')")  # id 4
+    b.execute("""INSERT INTO abrigos (gestor_id, nome, lat, lon, capacidade, tipo)
+                 VALUES (4, 'Abrigo Fictício', -30.03, -51.22, 80, 'temporario')""")  # id 1
+    agua_br = b.execute("SELECT id FROM itens WHERE nome_busca='agua'").fetchone()[0]
+    novo_br = b.execute("""INSERT INTO itens (nome, nome_busca, grupo, unidade, criado_por)
+                           VALUES ('Fraldas', 'fraldas', 'sustento', 'pacotes', 4)""").lastrowid
+    b.execute("INSERT INTO abrigo_itens (abrigo_id, item_id, status, quantidade) VALUES (1, ?, 'urgente', 300)", (agua_br,))
+    b.execute("INSERT INTO abrigo_itens (abrigo_id, item_id, status) VALUES (1, ?, 'precisa')", (novo_br,))
+    b.commit(); b.close()
+    c = sqlite3.connect(crisis)  # o Crisis já tem itens com outros ids, entre eles a mesma Água
+    _preparar_crisis(c)
+    assert c.execute("SELECT COUNT(*) FROM itens").fetchone()[0] == 0  # a semente não vai pelo esquema
+    c.execute("INSERT INTO itens (nome, nome_busca, grupo, unidade) VALUES ('Lonas', 'lonas', 'estrutura_ativos', 'unidades')")
+    c.execute("INSERT INTO itens (nome, nome_busca, grupo, unidade) VALUES ('Água', 'agua', 'sustento', 'litros')")
+    c.commit(); c.close()
+    total_br = linhas(brasil, "SELECT COUNT(*) FROM itens")[0][0]
+    rel = unir(crisis, brasil)
+    assert rel["itens"] == total_br - 1 and rel["abrigo_itens"] == 2  # a Água não foi duplicada
+    assert linhas(crisis, "SELECT nome_busca, COUNT(*) FROM itens GROUP BY nome_busca HAVING COUNT(*) > 1") == []
+    [(agua_cr,)] = linhas(crisis, "SELECT id FROM itens WHERE nome_busca='agua'")
+    g = linhas(crisis, "SELECT id FROM users WHERE email='gestor@br.org'")[0][0]
+    [(fraldas, criador)] = linhas(crisis, "SELECT id, criado_por FROM itens WHERE nome_busca='fraldas'")
+    assert criador == g and fraldas != novo_br
+    [(aid,)] = linhas(crisis, "SELECT id FROM abrigos WHERE nome='Abrigo Fictício'")
+    assert sorted(linhas(crisis, "SELECT abrigo_id, item_id, status, quantidade FROM abrigo_itens")) == sorted(
+        [(aid, agua_cr, "urgente", 300.0), (aid, fraldas, "precisa", None)])
+    assert agua_cr != agua_br

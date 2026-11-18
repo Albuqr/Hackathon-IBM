@@ -161,6 +161,46 @@ CREATE TABLE IF NOT EXISTS abrigo_crises (
     crisis_id TEXT NOT NULL,
     PRIMARY KEY (abrigo_id, crisis_id)
 );
+-- estoque e necessidades dos abrigos (ADR 0007): lista de itens compartilhada, que cresce
+CREATE TABLE IF NOT EXISTS itens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    nome_busca TEXT NOT NULL UNIQUE,
+    grupo TEXT NOT NULL CHECK(grupo IN ('sustento','profissionais','energia_mobilidade','estrutura_ativos')),
+    unidade TEXT NOT NULL DEFAULT 'unidades',
+    so_necessidade INTEGER NOT NULL DEFAULT 0 CHECK(so_necessidade IN (0,1)),
+    criado_por INTEGER REFERENCES users(id),
+    criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+    origem TEXT DEFAULT 'brasil'
+);
+CREATE TABLE IF NOT EXISTS abrigo_itens (
+    abrigo_id INTEGER NOT NULL REFERENCES abrigos(id),
+    item_id INTEGER NOT NULL REFERENCES itens(id),
+    status TEXT NOT NULL CHECK(status IN ('urgente','precisa','ok','sobrando')),
+    quantidade REAL CHECK(quantidade IS NULL OR quantidade >= 0),
+    atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+    origem TEXT DEFAULT 'brasil',
+    PRIMARY KEY (abrigo_id, item_id)
+);
+-- lista base (nome_busca = estoque.normalizar(nome)); INSERT OR IGNORE: roda em toda subida sem duplicar
+INSERT OR IGNORE INTO itens (nome, nome_busca, grupo, unidade, so_necessidade) VALUES
+    ('Alimentos', 'alimentos', 'sustento', 'kg', 0),
+    ('Cesta básica', 'cesta basica', 'sustento', 'cestas', 0),
+    ('Água', 'agua', 'sustento', 'litros', 0),
+    ('Equipe de saúde', 'equipe de saude', 'profissionais', 'pessoas', 1),
+    ('Bombeiros', 'bombeiros', 'profissionais', 'pessoas', 1),
+    ('Polícia', 'policia', 'profissionais', 'pessoas', 1),
+    ('Gasolina', 'gasolina', 'energia_mobilidade', 'litros', 0),
+    ('Etanol', 'etanol', 'energia_mobilidade', 'litros', 0),
+    ('Diesel', 'diesel', 'energia_mobilidade', 'litros', 0),
+    ('AVGAS', 'avgas', 'energia_mobilidade', 'litros', 0),
+    ('Carro', 'carro', 'energia_mobilidade', 'veículos', 1),
+    ('Caminhão', 'caminhao', 'energia_mobilidade', 'veículos', 1),
+    ('Ambulância', 'ambulancia', 'energia_mobilidade', 'veículos', 1),
+    ('Colchões', 'colchoes', 'estrutura_ativos', 'unidades', 0),
+    ('Cobertores', 'cobertores', 'estrutura_ativos', 'unidades', 0),
+    ('Roupas', 'roupas', 'estrutura_ativos', 'peças', 0),
+    ('Ferramentas', 'ferramentas', 'estrutura_ativos', 'unidades', 0);
 """
 
 _prontos: set[str] = set()
