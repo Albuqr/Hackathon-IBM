@@ -217,6 +217,21 @@ def abrigo_editar(aid):
     return render_template("brasil/abrigo.html", abrigos=[a], criar=True, editar=a, erro=None, dev_login=dev_login_ligado())
 
 
+@bp.route("/abrigo/<int:aid>/pessoas")
+@exige_login("gestor_abrigo")
+def abrigo_pessoas(aid):
+    """Pessoas do abrigo (ADR 0006): lotação, registrar chegada em etapas, saída e busca por nome.
+    A lista de abrigos diz também se a busca vale para todos (algum abrigo do gestor verificado)."""
+    st, lista = como_eu("GET", "/abrigos")
+    if st != 200 or not isinstance(lista, list):
+        abort(st if st in (401, 403, 404) else 502)
+    abrigos = lista
+    a = next((x for x in abrigos if x.get("id") == aid), None)
+    if a is None:
+        abort(404)
+    return render_template("brasil/pessoas.html", a=a, busca_todos=any(x.get("verificado") for x in abrigos))
+
+
 @bp.route("/admin")
 @exige_login("admin")
 def admin():
