@@ -7,7 +7,7 @@ import pytest
 
 from middleware.brasil import db
 from middleware.brasil.config import carregar
-from middleware.brasil.merge_brasil import unir
+from middleware.brasil.merge_brasil import _preparar_crisis, unir
 
 RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
@@ -87,3 +87,24 @@ def test_fr004_simular_nao_muda_nada_e_segundo_merge_e_recusado(bancos):
     with pytest.raises(SystemExit, match="já recebeu"):
         unir(crisis, brasil)
     assert antes != open(crisis, "rb").read()
+
+
+def test_abrigos_entram_no_merge_com_gestor_e_abrigo_remapeados(bancos):
+    crisis, brasil = bancos
+    b = sqlite3.connect(brasil)
+    b.execute("INSERT INTO users (email, password_hash, role, name) VALUES ('gestor@br.org','h','gestor_abrigo','G')")  # id 4
+    b.execute("""INSERT INTO abrigos (gestor_id, nome, lat, lon, municipio_ibge, uf, capacidade, tipo)
+                 VALUES (4, 'Abrigo Fictício', -30.03, -51.22, 4314902, 'RS', 80, 'temporario')""")  # id 1
+    b.execute("INSERT INTO abrigo_crises (abrigo_id, crisis_id) VALUES (1, 'cemaden-1')")
+    b.commit(); b.close()
+    c = sqlite3.connect(crisis)  # o Crisis já tem um abrigo com id 1: o do Brasil precisa ganhar outro id
+    _preparar_crisis(c)
+    c.execute("INSERT INTO abrigos (gestor_id, nome, lat, lon, capacidade, tipo) VALUES (7,'Do Crisis',-23,-46,10,'permanente')")
+    c.commit(); c.close()
+    rel = unir(crisis, brasil)
+    assert rel["abrigos"] == 1 and rel["abrigo_crises"] == 1
+    g = linhas(crisis, "SELECT id, role FROM users WHERE email='gestor@br.org'")[0]
+    assert g[1] == "gestor_abrigo" and g[0] != 4
+    [(aid, gid, verificado, origem)] = linhas(crisis, "SELECT id, gestor_id, verificado, origem FROM abrigos WHERE nome='Abrigo Fictício'")
+    assert aid != 1 and (gid, verificado, origem) == (g[0], 0, "brasil")
+    assert linhas(crisis, "SELECT abrigo_id, crisis_id FROM abrigo_crises") == [(aid, "cemaden-1")]

@@ -137,6 +137,30 @@ CREATE TABLE IF NOT EXISTS notificacoes_pendentes (
     criada_em TEXT DEFAULT CURRENT_TIMESTAMP,
     origem TEXT DEFAULT 'brasil'
 );
+-- gestão de abrigos (ADR 0005): o abrigo nasce não verificado e já funciona
+CREATE TABLE IF NOT EXISTS abrigos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    gestor_id INTEGER NOT NULL REFERENCES users(id),
+    nome TEXT NOT NULL,
+    endereco TEXT DEFAULT '',
+    lat REAL NOT NULL,
+    lon REAL NOT NULL,
+    municipio_ibge INTEGER,
+    uf TEXT,
+    capacidade INTEGER NOT NULL CHECK(capacidade > 0),
+    tipo TEXT NOT NULL CHECK(tipo IN ('permanente','temporario')),
+    ativo INTEGER DEFAULT 1,
+    sensivel INTEGER DEFAULT 0,
+    verificado INTEGER DEFAULT 0,
+    verificado_em TEXT,
+    criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+    origem TEXT DEFAULT 'brasil'
+);
+CREATE TABLE IF NOT EXISTS abrigo_crises (
+    abrigo_id INTEGER NOT NULL REFERENCES abrigos(id),
+    crisis_id TEXT NOT NULL,
+    PRIMARY KEY (abrigo_id, crisis_id)
+);
 """
 
 _prontos: set[str] = set()

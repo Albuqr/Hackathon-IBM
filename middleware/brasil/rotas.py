@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from . import campanhas, db, ingestao, inteligencia, malha, noticias
+from . import abrigos, campanhas, db, ingestao, inteligencia, malha, noticias
 from .acesso import Acesso
 from .config import carregar
 
@@ -19,6 +19,7 @@ ACESSO = Acesso(CFG)
 router = APIRouter(prefix="/brasil", tags=["brasil"])
 router.include_router(campanhas.criar_router(CFG, ACESSO))
 router.include_router(inteligencia.criar_router(CFG, ACESSO))
+router.include_router(abrigos.criar_router(CFG, ACESSO))
 _PARAR_AUTO = ingestao.iniciar_automatico(CFG)  # FR-016; None quando BRASIL_INGESTAO_AUTO_MIN=0
 
 USUARIOS_TESTE = {

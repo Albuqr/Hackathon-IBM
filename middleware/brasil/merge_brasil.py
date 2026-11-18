@@ -24,9 +24,12 @@ REFERENCIAS = {
     "matches": {"volunteer_id": "users", "mission_id": "missions"},
     "subscriptions": {"user_id": "users"},
     "notificacoes_pendentes": {"user_id": "users"},
+    "abrigos": {"gestor_id": "users"},
+    "abrigo_crises": {"abrigo_id": "abrigos"},  # sem id próprio: a chave (abrigo_id, crisis_id) é remapeada
 }
 ORDEM = ["campaigns", "campaign_volunteers", "crisis_associations", "missions", "matches",
-         "subscriptions", "classifications_log", "telegram_subscribers", "notificacoes_pendentes"]
+         "subscriptions", "classifications_log", "telegram_subscribers", "notificacoes_pendentes",
+         "abrigos", "abrigo_crises"]
 
 
 def _colunas(conn, banco: str, tabela: str) -> list[str]:
