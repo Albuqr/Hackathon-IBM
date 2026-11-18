@@ -26,10 +26,14 @@ REFERENCIAS = {
     "notificacoes_pendentes": {"user_id": "users"},
     "abrigos": {"gestor_id": "users"},
     "abrigo_crises": {"abrigo_id": "abrigos"},  # sem id próprio: a chave (abrigo_id, crisis_id) é remapeada
+    # abrigados (ADR 0006)
+    "familias": {"abrigo_id": "abrigos"},
+    "abrigados": {"abrigo_id": "abrigos", "familia_id": "familias"},
 }
 ORDEM = ["campaigns", "campaign_volunteers", "crisis_associations", "missions", "matches",
          "subscriptions", "classifications_log", "telegram_subscribers", "notificacoes_pendentes",
          "abrigos", "abrigo_crises"]
+ORDEM += ["familias", "abrigados"]  # abrigados (ADR 0006): famílias antes das pessoas
 
 
 def _colunas(conn, banco: str, tabela: str) -> list[str]:

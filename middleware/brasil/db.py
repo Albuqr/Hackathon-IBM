@@ -161,6 +161,27 @@ CREATE TABLE IF NOT EXISTS abrigo_crises (
     crisis_id TEXT NOT NULL,
     PRIMARY KEY (abrigo_id, crisis_id)
 );
+-- abrigados (ADR 0006): dados pessoais só para o gestor do abrigo; CPF opcional, só 11 dígitos
+CREATE TABLE IF NOT EXISTS familias (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    abrigo_id INTEGER NOT NULL REFERENCES abrigos(id),
+    criada_em TEXT DEFAULT CURRENT_TIMESTAMP,
+    origem TEXT DEFAULT 'brasil'
+);
+CREATE TABLE IF NOT EXISTS abrigados (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    abrigo_id INTEGER NOT NULL REFERENCES abrigos(id),
+    familia_id INTEGER REFERENCES familias(id),
+    nome TEXT NOT NULL,
+    nome_mae TEXT NOT NULL,
+    cpf TEXT CHECK(cpf IS NULL OR (length(cpf) = 11 AND cpf NOT GLOB '*[^0-9]*')),
+    nome_busca TEXT NOT NULL,
+    entrada_em TEXT NOT NULL,
+    saida_em TEXT,
+    necessidades TEXT DEFAULT '[]',
+    origem TEXT DEFAULT 'brasil'
+);
+CREATE INDEX IF NOT EXISTS abrigados_abrigo ON abrigados (abrigo_id, saida_em);
 """
 
 _prontos: set[str] = set()
