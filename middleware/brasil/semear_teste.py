@@ -1,4 +1,5 @@
-"""Semeia crises e convites fixos no brasil.db para o E2E (frontend/brasil/tests/e2e/app.spec.mjs).
+"""Semeia crises e convites fixos no brasil.db para o E2E (frontend/brasil/tests/e2e/app.spec.mjs),
+e abrigos, pessoas e estoque fictícios dos gestores de teste `gestor` e `gestor2` (ADRs 0005–0007).
 
 Uso: BRASIL_DB_PATH=data/brasil-e2e.db BRASIL_DEV_LOGIN=1 python -m middleware.brasil.semear_teste
 Recusa rodar sem BRASIL_DB_PATH explícito, para nunca misturar com dados reais.
@@ -51,7 +52,11 @@ def main():
     rel = ingestao.executar(cfg, fontes={k: (lambda v=v: v) for k, v in por_fonte.items()}, agora=agora)
     voluntarios(cfg)
     convites(cfg, agora)
+    resumo = abrigos_teste(cfg, agora)
     print(f"semeado: {rel['gravadas']} crises em {cfg.db_path}")
+    # só contagens: nunca nomes de pessoas abrigadas (ADR 0006)
+    print("abrigos: {abrigos}, pessoas: {pessoas} ({presentes} presentes), famílias: {familias}, "
+          "itens de estoque: {estoque}".format(**resumo))
 
 
 VOLUNTARIOS = [  # campanha guiada: matching com habilidades em comum perto das crises do RS
@@ -96,6 +101,91 @@ def convites(cfg, agora):
             conn.execute("INSERT INTO campaign_volunteers (campaign_id, volunteer_id, status, added_at) VALUES (?,?,'selected',?)",
                           (cid, vol, agora.isoformat()))
         conn.commit()
+    finally:
+        conn.close()
+
+
+# ── abrigos de teste (ADRs 0005–0007) ─────────────────────────────────
+# Tudo fictício: nomes inventados ("Exemplo", "Teste", "Fictício"), nenhum CPF.
+# Pessoa: (nome, nome da mãe, necessidades, dias desde a entrada, dias desde a saída ou None).
+# Uma chegada com 2+ pessoas vira uma família, como na API.
+ABRIGOS_TESTE = [
+    {"gestor": "gestor", "nome": "Ginásio da Escola Estadual Fictícia", "endereco": "Rua de Teste, 100 – Porto Alegre",
+     "lat": -30.0346, "lon": -51.2177, "capacidade": 60, "tipo": "permanente", "sensivel": False,
+     "crises": ["teste-poa-4"],
+     "chegadas": [
+         [("Carlos Exemplo Ramos", "Odete Exemplo Ramos", [], 3, None),
+          ("Beatriz Exemplo Ramos", "Lurdes Fictícia Prado", ["gestante"], 3, None),
+          ("Lucas Exemplo Ramos", "Beatriz Exemplo Ramos", [], 3, None)],  # criança, sem CPF
+         [("Ivone Teste Moraes", "Cecília Teste Moraes", ["idoso", "saude"], 2, None)],
+         [("Rui Fictício Dantas", "Alda Fictícia Dantas", ["deficiencia"], 2, None)],
+         [("Pedro Fictício Lima", "Neusa Fictícia Lima", [], 4, 1)],  # já saiu
+     ],
+     "estoque": [("agua", "urgente", 500), ("colchoes", "sobrando", 20), ("equipe de saude", "precisa", 2),
+                 ("cesta basica", "ok", 30)]},
+    {"gestor": "gestor2", "nome": "Ginásio Municipal de Teste", "endereco": "Avenida Fictícia, 200 – Canoas",
+     "lat": -29.9177, "lon": -51.1836, "capacidade": 40, "tipo": "temporario", "sensivel": False, "crises": [],
+     "chegadas": [
+         [("Marta Exemplo Nunes", "Iara Exemplo Nunes", [], 1, None),
+          ("Davi Exemplo Nunes", "Marta Exemplo Nunes", [], 1, None)],
+         [("Sílvio Teste Barros", "Rosa Teste Barros", ["idoso"], 1, None)],
+     ],
+     "estoque": [("agua", "ok", 200), ("cobertores", "urgente", 50), ("ambulancia", "precisa", 1)]},
+    {"gestor": "gestor2", "nome": "Casa de Acolhimento de Teste", "endereco": "Endereço reservado (teste)",
+     "lat": -29.92, "lon": -51.17, "capacidade": 12, "tipo": "permanente", "sensivel": True, "crises": [],
+     "chegadas": [[("Joana Fictícia Reis", "Sara Fictícia Reis", ["saude"], 5, None)]],
+     "estoque": [("roupas", "precisa", 30)]},
+]
+
+
+def abrigos_teste(cfg, agora) -> dict:
+    """Recria os abrigos de teste de `gestor` e `gestor2` (todos os abrigos desses dois, só deles), não verificados.
+    Idempotente: apaga antes estoque, pessoas, famílias, vínculos e abrigos desses gestores. Devolve só contagens."""
+    import json
+    from . import rotas  # cria os usuários de teste como o dev-login faria
+    from .abrigados import nome_busca
+    from .abrigos import local
+    gestores = {p: rotas.dev_usuario(p)["id"] for p in ("gestor", "gestor2")}
+    conn = db.conectar(cfg)
+    try:
+        antigos = "SELECT id FROM abrigos WHERE gestor_id IN (?,?)"
+        ids = tuple(gestores.values())
+        for sql in ("DELETE FROM abrigo_itens WHERE abrigo_id IN ({})", "DELETE FROM abrigados WHERE abrigo_id IN ({})",
+                    "DELETE FROM familias WHERE abrigo_id IN ({})", "DELETE FROM abrigo_crises WHERE abrigo_id IN ({})"):
+            conn.execute(sql.format(antigos), ids)
+        conn.execute("DELETE FROM abrigos WHERE gestor_id IN (?,?)", ids)
+        resumo = {"abrigos": 0, "pessoas": 0, "presentes": 0, "familias": 0, "estoque": 0}
+        for a in ABRIGOS_TESTE:
+            lugar = local(a["lat"], a["lon"])
+            aid = conn.execute(
+                """INSERT INTO abrigos (gestor_id, nome, endereco, lat, lon, municipio_ibge, uf, capacidade, tipo, ativo,
+                   sensivel, verificado, criado_em) VALUES (?,?,?,?,?,?,?,?,?,1,?,0,?)""",
+                (gestores[a["gestor"]], a["nome"], a["endereco"], a["lat"], a["lon"], lugar["municipio_ibge"], lugar["uf"],
+                 a["capacidade"], a["tipo"], int(a["sensivel"]), (agora - timedelta(days=6)).isoformat())).lastrowid
+            resumo["abrigos"] += 1
+            conn.executemany("INSERT INTO abrigo_crises (abrigo_id, crisis_id) VALUES (?,?)",
+                             [(aid, c) for c in a["crises"] if conn.execute("SELECT 1 FROM crises WHERE id=?", (c,)).fetchone()])
+            for chegada in a["chegadas"]:
+                familia = None
+                if len(chegada) > 1:
+                    familia = conn.execute("INSERT INTO familias (abrigo_id) VALUES (?)", (aid,)).lastrowid
+                    resumo["familias"] += 1
+                for nome, mae, nec, dias, saiu in chegada:
+                    saida = (agora - timedelta(days=saiu)).isoformat(timespec="seconds") if saiu is not None else None
+                    conn.execute(
+                        """INSERT INTO abrigados (abrigo_id, familia_id, nome, nome_mae, cpf, nome_busca, entrada_em, saida_em,
+                           necessidades) VALUES (?,?,?,?,NULL,?,?,?,?)""",
+                        (aid, familia, nome, mae, nome_busca(nome), (agora - timedelta(days=dias)).isoformat(timespec="seconds"),
+                         saida, json.dumps(nec)))
+                    resumo["pessoas"] += 1
+                    resumo["presentes"] += saida is None
+            for item, status, qtd in a["estoque"]:  # itens da lista base (db.ESQUEMA), pelo nome_busca
+                iid = conn.execute("SELECT id FROM itens WHERE nome_busca=?", (item,)).fetchone()["id"]
+                conn.execute("INSERT INTO abrigo_itens (abrigo_id, item_id, status, quantidade, atualizado_em) VALUES (?,?,?,?,?)",
+                             (aid, iid, status, qtd, agora.isoformat()))
+                resumo["estoque"] += 1
+        conn.commit()
+        return resumo
     finally:
         conn.close()
 
