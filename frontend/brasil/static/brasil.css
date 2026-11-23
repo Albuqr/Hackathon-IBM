@@ -576,3 +576,13 @@ body.solta { min-height: 100dvh; display: grid; place-items: center; padding: 24
   .etapa-corpo .segmentado button, .secao .segmentado button { border-radius: calc(var(--r-medio) - 3px); padding: 7px 10px;
     white-space: normal; line-height: 1.2; text-align: center; }
 }
+
+/* ---------- celular: a legenda da barra de status quebra linha (antes era cortada na borda direita) ---------- */
+@media (max-width: 860px) {
+  body.app { grid-template-rows: var(--topo) minmax(0, 1fr) auto; }
+  .statusbar { flex-wrap: wrap; white-space: normal; overflow: visible; min-height: var(--status);
+    padding-block: 6px max(6px, env(safe-area-inset-bottom, 0px)); }
+  .status-legenda { flex-wrap: wrap; gap: 2px 12px; }
+  .status-legenda span { white-space: nowrap; }
+  .toast { bottom: calc(68px + env(safe-area-inset-bottom, 0px)); }
+}
