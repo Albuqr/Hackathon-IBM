@@ -6,6 +6,10 @@ Para explicar do começo ao fim o que entrou na branch `feat/brasil-abrigos`. De
 [ADR 0008](../../docs/adr/0008-privacidade-da-busca-entre-abrigos.md) (privacidade da busca entre abrigos, emenda a 0006),
 [ADR 0007](../../docs/adr/0007-lista-compartilhada-de-itens-e-agente-de-duplicados.md) (lista de itens e duplicados).
 
+> **Antes de usar dados reais (bloqueio):** o tempo de guarda dos dados de quem saiu do abrigo é decisão do cliente
+> (LGPD) e não está implementado. Até essa decisão e a implementação, só dados fictícios da semente; nenhum dado real.
+> Pendências da fatia: [BACKLOG.md](BACKLOG.md).
+
 ## O que foi construído
 - Papel novo `gestor_abrigo`, com cadastro aberto (`/brasil/cadastro`) e dois logins de teste (`gestor`, `gestor2`).
 - Abrigos do gestor (um gestor pode ter vários): nome, endereço livre, local por GPS ou lat/lon (município IBGE pela
@@ -67,7 +71,7 @@ Todo `acao(...)` do navegador vai para `POST /brasil/acao/<nome>` e passa pela `
 | `buscar_abrigados` | `GET /brasil/abrigados/busca?nome=` | lê `abrigados`, `abrigos`; escreve `buscas_abrigados_log` (só no escopo `todos`) |
 | `lotacao_abrigo` (na política, a tela usa a lotação que vem junto) | `GET /brasil/abrigos/{id}/lotacao` | lê `abrigados` |
 
-`entrada_em` e `saida_em` ficam sempre em UTC (`2026-11-18T13:00:00+00:00`); data sem fuso é horário de Brasília (UTC-03:00). Entrada mais de 10 minutos no futuro é recusada (422).
+`entrada_em` e `saida_em` ficam sempre em UTC (`2026-11-18T13:00:00+00:00`); data sem fuso é horário de Brasília (UTC-03:00). Entrada mais de 10 minutos no futuro é recusada (422), e saída antes da entrada também (422). Chegada em abrigo inativo é recusada com a mensagem para reativar o abrigo antes.
 
 ### `/brasil/abrigo/<id>/estoque` (`abrigo_estoque`; `static/estoque.js`)
 | POLITICA | API | Tabelas |
@@ -121,8 +125,13 @@ Caminhos de teste relativos a `middleware/brasil/` quando não indicado.
 Tomadas durante a fatia, sem regra no brief:
 - a) Decidido (ADR 0008): abrigo sensível nunca aparece na busca de outros gestores; só o dono acha a própria gente.
 - b) Decidido (ADR 0008): de outros abrigos a busca mostra só o nome e "Entre em contato com a coordenação regional.", e quem saiu não aparece; nos próprios abrigos continua tudo, inclusive quem saiu ("Saiu <data>").
-- c) Chegadas são aceitas em abrigo inativo.
-- d) Saída com data antes da entrada é recusada (422).
-- e) Por quanto tempo guardar os dados de quem saiu: não decidido.
-- f) O status Urgente usa a cor de alerta laranja que já existe (`--acento`), além do texto e do "!".
-- g) A lista compartilhada de itens não tem curadoria de quase-duplicados ainda (o agente só avisa).
+- c) Decidido (João, 2026-11-23): chegada em abrigo inativo é recusada, com mensagem clara para reativar o abrigo
+  antes (teste: `test_abrigados.py`).
+- d) Decidido (João, 2026-11-23): saída com data antes da entrada continua recusada (422), já implementado e testado
+  (`test_abrigados.py`).
+- e) Decidido (João, 2026-11-23): por quanto tempo guardar os dados de quem saiu é decisão do cliente (LGPD) e não está
+  implementado. **Bloqueia carregar dados reais**; até lá só dados fictícios da semente (ver o aviso no topo).
+- f) Decidido (João, 2026-11-23): o status Urgente mantém a cor de alerta laranja que já existe (`--acento`), além do
+  texto e do "!". Exceção aceita à regra do PRODUCT.md de verde como única cor de destaque.
+- g) Decidido (João, 2026-11-23): a curadoria de quase-duplicados da lista compartilhada de itens fica para o backlog;
+  hoje o agente só avisa (ADR 0007).
