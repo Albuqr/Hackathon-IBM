@@ -110,6 +110,7 @@ def test_entrada_no_futuro_422_com_folga_de_10_minutos(cena):
     assert cli.get(f"/brasil/abrigos/{a1}/lotacao", headers=como(g1)).json()["presentes"] == 3
     assert chegar(cli, g1, a1, pessoa, entrada_em=(agora + timedelta(minutes=5)).isoformat()).status_code == 200
 
+
 def test_datas_sem_fuso_sao_horario_de_brasilia_e_ficam_em_utc(cena):
     cli, g1, a1 = cena["cli"], cena["g1"], cena["a1"]
     r = chegar(cli, g1, a1, [{"nome": "Fuso Fictício", "nome_mae": "Mãe Fictícia"}], entrada_em="2026-11-18T10:00-03:00")

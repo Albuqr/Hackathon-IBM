@@ -142,6 +142,8 @@ def test_itens_e_estoque_entram_no_merge_reaproveitando_o_item_que_o_crisis_ja_t
     assert sorted(linhas(crisis, "SELECT abrigo_id, item_id, status, quantidade FROM abrigo_itens")) == sorted(
         [(aid, agua_cr, "urgente", 300.0), (aid, fraldas, "precisa", None)])
     assert agua_cr != agua_br
+
+
 def test_familias_e_abrigados_entram_no_merge_com_abrigo_e_familia_remapeados(bancos):
     crisis, brasil = bancos
     b = sqlite3.connect(brasil)

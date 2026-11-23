@@ -230,6 +230,8 @@ def abrigo_estoque(aid):
     dados = {"abrigo": {"id": a["id"], "nome": a["nome"]}, "estoque": estoque if st_e == 200 else [],
              "grupos": grupos if st_g == 200 else []}
     return render_template("brasil/estoque.html", a=a, dados=dados, erro=erro)
+
+
 @bp.route("/abrigo/<int:aid>/pessoas")
 @exige_login("gestor_abrigo")
 def abrigo_pessoas(aid):
