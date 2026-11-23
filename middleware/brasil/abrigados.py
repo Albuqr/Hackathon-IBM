@@ -9,7 +9,7 @@ CPF só aparece para gente dos próprios abrigos.
 import json
 import re
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -63,20 +63,26 @@ def _cpf(valor: str | None, n: int) -> str | None:
     return digitos
 
 
+# Horário de Brasília sem horário de verão (extinto em 2019); offset fixo para não depender do tzdata no Windows.
+BRASILIA = timezone(timedelta(hours=-3))
+
+
+def _em_utc(iso: str) -> datetime:
+    """ISO com ou sem fuso; sem fuso = horário de Brasília."""
+    d = datetime.fromisoformat(iso)
+    return (d if d.tzinfo else d.replace(tzinfo=BRASILIA)).astimezone(timezone.utc)
+
+
 def _data(valor: str | None, campo: str) -> str:
-    """Data/hora ISO; vazio = agora (UTC)."""
+    """Data/hora ISO guardada sempre em UTC ("2026-11-18T13:30:00+00:00"), para comparar e ordenar como texto.
+    Vazio = agora; sem fuso = horário de Brasília (é o que o campo de data do navegador manda)."""
     if not valor:
         return datetime.now(timezone.utc).isoformat(timespec="seconds")
     try:
-        d = datetime.fromisoformat(valor)
+        d = _em_utc(valor)
     except ValueError:
         raise HTTPException(422, f"{campo} inválida: use data e hora ISO (ex.: 2026-11-18T14:30)")
     return d.isoformat(timespec="seconds")
-
-
-def _comparavel(iso: str) -> datetime:
-    d = datetime.fromisoformat(iso)
-    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
 
 
 def _pessoa(r) -> dict:
@@ -190,7 +196,7 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
             if linha["saida_em"] is not None:
                 raise HTTPException(409, "A saída desta pessoa já foi registrada")
             saida = _data(d.saida_em if d else None, "Data de saída")
-            if _comparavel(saida) < _comparavel(linha["entrada_em"]):
+            if _em_utc(saida) < _em_utc(linha["entrada_em"]):
                 raise HTTPException(422, "A saída não pode ser antes da entrada")
             conn.execute("UPDATE abrigados SET saida_em=? WHERE id=?", (saida, pessoa_id))
             conn.commit()

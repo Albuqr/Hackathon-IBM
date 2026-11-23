@@ -69,7 +69,7 @@ def test_pessoa_sozinha_nao_cria_familia(cena):
     r = chegar(cli, cena["g1"], cena["a1"], [{"nome": "Sozinho Fictício", "nome_mae": "Mãe Fictícia"}], entrada_em="2026-11-18T08:30")
     assert r.status_code == 200
     p = r.json()["pessoas"][0]
-    assert r.json()["familia_id"] is None and p["familia_id"] is None and p["entrada_em"] == "2026-11-18T08:30:00"
+    assert r.json()["familia_id"] is None and p["familia_id"] is None and p["entrada_em"] == "2026-11-18T11:30:00+00:00"
 
 
 def test_lista_agrupa_por_familia_e_saida_baixa_a_lotacao(cena):
@@ -97,6 +97,21 @@ def test_saida_antes_da_entrada_422(cena):
     cli, g1 = cena["cli"], cena["g1"]
     pid = cena["chegada"]["pessoas"][0]["id"]
     assert cli.post(f"/brasil/abrigados/{pid}/saida", json={"saida_em": "2020-01-01T00:00"}, headers=como(g1)).status_code == 422
+
+
+def test_datas_sem_fuso_sao_horario_de_brasilia_e_ficam_em_utc(cena):
+    cli, g1, a1 = cena["cli"], cena["g1"], cena["a1"]
+    r = chegar(cli, g1, a1, [{"nome": "Fuso Fictício", "nome_mae": "Mãe Fictícia"}], entrada_em="2026-11-18T10:00-03:00")
+    assert r.status_code == 200, r.text
+    p = r.json()["pessoas"][0]
+    assert p["entrada_em"] == "2026-11-18T13:00:00+00:00"
+    s = cli.post(f"/brasil/abrigados/{p['id']}/saida", json={"saida_em": "2026-11-18T11:00"}, headers=como(g1))
+    assert s.status_code == 200, s.text
+    assert s.json()["pessoa"]["saida_em"] == "2026-11-18T14:00:00+00:00"
+    # 09:30 em Brasília é antes das 10:00 da entrada, mesmo sendo 12:30 em UTC
+    r2 = chegar(cli, g1, a1, [{"nome": "Fuso Dois Fictício", "nome_mae": "Mãe Fictícia"}], entrada_em="2026-11-18T13:00:00Z")
+    pid = r2.json()["pessoas"][0]["id"]
+    assert cli.post(f"/brasil/abrigados/{pid}/saida", json={"saida_em": "2026-11-18T09:30"}, headers=como(g1)).status_code == 422
 
 
 @pytest.mark.parametrize("pessoa", [

@@ -25,7 +25,7 @@ API_URL=http://localhost:8000 python frontend/app.py
 ```
 - A semente recusa rodar sem `BRASIL_DB_PATH` e sem `BRASIL_DEV_LOGIN=1`. Pode rodar quantas vezes quiser: apaga e
   recria os abrigos de `gestor` e `gestor2` (todos os abrigos desses dois). Imprime só contagens, nunca nomes.
-- Banco semeado antes da busca ignorar pontuação: rode a semente de novo para regravar `nome_busca`.
+- Banco semeado antes da busca ignorar pontuação e das datas em UTC: rode a semente de novo para regravar `nome_busca` e as datas.
 - Em http://localhost:5000/brasil/entrar, "Gestor de Abrigo" e "Gestor de Abrigo 2" entram direto em `/brasil/abrigo`.
   - `gestor`: Ginásio da Escola Estadual Fictícia (Porto Alegre, permanente, 60 vagas, crise `teste-poa-4`), com uma
     família de três (gestante e criança sem CPF), uma idosa com problema de saúde, uma pessoa com deficiência e uma
@@ -63,6 +63,8 @@ Todo `acao(...)` do navegador vai para `POST /brasil/acao/<nome>` e passa pela `
 | `registrar_saida` | `POST /brasil/abrigados/{pid}/saida` | escreve `abrigados.saida_em` |
 | `buscar_abrigados` | `GET /brasil/abrigados/busca?nome=` | lê `abrigados`, `abrigos` |
 | `lotacao_abrigo` (na política, a tela usa a lotação que vem junto) | `GET /brasil/abrigos/{id}/lotacao` | lê `abrigados` |
+
+`entrada_em` e `saida_em` ficam sempre em UTC (`2026-11-18T13:00:00+00:00`); data sem fuso é horário de Brasília (UTC-03:00).
 
 ### `/brasil/abrigo/<id>/estoque` (`abrigo_estoque`; `static/estoque.js`)
 | POLITICA | API | Tabelas |
