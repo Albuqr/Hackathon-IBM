@@ -427,6 +427,19 @@ def test_busca_de_outro_abrigo_mostra_so_nome_e_contato():
     assert {"nome_mae", "cpf", "abrigo", "entrada_em", "presente", "saida_em"} <= set(re.findall(r"x\.(\w+)", meu))
 
 
+def test_cpf_aparece_sempre_no_span_cpf_que_nao_quebra():
+    """Em 390px o CPF não pode quebrar no meio: todo CPF exibido passa por cpfParte (span.cpf, nowrap no CSS)."""
+    import os
+    import re
+    base = os.path.join(os.path.dirname(__file__), "..", "static")
+    js = open(os.path.join(base, "pessoas.js"), encoding="utf-8").read()
+    css = open(os.path.join(base, "brasil.css"), encoding="utf-8").read()
+    assert re.search(r"\.cpf\s*\{[^}]*white-space:\s*nowrap", css)
+    assert 'class: "cpf"' in js and js.count("cpfFormatado(") == 1  # só o helper formata
+    assert "`CPF ${" not in js  # nenhum "CPF 000..." montado como texto puro
+    assert js.count("cpfParte(") == 3  # lista, confirmação e busca
+
+
 def test_registro_de_buscas_nao_tem_acao_nem_pagina(front):
     """ADR 0008: o registro das buscas entre abrigos não é visível para gestor, voluntário, ONG ou admin."""
     from importlib import import_module

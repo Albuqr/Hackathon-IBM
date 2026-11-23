@@ -346,6 +346,7 @@ label.item { cursor: pointer; }
 .item-texto { display: grid; gap: 2px; min-width: 0; flex: 1; }
 .item-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .item-titulo { font-size: 16px; font-weight: 500; letter-spacing: -0.016em; overflow-wrap: anywhere; display: flex; gap: 8px; align-items: center; }
+.cpf { white-space: nowrap; overflow-wrap: normal; }  /* 000.000.000-00 nunca quebra no meio */
 .item-meta { font-size: 14px; color: var(--tinta-2); overflow-wrap: anywhere; }
 .compat { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--tinta-2); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .compat-barra { width: 56px; height: 4px; border-radius: 2px; background: var(--linha-suave); overflow: hidden; }

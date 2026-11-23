@@ -8,6 +8,11 @@ const NECESSIDADES = { idoso: "Idoso", deficiencia: "Pessoa com deficiência", s
 const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
 const digitos = (s) => String(s || "").replace(/\D/g, "");
 const cpfFormatado = (c) => (c && c.length === 11 ? `${c.slice(0, 3)}.${c.slice(3, 6)}.${c.slice(6, 9)}-${c.slice(9)}` : "");
+// CPF sempre num <span class="cpf"> (nowrap no CSS): o rótulo "CPF " pode quebrar antes, o número nunca no meio.
+const cpfParte = (c) => ["CPF ", el("span", { class: "cpf", texto: cpfFormatado(c) })];
+// junta partes (texto, nó ou lista deles) com " · ", ignorando as vazias
+const juntar = (partes) => partes.filter((p) => p != null && p !== false && p !== "")
+  .flatMap((p, i) => (i ? [" · ", ...[].concat(p)] : [].concat(p)));
 const linhaAcoes = (...f) => el("div", { class: "acoes" }, f);
 const novaPessoa = () => ({ nome: "", nome_mae: "", cpf: "", necessidades: new Set() });
 
@@ -24,8 +29,8 @@ export function iniciarPessoas({ abrigo, msg }) {
 
   // ---------- lista de presentes, por grupo familiar ----------
   function linhaPessoa(p) {
-    const meta = [`Mãe: ${p.nome_mae}`, p.cpf ? `CPF ${cpfFormatado(p.cpf)}` : null, `Entrada ${data(p.entrada_em)}`]
-      .concat(p.necessidades.map((n) => NECESSIDADES[n] || n)).filter(Boolean).join(" · ");
+    const meta = [`Mãe: ${p.nome_mae}`, p.cpf ? cpfParte(p.cpf) : null, `Entrada ${data(p.entrada_em)}`]
+      .concat(p.necessidades.map((n) => NECESSIDADES[n] || n));
     const acoes = el("div", { class: "confirma" });
     const botaoSaida = el("button", { type: "button", class: "botao botao-secundario botao-pequeno", texto: "Registrar saída" });
     acoes.append(botaoSaida);
@@ -46,7 +51,7 @@ export function iniciarPessoas({ abrigo, msg }) {
       });
     });
     return el("div", { class: "pessoa", "data-pessoa": String(p.id) }, [
-      el("div", { class: "item-texto" }, [el("span", { class: "item-titulo", texto: p.nome }), el("span", { class: "item-meta", texto: meta })]),
+      el("div", { class: "item-texto" }, [el("span", { class: "item-titulo", texto: p.nome }), el("span", { class: "item-meta" }, juntar(meta))]),
       acoes,
     ]);
   }
@@ -146,9 +151,9 @@ export function iniciarPessoas({ abrigo, msg }) {
     corpo(c) {
       const dl = el("dl", { class: "revisao" });
       P.forEach((p, i) => {
-        const extra = [`Mãe: ${p.nome_mae}`, digitos(p.cpf) ? `CPF ${cpfFormatado(digitos(p.cpf))}` : "Sem CPF",
-          ...[...p.necessidades].map((k) => NECESSIDADES[k])].join(" · ");
-        dl.append(el("dt", { texto: nomeDe(p, i) }), el("dd", { texto: extra }));
+        const extra = [`Mãe: ${p.nome_mae}`, digitos(p.cpf) ? cpfParte(digitos(p.cpf)) : "Sem CPF",
+          ...[...p.necessidades].map((k) => NECESSIDADES[k])];
+        dl.append(el("dt", { texto: nomeDe(p, i) }), el("dd", {}, juntar(extra)));
       });
       const rotulo = P.length > 1 ? `Registrar ${P.length} pessoas` : "Registrar chegada";
       const b = continuar(rotulo);
@@ -204,10 +209,10 @@ export function iniciarPessoas({ abrigo, msg }) {
     if (!achados.length) { resultados.replaceChildren(el("li", { class: "vazio", texto: "Ninguém com esse nome." }), ...dica); return; }
     resultados.replaceChildren(...achados.map((x) => {
       // de outro abrigo só vêm o nome e o contato (ADR 0008)
-      const meta = !x.meu_abrigo ? ["Em outro abrigo", x.contato].filter(Boolean).join(" · ") : [`Mãe: ${x.nome_mae}`,
-        x.cpf ? `CPF ${cpfFormatado(x.cpf)}` : null, [x.abrigo.nome, x.abrigo.municipio].filter(Boolean).join(", "),
-        `Entrada ${data(x.entrada_em)}`, x.presente ? "Presente" : `Saiu ${data(x.saida_em)}`].filter(Boolean).join(" · ");
-      return el("li", {}, [el("div", { class: "item-texto" }, [el("span", { class: "item-titulo", texto: x.nome }), el("span", { class: "item-meta", texto: meta })])]);
+      const meta = !x.meu_abrigo ? ["Em outro abrigo", x.contato] : [`Mãe: ${x.nome_mae}`,
+        x.cpf ? cpfParte(x.cpf) : null, [x.abrigo.nome, x.abrigo.municipio].filter(Boolean).join(", "),
+        `Entrada ${data(x.entrada_em)}`, x.presente ? "Presente" : `Saiu ${data(x.saida_em)}`];
+      return el("li", {}, [el("div", { class: "item-texto" }, [el("span", { class: "item-titulo", texto: x.nome }), el("span", { class: "item-meta" }, juntar(meta))])]);
     }), ...dica);
     // cada grupo tem seu limite: `limite` para os seus abrigos e `limite_outros` para os outros
     const limiteOutros = r.dados.limite_outros || r.dados.limite;
