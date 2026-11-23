@@ -52,6 +52,37 @@ Formato: data, decisão, motivo, como foi descoberto / o que deu errado.
 - **Cobertura:** `middleware/tests/test_save_events.py::test_save_events_http_aceita_json_em_lista` (POST JSON em lista devolve 200).
 - **Pendente:** conferir no VPS (`pip show fastapi starlette`) e alinhar com as versões fixadas.
 
+## 2026-11-23 · Tipos dos produtores x TIPOS_CRISE (leitura de código, nada implementado)
+Verificado só lendo o código. Produtores e tipos emitidos:
+- USGS (`tools/fetch_usgs.py:51`, `middleware/main.py:555`): `seismic` (ok).
+- GDACS no `_ingest_fallback` (`middleware/main.py:594-596,634`): seismic, meteorological, drought, wildfire; desconhecido vira `humanitarian` (ok).
+- GDACS em `tools/fetch_gdacs.py:30-35,50`: seismic, meteorological, wildfire e `unknown` para eventtype fora do mapa (**rejeitado**).
+- ReliefWeb (`tools/fetch_reliefweb.py:32-52`): meteorological, seismic, sanitary, wildfire, humanitarian (ok; padrão `humanitarian`). Não é usado pelo `_ingest_fallback`.
+- EONET (`tools/fetch_eonet.py:5-10,59`): wildfire, meteorological, seismic, drought (ok; padrão `meteorological`).
+- GDELT/conflitos (`middleware/main.py:714,741`; `tools/fetch_conflict_data.py:120,173`): `conflict` (ok).
+- `classify_crisis` (`tools/classify_crisis.py:56,83`): o prompt lista meteorological, seismic, humanitarian, political, sanitary, wildfire, drought (todos válidos), mas a saída é texto livre do modelo, sem validação; o fallback usa `etype` de entrada, que pode ser `unknown` (do GDACS das tools) e seria **rejeitado**. O prompt não oferece `conflict`, `geological` nem `hydrological`.
+- `save_classification` (`tools/save_classification.py:28,39`): repassa `classification["type"]` sem validar (padrão `humanitarian`); herda o risco do classificador.
+- Bot do Telegram (`telegram_bot/bot.py`): só lê `crisis_type`; não grava em `crises` (posts em /user, /chat, associate-crisis).
+
+Rejeições previstas: `unknown` (GDACS tools e fallback do classify_crisis) e qualquer valor livre do LLM fora da lista (ex. "flood", "earthquake").
+
+Mapeamento proposto (não implementado):
+| origem | valor | -> TIPOS_CRISE |
+|---|---|---|
+| GDACS tools | unknown | humanitarian (como o `_ingest_fallback` já faz) |
+| GDACS tools | DR | drought (hoje meteorological; alinhar ao fallback) |
+| LLM / classify_crisis | flood, storm, cyclone | meteorological (ou hydrological) |
+| LLM / classify_crisis | earthquake, volcano | seismic |
+| LLM / classify_crisis | epidemic, outbreak | sanitary |
+| LLM / classify_crisis | fire | wildfire |
+| LLM / classify_crisis | war, armed_conflict | conflict |
+Sugestão: validar a saída do classify_crisis contra TIPOS_CRISE (valor fora vira `humanitarian` + `needs_review`) e adicionar `conflict` ao prompt.
+Não verificado: respostas reais do modelo (sem rede/chaves), nem os valores de `type` que o ReliefWeb realmente devolve além do mapa, nem agentes/YAMLs do orchestrate que possam chamar `save_event(s)` com outros tipos.
+
+## 2026-11-23 · _ingest_fallback usará gravar_eventos na T6
+- **Decisão:** na T6 o `_ingest_fallback` (`middleware/main.py`) passa a gravar via `gravar_eventos`, saindo do INSERT direto. O módulo Brasil (`middleware/brasil/`) continua fora e segue gravando por conta própria.
+- **Motivo:** ponto único de validação do tipo; os produtores acima já emitem tipos válidos no fallback.
+
 ## Pendências (não corrigidas)
 - Aviso de depreciação `@app.on_event("startup")` em `middleware/main.py:94`.
 - `starlette.testclient` pede `httpx2` no lugar de `httpx`.
