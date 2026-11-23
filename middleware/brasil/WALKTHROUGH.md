@@ -25,6 +25,7 @@ API_URL=http://localhost:8000 python frontend/app.py
 ```
 - A semente recusa rodar sem `BRASIL_DB_PATH` e sem `BRASIL_DEV_LOGIN=1`. Pode rodar quantas vezes quiser: apaga e
   recria os abrigos de `gestor` e `gestor2` (todos os abrigos desses dois). Imprime só contagens, nunca nomes.
+- Banco semeado antes da busca ignorar pontuação: rode a semente de novo para regravar `nome_busca`.
 - Em http://localhost:5000/brasil/entrar, "Gestor de Abrigo" e "Gestor de Abrigo 2" entram direto em `/brasil/abrigo`.
   - `gestor`: Ginásio da Escola Estadual Fictícia (Porto Alegre, permanente, 60 vagas, crise `teste-poa-4`), com uma
     família de três (gestante e criança sem CPF), uma idosa com problema de saúde, uma pessoa com deficiência e uma

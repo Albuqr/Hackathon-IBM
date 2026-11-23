@@ -35,11 +35,20 @@ SQL_BUSCA = (
 )
 
 
+_APOSTROFOS = re.compile("['’‘ʼ`´]")
+
+
 def nome_busca(texto: str) -> str:
-    """Forma de busca: sem acento, minúscula, espaços simples ("João  Silva" → "joao silva")."""
-    s = unicodedata.normalize("NFKD", texto or "")
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    return " ".join(s.lower().split())
+    """Forma de busca, a mesma na gravação e na busca: sem acento, minúscula, espaços simples.
+
+    Apóstrofos somem e juntam as partes ("D'Ávila" → "davila"); qualquer outra pontuação (hífen, ponto,
+    vírgula, `%`, `_`...) vira espaço ("Maria-Clara  S." → "maria clara s"). Não é o `estoque.normalizar`,
+    que troca apóstrofo por espaço e só guarda a-z/0-9.
+    """
+    s = _APOSTROFOS.sub("", texto or "")
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c)).lower()
+    return " ".join(re.sub(r"[\W_]+", " ", s).split())
 
 
 def _cpf(valor: str | None, n: int) -> str | None:

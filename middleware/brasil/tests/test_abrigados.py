@@ -198,8 +198,26 @@ def test_busca_curta_422(cena, nome):
 
 
 def test_busca_trata_curinga_como_texto(cena):
-    assert busca(cena["cli"], cena["g1"], "%%").json()["resultados"] == []
-    assert busca(cena["cli"], cena["g1"], "__").json()["resultados"] == []
+    # % e _ são pontuação: viram espaço, nunca curinga do LIKE
+    assert busca(cena["cli"], cena["g1"], "%%").status_code == 422
+    assert busca(cena["cli"], cena["g1"], "__").status_code == 422
+    assert busca(cena["cli"], cena["g1"], "jo%o").json()["resultados"] == []
+    assert busca(cena["cli"], cena["g1"], "jo_o").json()["resultados"] == []
+
+
+def test_nome_busca_tira_pontuacao():
+    assert nome_busca("Ana D'Ávila") == nome_busca("Ana D’Ávila") == "ana davila"
+    assert nome_busca("Maria-Clara  S. Lima") == "maria clara s lima"
+
+
+def test_busca_ignora_pontuacao(cena):
+    cli, g1, a1 = cena["cli"], cena["g1"], cena["a1"]
+    r = chegar(cli, g1, a1, [{"nome": "Ana D'Ávila Fictícia", "nome_mae": "Mãe Fictícia"},
+                             {"nome": "Maria-Clara Fictícia", "nome_mae": "Mãe Fictícia"}])
+    assert r.status_code == 200, r.text
+    for termo, nome in (("davila", "Ana D'Ávila Fictícia"), ("d’avila", "Ana D'Ávila Fictícia"),
+                        ("maria clara", "Maria-Clara Fictícia"), ("maria-clara", "Maria-Clara Fictícia")):
+        assert [x["nome"] for x in busca(cli, g1, termo).json()["resultados"]] == [nome], termo
 
 
 # ── privacidade (Done-when #4) ───────────────────────────────────────
