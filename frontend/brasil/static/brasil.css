@@ -243,7 +243,8 @@ input[type="range"] { width: 100%; accent-color: var(--verde); padding: 0; borde
 .marcador { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 600; letter-spacing: 0; flex-shrink: 0; }
 .etapa-texto { display: grid; gap: 2px; min-width: 0; flex: 1; }
 .etapa-titulo { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }
-.resumo { color: var(--tinta-2); font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* o resumo quebra linha: os nomes de uma família precisam ser conferidos inteiros */
+.resumo { color: var(--tinta-2); font-size: 15px; min-width: 0; overflow-wrap: anywhere; }
 .editar { border: 0; background: none; color: var(--link); cursor: pointer; font-size: 15px; padding: 6px 2px; white-space: nowrap; }
 .editar:hover { text-decoration: underline; text-underline-offset: 3px; }
 .etapa.feita { background: var(--cartao); }
@@ -255,7 +256,7 @@ input[type="range"] { width: 100%; accent-color: var(--verde); padding: 0; borde
 .etapa.atual .etapa-linha { padding: 36px 40px 8px; align-items: flex-start; }
 .etapa.atual .marcador { background: var(--tinta); color: var(--cartao); margin-top: 6px; }
 .etapa.atual .etapa-titulo { font-size: 32px; line-height: 1.12; letter-spacing: -0.025em; }
-.etapa.atual .resumo { white-space: normal; font-size: 17px; }
+.etapa.atual .resumo { font-size: 17px; }
 .etapa-corpo { padding: 20px 40px 40px 84px; display: grid; gap: 24px; min-width: 0; }
 .final { background: var(--cartao); border-radius: var(--r-card); padding: 48px 40px; display: grid; gap: 14px; justify-items: start; margin-top: 12px; }
 .final h2 { font-size: 40px; line-height: 1.1; letter-spacing: -0.03em; }
@@ -554,3 +555,34 @@ body.solta { min-height: 100dvh; display: grid; place-items: center; padding: 24
 .pessoa-campos .item { display: flex; align-items: center; gap: 12px; font-size: 16px; padding: 6px 0; cursor: pointer; }
 .erro-campo { color: var(--erro); font-size: 14px; }
 .erro-campo:empty { display: none; }
+
+/* ---------- celular: área de toque de pelo menos 44px (o desenho do desktop não muda) ---------- */
+@media (max-width: 860px) {
+  /* cabeçalho: Tema, Menu, Sair e os itens do menu aberto */
+  .quem a, .icone { display: inline-flex; align-items: center; min-height: 44px; padding: 4px 8px; }
+  .quem { gap: 2px; }
+  .menu a { display: flex; align-items: center; min-height: 44px; padding-block: 0; }
+  /* links de texto das telas: voltar, Editar, Cancelar, Tirar esta pessoa, Reativar o abrigo */
+  .voltar, .texto-link, .editar, .aviso a { display: inline-flex; align-items: center; min-height: 44px; }
+  /* botões (inclusive os pequenos), chips e opções dos controles segmentados */
+  .botao, .pilula, .chip, .segmentado button { min-height: 44px; }
+}
+
+/* ---------- celular: controles segmentados dos formulários em grade de 2 colunas, células iguais ----------
+   (status Urgente/Precisa/OK/Sobrando, os 4 grupos, Temporário/Permanente, urgência da campanha) */
+@media (max-width: 860px) {
+  .etapa-corpo .segmentado, .secao .segmentado { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px;
+    border-radius: var(--r-medio); }
+  .etapa-corpo .segmentado button, .secao .segmentado button { border-radius: calc(var(--r-medio) - 3px); padding: 7px 10px;
+    white-space: normal; line-height: 1.2; text-align: center; }
+}
+
+/* ---------- celular: a legenda da barra de status quebra linha (antes era cortada na borda direita) ---------- */
+@media (max-width: 860px) {
+  body.app { grid-template-rows: var(--topo) minmax(0, 1fr) auto; }
+  .statusbar { flex-wrap: wrap; white-space: normal; overflow: visible; min-height: var(--status);
+    padding-block: 6px max(6px, env(safe-area-inset-bottom, 0px)); }
+  .status-legenda { flex-wrap: wrap; gap: 2px 12px; }
+  .status-legenda span { white-space: nowrap; }
+  .toast { bottom: calc(68px + env(safe-area-inset-bottom, 0px)); }
+}

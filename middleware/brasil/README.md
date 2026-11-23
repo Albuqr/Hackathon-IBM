@@ -53,11 +53,15 @@ API em `middleware/brasil/estoque.py` (`/brasil/itens...`, `/brasil/abrigos/{id}
 
 ## Rodar local
 ```bash
-python init_db.py                                   # banco do Crisis (se ainda não existe)
+python init_db.py                                   # banco do Crisis com as tabelas (cria data/crisis.db na pasta atual)
 export BRASIL_DEV_LOGIN=1                           # liga os logins de teste
 uvicorn middleware.main:app --port 8000 &
-API_URL=http://localhost:8000 python frontend/app.py
+API_URL=http://127.0.0.1:8000 python frontend/app.py
 ```
+- O `crisis.db` (`DB_PATH`, padrão `data/crisis.db`) precisa existir **com as tabelas** antes de subir a API: rode
+  `init_db.py` da pasta onde o banco deve ficar (ele grava em `data/crisis.db` relativo à pasta atual).
+- No Windows use `API_URL=http://127.0.0.1:8000`, não `localhost`: o `localhost` tenta primeiro o IPv6 (`::1`), o
+  uvicorn só escuta em `127.0.0.1`, e cada chamada do Flask para a API passa a levar ~2 s.
 Abra http://localhost:5000/brasil/ e entre por um dos links de teste (Voluntário, ONG, Admin, Gestor de Abrigo e
 Gestor de Abrigo 2, perfis `gestor` e `gestor2`). Abrigos, pessoas e estoque fictícios desses dois gestores (e as crises
 de teste): `BRASIL_DB_PATH=... BRASIL_DEV_LOGIN=1 python -m middleware.brasil.semear_teste` (pode repetir; recria).
@@ -100,6 +104,7 @@ BRASIL_DB_PATH=data/brasil-e2e.db BRASIL_DEV_LOGIN=1 python -m middleware.brasil
 # suba API e frontend com o mesmo BRASIL_DB_PATH e BRASIL_DEV_LOGIN=1, depois:
 BASE_URL=http://localhost:5000 node --test --test-concurrency=1 frontend/brasil/tests/e2e/app.spec.mjs
 node --test frontend/brasil/tests/visao.test.mjs          # regras do mapa, sem navegador
+node --test frontend/brasil/tests/estoque.test.mjs        # aviso de possível duplicado no estoque
 ```
 
 ## Malha

@@ -23,11 +23,16 @@ Para explicar do começo ao fim o que entrou na branch `feat/brasil-abrigos`. De
 
 ## Rodar local
 ```bash
+python init_db.py                                 # data/crisis.db com as tabelas, se ainda não existe
 export BRASIL_DEV_LOGIN=1 BRASIL_DB_PATH=data/brasil-e2e.db
 python -m middleware.brasil.semear_teste          # crises, ONG/voluntários e os abrigos de gestor e gestor2
 uvicorn middleware.main:app --port 8000 &
-API_URL=http://localhost:8000 python frontend/app.py
+API_URL=http://127.0.0.1:8000 python frontend/app.py
 ```
+- O `crisis.db` (`DB_PATH`, padrão `data/crisis.db`) precisa existir com as tabelas antes de a API subir; o `init_db.py`
+  grava em `data/crisis.db` relativo à pasta de onde é rodado.
+- No Windows, `API_URL` com `127.0.0.1` e não `localhost`: `localhost` tenta `::1` primeiro, o uvicorn só escuta em
+  `127.0.0.1`, e cada chamada do Flask para a API leva ~2 s.
 - A semente recusa rodar sem `BRASIL_DB_PATH` e sem `BRASIL_DEV_LOGIN=1`. Pode rodar quantas vezes quiser: apaga e
   recria os abrigos de `gestor` e `gestor2` (todos os abrigos desses dois). Imprime só contagens, nunca nomes.
 - Banco semeado antes da busca ignorar pontuação e das datas em UTC: rode a semente de novo para regravar `nome_busca` e as datas.
