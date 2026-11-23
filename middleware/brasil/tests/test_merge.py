@@ -168,3 +168,21 @@ def test_familias_e_abrigados_entram_no_merge_com_abrigo_e_familia_remapeados(ba
     assert aid != 1 and fid != 1 and fab == aid
     assert linhas(crisis, "SELECT abrigo_id, familia_id, cpf, origem FROM abrigados ORDER BY id") == [
         (aid, fid, "12345678901", "brasil"), (aid, None, None, "brasil")]
+
+
+def test_registro_de_buscas_entra_no_merge_com_usuario_remapeado(bancos):
+    """ADR 0008: a auditoria da busca entre abrigos sobrevive ao merge, apontando para o usuário certo."""
+    crisis, brasil = bancos
+    b = sqlite3.connect(brasil)
+    b.execute("INSERT INTO users (email, password_hash, role, name) VALUES ('gestor@br.org','h','gestor_abrigo','G')")  # id 4
+    b.execute("""INSERT INTO buscas_abrigados_log (user_id, consulta, buscado_em, resultados)
+                 VALUES (4, 'Pessoa Fictícia', '2026-11-18T13:00:00+00:00', 2)""")
+    b.execute("""INSERT INTO buscas_abrigados_log (user_id, consulta, buscado_em, resultados)
+                 VALUES (3, 'ninguem', '2026-11-18T13:05:00+00:00', 0)""")  # Ana: mesmo e-mail no Crisis (id 7)
+    b.commit(); b.close()
+    rel = unir(crisis, brasil)
+    assert rel["buscas_abrigados_log"] == 2
+    [(g,)] = linhas(crisis, "SELECT id FROM users WHERE email='gestor@br.org'")
+    assert linhas(crisis, "SELECT user_id, consulta, buscado_em, resultados, origem FROM buscas_abrigados_log ORDER BY id") == [
+        (g, "Pessoa Fictícia", "2026-11-18T13:00:00+00:00", 2, "brasil"), (7, "ninguem", "2026-11-18T13:05:00+00:00", 0, "brasil")]
+    assert g != 4

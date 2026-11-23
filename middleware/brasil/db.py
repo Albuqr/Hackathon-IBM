@@ -222,6 +222,15 @@ CREATE TABLE IF NOT EXISTS abrigados (
     origem TEXT DEFAULT 'brasil'
 );
 CREATE INDEX IF NOT EXISTS abrigados_abrigo ON abrigados (abrigo_id, saida_em);
+-- auditoria da busca entre abrigos (ADR 0008): quem buscou, o quê, quando e quantos resultados; nenhuma rota lê
+CREATE TABLE IF NOT EXISTS buscas_abrigados_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    consulta TEXT NOT NULL,
+    buscado_em TEXT NOT NULL,
+    resultados INTEGER NOT NULL,
+    origem TEXT DEFAULT 'brasil'
+);
 """
 
 _prontos: set[str] = set()

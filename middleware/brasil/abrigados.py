@@ -4,7 +4,10 @@ Só o gestor de abrigo usa estas rotas, e só nos próprios abrigos (abrigo de o
 Nome, nome da mãe e CPF nunca saem para voluntário, ONG, admin, mapa ou log: nada aqui imprime ou loga pessoas.
 
 Busca por nome: se algum abrigo do gestor estiver verificado, procura em todos os abrigos; senão, só nos dele.
-CPF só aparece para gente dos próprios abrigos.
+Abrigo sensível (de proteção: mulheres, crianças...) só aparece na busca do próprio gestor (ADR 0008).
+De outros abrigos a busca devolve só o nome e o caminho de contato, e só de quem não saiu; CPF, datas e abrigo
+só aparecem para gente dos próprios abrigos. Toda busca entre abrigos é gravada em `buscas_abrigados_log`
+(quem, o quê, quando, quantos resultados), que nenhuma rota expõe.
 """
 import json
 import re
@@ -23,6 +26,8 @@ from .config import Config
 NECESSIDADES = ("idoso", "deficiencia", "saude", "gestante")
 LIMITE_BUSCA = 50
 FOLGA_FUTURO = timedelta(minutes=10)  # relógio do celular adiantado; mais que isso é engano
+# o abrigo não tem contato público: quem achou alguém de outro abrigo fala com a coordenação (ADR 0008)
+CONTATO_OUTRO_ABRIGO = "Entre em contato com a coordenação regional."
 
 SQL_PESSOA = ("SELECT id, abrigo_id, familia_id, nome, nome_mae, cpf, entrada_em, saida_em, necessidades "
               "FROM abrigados WHERE id=?")
@@ -31,9 +36,12 @@ SQL_DO_ABRIGO = ("SELECT id, abrigo_id, familia_id, nome, nome_mae, cpf, entrada
 SQL_BUSCA = (
     "SELECT p.nome, p.nome_mae, p.cpf, p.entrada_em, p.saida_em, a.id AS abrigo_id, a.nome AS abrigo_nome, "
     "a.municipio_ibge, a.gestor_id FROM abrigados p JOIN abrigos a ON a.id=p.abrigo_id "
-    "WHERE p.nome_busca LIKE ? ESCAPE '\\' AND (? = 1 OR a.gestor_id = ?) "
+    "WHERE p.nome_busca LIKE ? ESCAPE '\\' "
+    "AND (a.gestor_id = ? OR (? = 1 AND a.sensivel = 0 AND p.saida_em IS NULL)) "
     "ORDER BY p.saida_em IS NOT NULL, p.nome_busca, p.id LIMIT ?"
 )
+# auditoria da busca entre abrigos (ADR 0008): só gravada; nenhuma rota lê esta tabela
+SQL_LOG_BUSCA = "INSERT INTO buscas_abrigados_log (user_id, consulta, buscado_em, resultados) VALUES (?,?,?,?)"
 
 
 _APOSTROFOS = re.compile("['’‘ʼ`´]")
@@ -213,7 +221,8 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
 
     @r.get("/abrigados/busca")
     def buscar_abrigados(nome: str = "", u: dict = Depends(gestor)):
-        """Busca por nome, sem acento e sem diferença de maiúsculas. CPF só de gente dos próprios abrigos."""
+        """Busca por nome, sem acento e sem diferença de maiúsculas. Gente dos próprios abrigos vem completa (com CPF);
+        de outros abrigos, só o nome e o caminho de contato (ADR 0008)."""
         termo = nome_busca(nome)
         if len(termo) < 2:
             raise HTTPException(422, "Digite pelo menos 2 letras do nome")
@@ -222,15 +231,20 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
         try:
             todos = gestor_verificado(conn, u["id"])
             resultados = []
-            for x in conn.execute(SQL_BUSCA, (padrao, 1 if todos else 0, u["id"], LIMITE_BUSCA)):
+            for x in conn.execute(SQL_BUSCA, (padrao, u["id"], 1 if todos else 0, LIMITE_BUSCA)):
+                if x["gestor_id"] != u["id"]:
+                    resultados.append({"nome": x["nome"], "meu_abrigo": False, "contato": CONTATO_OUTRO_ABRIGO})
+                    continue
                 info = malha.carregar().info(x["municipio_ibge"]) if x["municipio_ibge"] else None
-                item = {"nome": x["nome"], "nome_mae": x["nome_mae"],
-                        "abrigo": {"id": x["abrigo_id"], "nome": x["abrigo_nome"], "municipio": info.get("nome") if info else None},
-                        "entrada_em": x["entrada_em"], "saida_em": x["saida_em"], "presente": x["saida_em"] is None,
-                        "meu_abrigo": x["gestor_id"] == u["id"]}
-                if item["meu_abrigo"]:
-                    item["cpf"] = x["cpf"]
-                resultados.append(item)
+                resultados.append({"nome": x["nome"], "nome_mae": x["nome_mae"], "cpf": x["cpf"],
+                                   "abrigo": {"id": x["abrigo_id"], "nome": x["abrigo_nome"],
+                                              "municipio": info.get("nome") if info else None},
+                                   "entrada_em": x["entrada_em"], "saida_em": x["saida_em"],
+                                   "presente": x["saida_em"] is None, "meu_abrigo": True})
+            if todos:  # busca entre abrigos: fica registrada, mesmo sem resultado (ADR 0008)
+                conn.execute(SQL_LOG_BUSCA, (u["id"], " ".join(nome.split())[:200],
+                                             datetime.now(timezone.utc).isoformat(timespec="seconds"), len(resultados)))
+                conn.commit()
             return {"escopo": "todos" if todos else "meus_abrigos", "resultados": resultados, "limite": LIMITE_BUSCA}
         finally:
             conn.close()

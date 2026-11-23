@@ -31,12 +31,14 @@ REFERENCIAS = {
     # abrigados (ADR 0006)
     "familias": {"abrigo_id": "abrigos"},
     "abrigados": {"abrigo_id": "abrigos", "familia_id": "familias"},
+    "buscas_abrigados_log": {"user_id": "users"},  # auditoria da busca (ADR 0008)
 }
 # tabela com id próprio e uma coluna UNIQUE: a linha que já existe no Crisis é reaproveitada (ADR 0007)
 CHAVE_NATURAL = {"itens": "nome_busca"}
 ORDEM = ["campaigns", "campaign_volunteers", "crisis_associations", "missions", "matches",
          "subscriptions", "classifications_log", "telegram_subscribers", "notificacoes_pendentes",
-         "abrigos", "abrigo_crises", "itens", "abrigo_itens", "familias", "abrigados"]
+         "abrigos", "abrigo_crises", "itens", "abrigo_itens", "familias", "abrigados",
+         "buscas_abrigados_log"]
 
 
 def _colunas(conn, banco: str, tabela: str) -> list[str]:

@@ -33,7 +33,7 @@
 
   <section class="secao" aria-labelledby="t-busca">
     <h2 id="t-busca">Procurar uma pessoa</h2>
-    <p class="dica" id="escopo">{{ 'Buscando em todos os abrigos.' if busca_todos else 'Buscando só nos seus abrigos até um deles ser verificado.' }}</p>
+    <p class="dica" id="escopo">{{ 'Buscando em todos os abrigos, menos os sensíveis. De outros abrigos aparece só o nome.' if busca_todos else 'Buscando só nos seus abrigos até um deles ser verificado.' }}</p>
     <label class="rotulo">Nome da pessoa
       <input type="search" id="busca" autocomplete="off" placeholder="ex.: joao silva" maxlength="200">
     </label>

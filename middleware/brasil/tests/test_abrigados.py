@@ -220,11 +220,79 @@ def test_busca_depois_de_verificar_acha_nos_dois_e_cpf_so_dos_proprios(cena):
     meu, outro = por_nome["João Fictício da Silva"], por_nome["Joana Fictícia Pereira"]
     assert meu["cpf"] == "12345678901" and meu["meu_abrigo"] is True
     assert "cpf" not in outro and outro["meu_abrigo"] is False and "11122233344" not in str(r)
-    assert outro["nome_mae"] == "Clara Fictícia Pereira" and outro["presente"] is True
-    assert outro["abrigo"] == {"id": cena["a2"], "nome": "Escola Fictícia de Canoas", "municipio": "Canoas"}
+    # ADR 0008: de outro abrigo, só o nome e o caminho de contato
+    assert outro == {"nome": "Joana Fictícia Pereira", "meu_abrigo": False,
+                     "contato": "Entre em contato com a coordenação regional."}
+    for vazado in ("Clara Fictícia Pereira", "Escola Fictícia de Canoas", "Canoas"):
+        assert vazado not in r_texto(cli, g1, "joana")
     # gestor2 (não verificado) continua só nos dele
     r2 = busca(cli, cena["g2"], "jo").json()
     assert r2["escopo"] == "meus_abrigos" and [x["nome"] for x in r2["resultados"]] == ["Joana Fictícia Pereira"]
+
+
+def test_abrigo_sensivel_de_outro_gestor_nunca_aparece_na_busca(cena):
+    """ADR 0008: abrigo de proteção (sensível) fica fora da busca entre abrigos; o próprio gestor ainda acha."""
+    cli, g1, g2 = cena["cli"], cena["g1"], cena["g2"]
+    casa = abrigo(cli, g2, nome="Casa de Acolhimento Fictícia", sensivel=True, **CANOAS)
+    assert chegar(cli, g2, casa, [{"nome": "Joaquina Fictícia Protegida", "nome_mae": "Mãe Fictícia"}]).status_code == 200
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+    r = busca(cli, g1, "joaquina")
+    assert r.json()["escopo"] == "todos" and r.json()["resultados"] == [] and "Protegida" not in r.text
+    assert sorted(x["nome"] for x in busca(cli, g1, "jo").json()["resultados"]) == ["Joana Fictícia Pereira", "João Fictício da Silva"]
+    # o gestor da casa acha a própria gente, verificado ou não
+    for _ in range(2):
+        [x] = busca(cli, g2, "joaquina").json()["resultados"]
+        assert x["nome"] == "Joaquina Fictícia Protegida" and x["meu_abrigo"] is True and x["abrigo"]["id"] == casa
+        cli.post(f"/brasil/dev/abrigos/{casa}/verificar", headers=como(g2))
+
+
+CHAVES_MEU_ABRIGO = {"nome", "nome_mae", "cpf", "abrigo", "entrada_em", "saida_em", "presente", "meu_abrigo"}
+CHAVES_OUTRO_ABRIGO = {"nome", "meu_abrigo", "contato"}
+
+
+def r_texto(cli, uid, nome) -> str:
+    return busca(cli, uid, nome).text
+
+
+def test_resultado_de_outro_abrigo_tem_so_nome_e_contato(cena):
+    cli, g1, g2 = cena["cli"], cena["g1"], cena["g2"]
+    cli.post(f"/brasil/dev/abrigos/{cena['a2']}/verificar", headers=como(g2))
+    r = busca(cli, g2, "fictici").json()
+    assert r["escopo"] == "todos" and r["resultados"]
+    for x in r["resultados"]:
+        assert set(x) == (CHAVES_MEU_ABRIGO if x["meu_abrigo"] else CHAVES_OUTRO_ABRIGO), x
+    outros = [x for x in r["resultados"] if not x["meu_abrigo"]]
+    assert sorted(x["nome"] for x in outros) == ["Ana Fictícia da Silva", "João Fictício da Silva", "Pedrinho Fictício da Silva"]
+    assert {x["contato"] for x in outros} == {"Entre em contato com a coordenação regional."}
+    texto = r_texto(cli, g2, "silva")  # só gente do abrigo de g1
+    for vazado in ("Maria Fictícia da Silva", "Rosa Fictícia Souza", "Abrigo Ginásio Fictício", "Porto Alegre",
+                   "12345678901", "98765432100", "nome_mae", "entrada_em", "saida_em", "presente", '"abrigo"'):
+        assert vazado not in texto, vazado
+
+
+def test_quem_saiu_some_da_busca_de_outros_abrigos_e_continua_para_o_dono(cena):
+    cli, g1, g2 = cena["cli"], cena["g1"], cena["g2"]
+    cli.post(f"/brasil/dev/abrigos/{cena['a2']}/verificar", headers=como(g2))
+    assert [x["nome"] for x in busca(cli, g2, "joao").json()["resultados"]] == ["João Fictício da Silva"]
+    cli.post(f"/brasil/abrigados/{cena['chegada']['pessoas'][0]['id']}/saida", headers=como(g1))
+    assert busca(cli, g2, "joao").json()["resultados"] == []
+    [x] = busca(cli, g1, "joao").json()["resultados"]
+    assert x["meu_abrigo"] is True and x["presente"] is False and x["saida_em"]
+
+
+def test_visao_do_proprio_gestor_continua_completa(cena):
+    """O que o dono vê dos próprios abrigos não muda com a ADR 0008: CPF, datas, abrigo e município."""
+    cli, g1, a1 = cena["cli"], cena["g1"], cena["a1"]
+    entrada = cena["chegada"]["pessoas"][0]["entrada_em"]
+    for verificar in (False, True):
+        if verificar:
+            cli.post(f"/brasil/dev/abrigos/{a1}/verificar", headers=como(g1))
+        [x] = busca(cli, g1, "joao").json()["resultados"]
+        assert x == {"nome": "João Fictício da Silva", "nome_mae": "Maria Fictícia da Silva", "cpf": "12345678901",
+                     "abrigo": {"id": a1, "nome": "Abrigo Ginásio Fictício", "municipio": "Porto Alegre"},
+                     "entrada_em": entrada, "saida_em": None, "presente": True, "meu_abrigo": True}
+    pessoas = cli.get(f"/brasil/abrigos/{a1}/pessoas", headers=como(g1)).json()["grupos"][0]["pessoas"]
+    assert [p["cpf"] for p in pessoas] == ["12345678901", "98765432100", None]
 
 
 def test_busca_mostra_quem_ja_saiu_como_nao_presente(cena):
@@ -260,6 +328,75 @@ def test_busca_ignora_pontuacao(cena):
     for termo, nome in (("davila", "Ana D'Ávila Fictícia"), ("d’avila", "Ana D'Ávila Fictícia"),
                         ("maria clara", "Maria-Clara Fictícia"), ("maria-clara", "Maria-Clara Fictícia")):
         assert [x["nome"] for x in busca(cli, g1, termo).json()["resultados"]] == [nome], termo
+
+
+# ── auditoria da busca entre abrigos (ADR 0008) ──────────────────────
+def log_de_buscas(rotas) -> list:
+    conn = db.conectar(rotas.CFG)
+    try:
+        return [dict(r) for r in conn.execute("SELECT user_id, consulta, buscado_em, resultados FROM buscas_abrigados_log ORDER BY id")]
+    finally:
+        conn.close()
+
+
+def test_toda_busca_entre_abrigos_fica_registrada_mesmo_sem_resultado(cena):
+    cli, g1 = cena["cli"], cena["g1"]
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+    antes = datetime.now(timezone.utc).replace(microsecond=0)
+    assert len(busca(cli, g1, "  Jo ").json()["resultados"]) == 2
+    assert busca(cli, g1, "ninguem ficticio").json()["resultados"] == []
+    assert busca(cli, g1, "a").status_code == 422  # busca recusada não roda, não registra
+    log = log_de_buscas(cena["rotas"])
+    assert [(x["user_id"], x["consulta"], x["resultados"]) for x in log] == [(g1, "Jo", 2), (g1, "ninguem ficticio", 0)]
+    for x in log:
+        quando = datetime.fromisoformat(x["buscado_em"])
+        assert quando.utcoffset() == timedelta(0) and antes <= quando <= datetime.now(timezone.utc)
+
+
+def test_busca_so_nos_proprios_abrigos_nao_e_registrada(cena):
+    cli = cena["cli"]
+    assert busca(cli, cena["g1"], "joao").json()["escopo"] == "meus_abrigos"
+    assert busca(cli, cena["g2"], "nada").json()["escopo"] == "meus_abrigos"
+    assert log_de_buscas(cena["rotas"]) == []
+
+
+def suspeito(caminho: str) -> bool:
+    """Caminho que poderia expor o registro de buscas (`/brasil/login` não conta)."""
+    partes = caminho.lower().replace("_", "/").replace("-", "/").strip("/").split("/")
+    return any(p in ("log", "logs", "auditoria", "buscas", "historico") for p in partes)
+
+
+def test_registro_de_buscas_nao_sai_por_nenhuma_rota(cena):
+    """Só gravado: nenhuma rota da API nem ação da POLITICA lê a tabela, e nenhum perfil vê o que foi buscado."""
+    import os
+    from fastapi import FastAPI
+    cli, rotas, g1 = cena["cli"], cena["rotas"], cena["g1"]
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+    busca(cli, g1, "Rastro Fictício Auditado")
+    assert log_de_buscas(rotas)[0]["consulta"] == "Rastro Fictício Auditado"
+    app = FastAPI()
+    app.include_router(rotas.router)
+    caminhos = list(app.openapi()["paths"])
+    assert "/brasil/abrigados/busca" in caminhos and not [c for c in caminhos if suspeito(c)]
+    raiz = os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    # (POLITICA e rotas do Flask: test_frontend.py::test_registro_de_buscas_nao_tem_acao_nem_pagina)
+    # só db.py (esquema), merge_brasil.py e o INSERT em abrigados.py citam a tabela
+    pasta = os.path.join(raiz, "middleware", "brasil")
+    citam = {f for f in os.listdir(pasta) if f.endswith(".py")
+             and "buscas_abrigados_log" in open(os.path.join(pasta, f), encoding="utf-8").read()}
+    assert citam == {"db.py", "merge_brasil.py", "abrigados.py"}
+    fonte = open(os.path.join(pasta, "abrigados.py"), encoding="utf-8").read()
+    assert fonte.count("buscas_abrigados_log") == 2 and "INSERT INTO buscas_abrigados_log" in fonte  # docstring + INSERT
+    for base, _, arquivos in os.walk(os.path.join(raiz, "frontend", "brasil")):
+        for f in arquivos:
+            if f.endswith((".py", ".js", ".html")) and "tests" not in base:
+                assert "buscas_abrigados_log" not in open(os.path.join(base, f), encoding="utf-8").read(), f
+    for perfil in ("voluntario", "ong", "admin", "gestor", "gestor2"):
+        uid = cli.post(f"/brasil/dev/usuario/{perfil}").json()["id"]
+        h = como(uid)
+        for r in (cli.get("/brasil/abrigos", headers=h), cli.get(f"/brasil/usuarios/{uid}", headers=h),
+                  cli.get("/brasil/crises", headers=h), busca(cli, uid, "rastro")):
+            assert "Rastro" not in r.text and "buscado_em" not in r.text, (perfil, r.url)
 
 
 # ── privacidade (Done-when #4) ───────────────────────────────────────
