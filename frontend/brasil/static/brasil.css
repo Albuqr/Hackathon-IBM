@@ -554,3 +554,13 @@ body.solta { min-height: 100dvh; display: grid; place-items: center; padding: 24
 .pessoa-campos .item { display: flex; align-items: center; gap: 12px; font-size: 16px; padding: 6px 0; cursor: pointer; }
 .erro-campo { color: var(--erro); font-size: 14px; }
 .erro-campo:empty { display: none; }
+
+/* ---------- celular: área de toque de pelo menos 44px (o desenho do desktop não muda) ---------- */
+@media (max-width: 860px) {
+  /* cabeçalho: Tema, Menu, Sair e os itens do menu aberto */
+  .quem a, .icone { display: inline-flex; align-items: center; min-height: 44px; padding: 4px 8px; }
+  .quem { gap: 2px; }
+  .menu a { display: flex; align-items: center; min-height: 44px; padding-block: 0; }
+  /* links de texto das telas: voltar, Editar, Cancelar, Tirar esta pessoa, Reativar o abrigo */
+  .voltar, .texto-link, .editar, .aviso a { display: inline-flex; align-items: center; min-height: 44px; }
+}
