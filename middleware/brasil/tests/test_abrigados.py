@@ -525,6 +525,22 @@ def test_saida_de_pessoa_inexistente_404(cena):
     assert cena["cli"].post("/brasil/abrigados/99999/saida", headers=como(cena["g1"])).status_code == 404
 
 
+def test_saida_de_pessoa_de_outro_gestor_responde_igual_a_inexistente(cena):
+    """Não dá para descobrir pelo 404 se o id existe, nem pelo 409/422 se a pessoa saiu ou quando entrou."""
+    cli, g1, g2, pid = cena["cli"], cena["g1"], cena["g2"], cena["pessoa_g2"]
+
+    def resposta(i, **kw):
+        r = cli.post(f"/brasil/abrigados/{i}/saida", headers=como(g1), **kw)
+        return r.status_code, r.json()
+    inexistente = resposta(999999)
+    assert inexistente == (404, {"detail": "Pessoa não encontrada"})
+    assert resposta(pid) == inexistente
+    assert resposta(pid, json={"saida_em": "2020-01-01T00:00"}) == inexistente  # antes da entrada: seria 422
+    assert resposta(pid, json={"saida_em": "lixo"}) == inexistente
+    assert cli.post(f"/brasil/abrigados/{pid}/saida", headers=como(g2)).status_code == 200
+    assert resposta(pid) == inexistente  # já saiu: seria 409
+
+
 @pytest.mark.parametrize("perfil", ["voluntario", "ong", "admin"])
 def test_dados_de_abrigados_nao_aparecem_para_outros_perfis(cena, perfil):
     cli, rotas = cena["cli"], cena["rotas"]

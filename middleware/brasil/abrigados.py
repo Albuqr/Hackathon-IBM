@@ -214,9 +214,14 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
         conn = conectar()
         try:
             linha = conn.execute(SQL_PESSOA, (pessoa_id,)).fetchone()
-            if not linha:
+            try:
+                if not linha:
+                    raise HTTPException(404)
+                a = abrigo_do_gestor(conn, linha["abrigo_id"], u)
+            except HTTPException:
+                # inexistente ou de outro gestor: mesma resposta, que não revela se o id existe; e antes do 409/422,
+                # que diriam se a pessoa já saiu ou quando entrou
                 raise HTTPException(404, "Pessoa não encontrada")
-            a = abrigo_do_gestor(conn, linha["abrigo_id"], u)  # de outro gestor → 404
             if linha["saida_em"] is not None:
                 raise HTTPException(409, "A saída desta pessoa já foi registrada")
             saida = _data(d.saida_em if d else None, "Data de saída")
