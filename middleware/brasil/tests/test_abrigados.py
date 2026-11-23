@@ -1,4 +1,6 @@
 """Pessoas abrigadas (ADR 0006): regras de chegada/saída, lotação, busca e privacidade. Só pessoas fictícias."""
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from middleware.brasil import db
@@ -98,6 +100,15 @@ def test_saida_antes_da_entrada_422(cena):
     pid = cena["chegada"]["pessoas"][0]["id"]
     assert cli.post(f"/brasil/abrigados/{pid}/saida", json={"saida_em": "2020-01-01T00:00"}, headers=como(g1)).status_code == 422
 
+
+def test_entrada_no_futuro_422_com_folga_de_10_minutos(cena):
+    cli, g1, a1 = cena["cli"], cena["g1"], cena["a1"]
+    agora = datetime.now(timezone.utc)
+    pessoa = [{"nome": "Futuro Fictício", "nome_mae": "Mãe Fictícia"}]
+    r = chegar(cli, g1, a1, pessoa, entrada_em=(agora + timedelta(hours=1)).isoformat())
+    assert r.status_code == 422 and "futuro" in r.json()["detail"]
+    assert cli.get(f"/brasil/abrigos/{a1}/lotacao", headers=como(g1)).json()["presentes"] == 3
+    assert chegar(cli, g1, a1, pessoa, entrada_em=(agora + timedelta(minutes=5)).isoformat()).status_code == 200
 
 def test_datas_sem_fuso_sao_horario_de_brasilia_e_ficam_em_utc(cena):
     cli, g1, a1 = cena["cli"], cena["g1"], cena["a1"]

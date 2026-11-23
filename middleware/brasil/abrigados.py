@@ -22,6 +22,7 @@ from .config import Config
 
 NECESSIDADES = ("idoso", "deficiencia", "saude", "gestante")
 LIMITE_BUSCA = 50
+FOLGA_FUTURO = timedelta(minutes=10)  # relógio do celular adiantado; mais que isso é engano
 
 SQL_PESSOA = ("SELECT id, abrigo_id, familia_id, nome, nome_mae, cpf, entrada_em, saida_em, necessidades "
               "FROM abrigados WHERE id=?")
@@ -134,6 +135,9 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
                 raise HTTPException(422, f"Pessoa {n}: informe o nome e o nome da mãe")
             limpas.append((nome, mae, _cpf(p.cpf, n), list(dict.fromkeys(p.necessidades))))
         entrada = _data(d.entrada_em, "Data de entrada")
+        if _em_utc(entrada) > datetime.now(timezone.utc) + FOLGA_FUTURO:
+            # senão a saída "agora" (padrão) ficaria antes da entrada e a pessoa não sairia mais
+            raise HTTPException(422, "A data de entrada não pode estar no futuro")
         conn = conectar()
         try:
             a = abrigo_do_gestor(conn, abrigo_id, u)

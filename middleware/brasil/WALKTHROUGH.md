@@ -64,7 +64,7 @@ Todo `acao(...)` do navegador vai para `POST /brasil/acao/<nome>` e passa pela `
 | `buscar_abrigados` | `GET /brasil/abrigados/busca?nome=` | lê `abrigados`, `abrigos` |
 | `lotacao_abrigo` (na política, a tela usa a lotação que vem junto) | `GET /brasil/abrigos/{id}/lotacao` | lê `abrigados` |
 
-`entrada_em` e `saida_em` ficam sempre em UTC (`2026-11-18T13:00:00+00:00`); data sem fuso é horário de Brasília (UTC-03:00).
+`entrada_em` e `saida_em` ficam sempre em UTC (`2026-11-18T13:00:00+00:00`); data sem fuso é horário de Brasília (UTC-03:00). Entrada mais de 10 minutos no futuro é recusada (422).
 
 ### `/brasil/abrigo/<id>/estoque` (`abrigo_estoque`; `static/estoque.js`)
 | POLITICA | API | Tabelas |
