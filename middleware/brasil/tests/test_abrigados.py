@@ -119,10 +119,11 @@ def test_datas_sem_fuso_sao_horario_de_brasilia_e_ficam_em_utc(cena):
     s = cli.post(f"/brasil/abrigados/{p['id']}/saida", json={"saida_em": "2026-11-18T11:00"}, headers=como(g1))
     assert s.status_code == 200, s.text
     assert s.json()["pessoa"]["saida_em"] == "2026-11-18T14:00:00+00:00"
-    # 09:30 em Brasília é antes das 10:00 da entrada, mesmo sendo 12:30 em UTC
+    # entrada 13:00 UTC (10:00 em Brasília); saída "12:30" sem fuso é 15:30 UTC, depois da entrada
     r2 = chegar(cli, g1, a1, [{"nome": "Fuso Dois Fictício", "nome_mae": "Mãe Fictícia"}], entrada_em="2026-11-18T13:00:00Z")
     pid = r2.json()["pessoas"][0]["id"]
-    assert cli.post(f"/brasil/abrigados/{pid}/saida", json={"saida_em": "2026-11-18T09:30"}, headers=como(g1)).status_code == 422
+    s2 = cli.post(f"/brasil/abrigados/{pid}/saida", json={"saida_em": "2026-11-18T12:30"}, headers=como(g1))
+    assert s2.status_code == 200 and s2.json()["pessoa"]["saida_em"] == "2026-11-18T15:30:00+00:00"
 
 
 @pytest.mark.parametrize("pessoa", [
