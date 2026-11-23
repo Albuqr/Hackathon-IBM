@@ -2,6 +2,5 @@
 
 Capturas feitas com dados fictícios (`semear_teste.py`), nada real.
 
-- `rodada-celular/`: nova rodada completa no celular (390px, claro e escuro): cadastro, pessoas, busca, estoque, ONG e voluntário.
 - `correcoes-t8/`: telas depois das correções da rodada no celular (T8), prefixo `after-`.
 - `smoke-t11/`: conferência final do CSS compartilhado (mapa, voluntário, ONG e pessoas do abrigo) em 390px e desktop, claro e escuro. Nome: `<página>-<390|desktop>-<claro|escuro>.jpg`.
