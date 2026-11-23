@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from middleware.chat import responder as chat_responder
 from middleware.gravacao import gravar_eventos
 from middleware.ingestao_crise import executar_ingestao
 
@@ -212,6 +213,7 @@ class ChatMessage(BaseModel):
     telegram_id: int = None
     username: str = None
     context_type: str = None
+    context: str = None  # opcional: contexto extra, entregue ao modelo como dado delimitado
 
 class AssociateRequest(BaseModel):
     user_id: int
@@ -822,75 +824,10 @@ def trigger_ingest():
 
 @app.post("/chat")
 def chat(msg: ChatMessage):
-    try:
-        text = msg.message or msg.text or ""
-        if not text:
-            return {"reply": "Mensagem vazia.", "response": "Mensagem vazia."}
+    """Chat dos agentes (ONG/voluntário) sobre middleware/chat.py. Mantém `reply`/`response` e acrescenta
+    `degradado`; falha do provedor responde 200 com mensagem degradada, nunca 500. Sem watsonx."""
+    return chat_responder(msg.message or msg.text or "", msg.context_type, msg.context)
 
-        if msg.context_type == "volunteer":
-            agent_id = os.environ.get("VOLUNTEER_AGENT_ID")
-        else:
-            agent_id = os.environ.get("ASSISTANT_AGENT_ID")
-        result = call_orchestrate(text, agent_id=agent_id)
-        print("AGENT RAW RESPONSE:", result)
-
-        # Safely extract reply — try multiple paths in order
-        reply = None
-
-        # Path 1: deep Orchestrate structure result["result"]["data"]["message"]["content"]
-        try:
-            content = result["result"]["data"]["message"]["content"]
-            if isinstance(content, list):
-                parts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("text")]
-                reply = " ".join(parts).strip() or None
-            elif isinstance(content, dict):
-                reply = content.get("text") or str(content) or None
-            elif isinstance(content, str):
-                reply = content or None
-        except (KeyError, TypeError, AttributeError):
-            pass
-
-        # Path 2: result["output"]
-        if not reply:
-            val = result.get("output")
-            if val and isinstance(val, str):
-                reply = val
-
-        # Path 3: result["reply"]
-        if not reply:
-            val = result.get("reply")
-            if val and isinstance(val, str):
-                reply = val
-
-        # Path 4: result["text"]
-        if not reply:
-            val = result.get("text")
-            if val and isinstance(val, str):
-                reply = val
-
-        # Path 5: result["content"]
-        if not reply:
-            val = result.get("content")
-            if val and isinstance(val, str):
-                reply = val
-
-        # Path 6: str(result) as last resort before hardcoded fallback
-        if not reply:
-            raw = str(result)
-            if raw and raw not in ("None", "{}", "[]", "{'error': 'timeout'}", "{'error': None}"):
-                reply = raw
-
-        if not reply:
-            reply = "Agente indisponível no momento. Tente mais tarde."
-
-        return {"reply": reply, "response": reply}
-
-    except Exception as e:
-        return {
-            "reply": "Desculpe, ocorreu um erro interno. Tente novamente.",
-            "response": "Desculpe, ocorreu um erro interno. Tente novamente.",
-            "error": str(e)
-        }
 
 @app.get("/stats")
 def get_stats():
