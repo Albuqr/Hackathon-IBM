@@ -253,6 +253,12 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
             todos = gestor_verificado(conn, u["id"])
             meus = conn.execute(SQL_BUSCA_MEUS, (padrao, u["id"], LIMITE_BUSCA)).fetchall()
             outros = conn.execute(SQL_BUSCA_OUTROS, (padrao, u["id"], LIMITE_BUSCA)).fetchall() if todos else []
+            if todos:  # busca entre abrigos: fica registrada, mesmo sem resultado (ADR 0008)
+                # logo depois da consulta, antes de montar a resposta: um erro depois não apaga o rastro.
+                # grava o termo usado na busca (normalizado), não o digitado: pontuação de enchimento não o esconde
+                conn.execute(SQL_LOG_BUSCA, (u["id"], termo, datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                             len(meus) + len(outros)))
+                conn.commit()
             resultados = []
             for x in meus:  # os próprios primeiro
                 info = malha.carregar().info(x["municipio_ibge"]) if x["municipio_ibge"] else None
@@ -262,11 +268,6 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
                                    "entrada_em": x["entrada_em"], "saida_em": x["saida_em"],
                                    "presente": x["saida_em"] is None, "meu_abrigo": True})
             resultados += [{"nome": x["nome"], "meu_abrigo": False, "contato": CONTATO_OUTRO_ABRIGO} for x in outros]
-            if todos:  # busca entre abrigos: fica registrada, mesmo sem resultado (ADR 0008)
-                # grava o termo usado na busca (normalizado), não o digitado: pontuação de enchimento não o esconde
-                conn.execute(SQL_LOG_BUSCA, (u["id"], termo,
-                                             datetime.now(timezone.utc).isoformat(timespec="seconds"), len(resultados)))
-                conn.commit()
             return {"escopo": "todos" if todos else "meus_abrigos", "resultados": resultados, "limite": LIMITE_BUSCA}
         finally:
             conn.close()

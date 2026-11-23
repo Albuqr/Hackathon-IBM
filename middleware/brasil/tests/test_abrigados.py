@@ -460,6 +460,21 @@ def test_busca_com_mais_de_200_caracteres_422_e_nao_registra(cena, consulta):
     assert log_de_buscas(cena["rotas"]) == []
 
 
+def test_busca_fica_registrada_mesmo_se_montar_a_resposta_falhar(cena, monkeypatch):
+    """O registro é gravado logo depois da consulta: um erro ao montar os resultados não apaga o rastro."""
+    from middleware.brasil import malha
+    cli, g1 = cena["cli"], cena["g1"]
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+
+    class Quebrada:
+        def info(self, *_):
+            raise RuntimeError("malha quebrada")
+    monkeypatch.setattr(malha, "carregar", lambda: Quebrada())
+    with pytest.raises(RuntimeError):
+        busca(cli, g1, "jo")
+    assert [(x["user_id"], x["consulta"], x["resultados"]) for x in log_de_buscas(cena["rotas"])] == [(g1, "jo", 2)]
+
+
 def test_busca_so_nos_proprios_abrigos_nao_e_registrada(cena):
     cli = cena["cli"]
     assert busca(cli, cena["g1"], "joao").json()["escopo"] == "meus_abrigos"
