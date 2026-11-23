@@ -32,6 +32,8 @@ def contagens(rotas) -> dict:
             "estoque": n("SELECT COUNT(*) FROM abrigo_itens"),
             "vinculo_poa4": n("SELECT COUNT(*) FROM abrigo_crises WHERE crisis_id='teste-poa-4'"),
             "itens": n("SELECT COUNT(*) FROM itens"),
+            # a API recusa chegada em abrigo inativo; a semente grava direto, então confere aqui
+            "pessoas_em_inativo": n("SELECT COUNT(*) FROM abrigados p JOIN abrigos a ON a.id=p.abrigo_id WHERE a.ativo=0"),
         }
     finally:
         conn.close()
@@ -42,7 +44,8 @@ def test_semente_cria_abrigos_pessoas_e_estoque_ficticios_e_e_idempotente(ambien
     primeira = contagens(rotas)
     assert primeira == {"abrigos_gestor": 1, "abrigos_gestor2": 2, "verificados": 0, "sensiveis": 1,
                         "pessoas": 10, "presentes": 9, "familias": 2, "familia_de_3": 1, "com_cpf": 0,
-                        "com_necessidade": 5, "estoque": 8, "vinculo_poa4": 1, "itens": primeira["itens"]}
+                        "com_necessidade": 5, "estoque": 8, "vinculo_poa4": 1, "itens": primeira["itens"],
+                        "pessoas_em_inativo": 0}
     saida = capsys.readouterr().out
     assert "abrigos: 3" in saida and "pessoas: 10 (9 presentes)" in saida
     conn = db.conectar(rotas.CFG)
