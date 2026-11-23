@@ -18,6 +18,8 @@ from pydantic import BaseModel
 from middleware.chat import responder as chat_responder
 from middleware.gravacao import gravar_eventos
 from middleware.ingestao_crise import executar_ingestao
+from middleware.llm import LLMIndisponivel
+from middleware.previsao import prever_risco
 
 # ── Predictions cache ──
 _predictions_cache = {"data": None, "ts": 0}
@@ -1175,17 +1177,27 @@ def users_with_telegram():
     db.close()
     return [dict(r) for r in rows]
 
+PREVISOES_TTL = 3600  # 1 hora, só para resultado válido (lista não vazia)
+
+
+def _previsoes_degradadas(erro: str) -> dict:
+    """Falha: 200 com lista vazia e `degradado`. Se havia um resultado válido anterior (mesmo expirado),
+    serve-o como `stale` em vez de esvaziar a tela."""
+    anterior = _predictions_cache["data"]
+    if anterior:
+        return {**anterior, "error": erro, "degradado": True, "stale": True}
+    return {"predictions": [], "error": erro, "degradado": True}
+
+
 @app.get("/predictions")
 def get_predictions():
-    """Retorna previsões de risco humanitário geradas pelo Granite.
-    Resultado cacheado por 1 hora para evitar chamadas excessivas ao modelo."""
-    global _predictions_cache
+    """Previsões de risco humanitário (middleware/previsao.py sobre o LLM, sem watsonx).
+    Cache de 1 hora SOMENTE para resultado válido: erro, LLMIndisponivel e resultado vazio não são
+    cacheados. Falha responde 200 com {"predictions": [], "error", "degradado": true}."""
     now = time.time()
-    # Return cache if still fresh (1 hour = 3600s)
-    if _predictions_cache["data"] and (now - _predictions_cache["ts"]) < 3600:
+    if _predictions_cache["data"] and (now - _predictions_cache["ts"]) < PREVISOES_TTL:
         return _predictions_cache["data"]
 
-    # Fetch latest 50 events from DB
     db = get_db()
     rows = db.execute(
         "SELECT id, title, country, country_iso3, lat, lon, severity, "
@@ -1198,18 +1210,21 @@ def get_predictions():
     if not events:
         return {"predictions": [], "note": "Sem eventos no banco de dados"}
 
-    # Call predict_humanitarian_risk via watsonx orchestrate tool directly
-    import sys, os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
     try:
-        from predict_humanitarian_risk import predict_humanitarian_risk
-        result_str = predict_humanitarian_risk(json.dumps(events))
-        result = json.loads(result_str)
-    except Exception as e:
-        result = {"error": str(e), "predictions": []}
-
-    _predictions_cache["data"] = result
-    _predictions_cache["ts"]   = now
+        result = prever_risco(events)
+    except LLMIndisponivel as e:
+        logging.getLogger(__name__).warning("/predictions degradado: LLM indisponível (%s)", e)
+        return _previsoes_degradadas("Previsões indisponíveis no momento.")
+    except Exception:
+        logging.getLogger(__name__).exception("/predictions degradado: erro inesperado")
+        return _previsoes_degradadas("Previsões indisponíveis no momento.")
+    if result.get("error"):
+        return _previsoes_degradadas("Previsões indisponíveis no momento.")
+    if result["predictions"]:
+        _predictions_cache["data"] = result
+        _predictions_cache["ts"] = now
     return result
+
+
 app.include_router(__import__("middleware.brasil", fromlist=["router"]).router)  # Dash Brasil (ADR 0001)
 app = __import__("middleware.seguranca", fromlist=["instalar"]).instalar(app)  # segredo da API (ADR 0004)
