@@ -243,7 +243,8 @@ input[type="range"] { width: 100%; accent-color: var(--verde); padding: 0; borde
 .marcador { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 600; letter-spacing: 0; flex-shrink: 0; }
 .etapa-texto { display: grid; gap: 2px; min-width: 0; flex: 1; }
 .etapa-titulo { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }
-.resumo { color: var(--tinta-2); font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* o resumo quebra linha: os nomes de uma família precisam ser conferidos inteiros */
+.resumo { color: var(--tinta-2); font-size: 15px; min-width: 0; overflow-wrap: anywhere; }
 .editar { border: 0; background: none; color: var(--link); cursor: pointer; font-size: 15px; padding: 6px 2px; white-space: nowrap; }
 .editar:hover { text-decoration: underline; text-underline-offset: 3px; }
 .etapa.feita { background: var(--cartao); }
@@ -255,7 +256,7 @@ input[type="range"] { width: 100%; accent-color: var(--verde); padding: 0; borde
 .etapa.atual .etapa-linha { padding: 36px 40px 8px; align-items: flex-start; }
 .etapa.atual .marcador { background: var(--tinta); color: var(--cartao); margin-top: 6px; }
 .etapa.atual .etapa-titulo { font-size: 32px; line-height: 1.12; letter-spacing: -0.025em; }
-.etapa.atual .resumo { white-space: normal; font-size: 17px; }
+.etapa.atual .resumo { font-size: 17px; }
 .etapa-corpo { padding: 20px 40px 40px 84px; display: grid; gap: 24px; min-width: 0; }
 .final { background: var(--cartao); border-radius: var(--r-card); padding: 48px 40px; display: grid; gap: 14px; justify-items: start; margin-top: 12px; }
 .final h2 { font-size: 40px; line-height: 1.1; letter-spacing: -0.03em; }
