@@ -21,6 +21,19 @@ function quanto(x) {
   return PEDIDO.includes(x.status) ? `precisa de ${q}` : q;
 }
 
+// O que mostrar depois das sugestões (regra simples, nunca une; ADR 0007):
+// - mesmo nome normalizado de um item que existe ("agua" e "Água"): a API reaproveita esse item, então não há "Criar item
+//   novo"; se o texto digitado não é igual ao nome mostrado (acento, maiúscula, espaço), sinaliza o item para usar;
+// - sem item igual: sinaliza os parecidos que não estão na lista de sugestões e oferece criar (a partir de 2 letras).
+export function sinalDuplicado(q, { itens = [], exato = null, possiveis_duplicados: dup = [] } = {}) {
+  const texto = String(q || "").trim();
+  if (exato != null) {
+    const igual = itens.find((i) => i.id === exato) || dup.find((d) => d.id === exato);
+    return { duplicados: igual && igual.nome !== texto ? [igual] : [], criar: false };
+  }
+  return { duplicados: dup.filter((d) => !itens.some((i) => i.id === d.id)), criar: texto.length >= 2 };
+}
+
 export function iniciarEstoque(raiz, { msg, abrigo, estoque, grupos }) {
   const S = { estoque: [...estoque] };
   const nomeGrupo = (g) => grupos.find((x) => x.id === g)?.nome || g;
@@ -77,7 +90,7 @@ export function iniciarEstoque(raiz, { msg, abrigo, estoque, grupos }) {
     const r = await acao("sugerir_itens", { q: { q } });
     if (meu !== pedido) return;  // chegou depois de outra digitação
     if (!r.ok) { sugestoes.replaceChildren(el("p", { class: "dica", texto: r.erro })); return; }
-    const { itens, exato, possiveis_duplicados: dup } = r.dados;
+    const { itens, possiveis_duplicados: dup } = r.dados;
     const partes = [];
     if (itens.length) {
       partes.push(el("ul", { class: "lista" }, itens.map((i) => {
@@ -89,9 +102,9 @@ export function iniciarEstoque(raiz, { msg, abrigo, estoque, grupos }) {
         ])]);
       })));
     }
-    const fora = dup.filter((d) => !itens.some((i) => i.id === d.id));
-    if (!exato && fora.length) partes.push(avisoDuplicado(fora));
-    if (!exato && q.length >= 2) {
+    const sinal = sinalDuplicado(q, r.dados);
+    if (sinal.duplicados.length) partes.push(avisoDuplicado(sinal.duplicados));
+    if (sinal.criar) {
       partes.push(linhaAcoes(el("button", { type: "button", class: "botao botao-secundario", texto: `Criar item novo “${q}”`,
         onclick: () => abrirNovo(q, dup) })));
     } else if (!itens.length) partes.push(el("p", { class: "dica", texto: "Nenhum item com esse nome." }));

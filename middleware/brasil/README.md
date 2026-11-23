@@ -100,6 +100,7 @@ BRASIL_DB_PATH=data/brasil-e2e.db BRASIL_DEV_LOGIN=1 python -m middleware.brasil
 # suba API e frontend com o mesmo BRASIL_DB_PATH e BRASIL_DEV_LOGIN=1, depois:
 BASE_URL=http://localhost:5000 node --test --test-concurrency=1 frontend/brasil/tests/e2e/app.spec.mjs
 node --test frontend/brasil/tests/visao.test.mjs          # regras do mapa, sem navegador
+node --test frontend/brasil/tests/estoque.test.mjs        # aviso de possível duplicado no estoque
 ```
 
 ## Malha
