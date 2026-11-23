@@ -84,3 +84,17 @@ def test_rejeicoes_vao_para_errors_com_titulo_e_para_o_log(db, caplog):
     texto = " ".join(x.getMessage() for x in avisos)
     assert "id=tipo" in texto and "banana" in texto and "id=lat" in texto and "abc" in texto
     assert "Evento X" not in texto  # título não vai para o log
+
+
+def test_atualizar_false_ignora_id_existente_e_insere_novo(db):
+    gravar_eventos(db, [{"id": "a", "severity": 5, "urgency": "immediate", "crisis_type": "seismic"}], agora=AGORA)
+    r = gravar_eventos(db, [{"id": "a", "severity": 1, "urgency": "monitoring", "crisis_type": "drought"},
+                            {"id": "b", "severity": 2}], atualizar=False)
+    assert r == {"saved": 1, "updated": 0, "ids": ["b"], "errors": []}
+    linha = db.execute("SELECT severity, urgency, crisis_type FROM crises WHERE id='a'").fetchone()
+    assert tuple(linha) == (5, "immediate", "seismic")
+
+
+def test_atualizar_false_repetido_no_mesmo_lote_insere_uma_vez(db):
+    r = gravar_eventos(db, [{"id": "a"}, {"id": "a"}], atualizar=False)
+    assert r["saved"] == 1 and r["ids"] == ["a"]

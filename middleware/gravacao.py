@@ -25,10 +25,11 @@ def normalizar_tipo(evento: dict) -> str:
     return str(bruto).strip().lower()
 
 
-def gravar_eventos(db, eventos, agora: str = None) -> dict:
+def gravar_eventos(db, eventos, agora: str = None, atualizar: bool = True) -> dict:
     """Grava uma lista de eventos em `db` (conexão sqlite3) e faz commit.
 
     Devolve {"saved": inserções, "updated": atualizações, "ids": [...], "errors": [{"id", "title", "error"}]}.
+    atualizar=False: id já existente é ignorado (nem UPDATE, nem conta em `ids`); só insere eventos novos.
     Um evento inválido (tipo fora de TIPOS_CRISE, dado malformado) vira erro e não derruba o lote.
     Toda rejeição entra em `errors` (id, título, motivo) e no log (warning, só id e motivo).
     """
@@ -46,6 +47,8 @@ def gravar_eventos(db, eventos, agora: str = None) -> dict:
             if tipo not in TIPOS_CRISE:
                 raise ValueError(f"crisis_type inválido: {tipo!r} (válidos: {', '.join(sorted(TIPOS_CRISE))})")
             existe = db.execute("SELECT id FROM crises WHERE id=?", (eid,)).fetchone()
+            if existe and not atualizar:
+                continue
             if existe:
                 db.execute(
                     "UPDATE crises SET severity=?, urgency=?, crisis_type=?, updated_at=? WHERE id=?",
