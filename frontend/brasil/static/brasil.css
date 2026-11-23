@@ -563,4 +563,6 @@ body.solta { min-height: 100dvh; display: grid; place-items: center; padding: 24
   .menu a { display: flex; align-items: center; min-height: 44px; padding-block: 0; }
   /* links de texto das telas: voltar, Editar, Cancelar, Tirar esta pessoa, Reativar o abrigo */
   .voltar, .texto-link, .editar, .aviso a { display: inline-flex; align-items: center; min-height: 44px; }
+  /* botões (inclusive os pequenos), chips e opções dos controles segmentados */
+  .botao, .pilula, .chip, .segmentado button { min-height: 44px; }
 }
