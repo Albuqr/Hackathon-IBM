@@ -328,6 +328,21 @@ def test_pessoas_do_abrigo_lotado_avisa_e_verificado_busca_em_todos(front, logar
     assert "Abrigo lotado: não há vagas livres." in html and 'id="lot-aviso" role="status" hidden' not in html
 
 
+def test_pessoas_de_abrigo_inativo_pede_para_reativar_em_vez_de_registrar_chegada(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    api.respostas[("GET", "/abrigos")] = (200, [{**ABRIGO, "ativo": False, "presentes": 2}])
+    r = cli.get("/brasil/abrigo/4/pessoas")
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200 and "2 de 120" in html and " · Inativo" in html
+    assert "Este abrigo está inativo. Reative o abrigo antes de registrar chegadas." in html
+    assert 'href="/brasil/abrigo/4/editar"' in html
+    assert 'id="abrir-chegada"' not in html and "Procurar uma pessoa" in html
+    api.respostas[("GET", "/abrigos")] = (200, [ABRIGO])
+    html = cli.get("/brasil/abrigo/4/pessoas").get_data(as_text=True)
+    assert 'id="abrir-chegada"' in html and "Este abrigo está inativo" not in html
+
+
 def test_pessoas_de_abrigo_que_nao_e_do_gestor_da_404(front, logar):
     cli, api = front
     logar(cli, "gestor_abrigo", uid=9)

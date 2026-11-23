@@ -21,10 +21,15 @@
 
   <p class="aviso" id="msg" role="alert" hidden></p>
 
+  {% if a.ativo %}
   <div class="acoes" id="chegada-acoes">
     <button class="botao botao-primario" type="button" id="abrir-chegada">Registrar chegada</button>
   </div>
   <div id="chegada" hidden></div>
+  {% else %}
+  <p class="aviso" id="abrigo-inativo">Este abrigo está inativo. Reative o abrigo antes de registrar chegadas.
+    <a href="{{ url_for('brasil.abrigo_editar', aid=a.id) }}">Reativar o abrigo</a></p>
+  {% endif %}
 
   <section class="secao" aria-labelledby="t-presentes">
     <h2 id="t-presentes">Quem está no abrigo</h2>

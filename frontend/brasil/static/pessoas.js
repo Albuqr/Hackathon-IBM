@@ -57,7 +57,8 @@ export function iniciarPessoas({ abrigo, msg }) {
     mostrarLotacao(r.dados.lotacao);
     const grupos = r.dados.grupos;
     if (!grupos.length) {
-      lista.replaceChildren(el("li", { class: "vazio", texto: "Ninguém presente agora. Use “Registrar chegada” quando alguém chegar." }));
+      const dica = abrir ? " Use “Registrar chegada” quando alguém chegar." : "";
+      lista.replaceChildren(el("li", { class: "vazio", texto: `Ninguém presente agora.${dica}` }));
       return;
     }
     lista.replaceChildren(...grupos.map((g) => el("li", { class: "grupo" }, [
@@ -171,7 +172,8 @@ export function iniciarPessoas({ abrigo, msg }) {
     },
   };
 
-  abrir.addEventListener("click", () => {
+  // abrigo inativo: a página não traz o botão, só o aviso para reativar (a API recusa com 409)
+  abrir?.addEventListener("click", () => {
     avisar(msg, "");
     P = [novaPessoa()];
     acoesTopo.hidden = true;
