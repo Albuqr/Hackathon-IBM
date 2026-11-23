@@ -15,7 +15,8 @@ from middleware.tests.falsos import ProvedorFalso, diz
 def limpo(monkeypatch):
     llm.definir_provedor(None)
     llm._padrao = None
-    for v in ("CRISIS_LLM_MODELO", "CRISIS_LLM_MAX_TOKENS", "CRISIS_LLM_TIMEOUT"):
+    llm._uso.update(dia=None, n=0)
+    for v in ("CRISIS_LLM_MODELO", "CRISIS_LLM_MAX_TOKENS", "CRISIS_LLM_TIMEOUT", "CRISIS_LLM_LIMITE_DIARIO"):
         monkeypatch.delenv(v, raising=False)
     yield
     llm.definir_provedor(None)
@@ -125,3 +126,62 @@ def test_sem_chave(monkeypatch):
     assert llm.disponivel() is False
     with pytest.raises(LLMIndisponivel, match="ANTHROPIC_API_KEY"):
         llm.completar("", [Mensagem("user", "oi")])
+
+
+# ---------- teto diário ----------
+
+def test_teto_diario_bloqueia_sem_chamar_o_provedor(monkeypatch):
+    monkeypatch.setenv("CRISIS_LLM_LIMITE_DIARIO", "2")
+    p = ProvedorFalso([diz("a"), diz("b"), diz("c")])
+    llm.completar("", [], provedor=p)
+    llm.completar("", [], provedor=p)
+    with pytest.raises(LLMIndisponivel, match="teto diário de 2"):
+        llm.completar("", [], provedor=p)
+    assert len(p.chamadas) == 2 and llm.chamadas_hoje() == 2
+
+
+def test_teto_diario_zera_no_dia_seguinte(monkeypatch):
+    monkeypatch.setenv("CRISIS_LLM_LIMITE_DIARIO", "1")
+    dia = ["2026-01-01"]
+    monkeypatch.setattr(llm, "_hoje", lambda: dia[0])
+    p = ProvedorFalso([diz("a"), diz("b")])
+    llm.completar("", [], provedor=p)
+    with pytest.raises(LLMIndisponivel):
+        llm.completar("", [], provedor=p)
+    dia[0] = "2026-01-02"
+    assert llm.chamadas_hoje() == 0
+    assert llm.completar("", [], provedor=p).texto == "b"
+
+
+def test_teto_diario_conta_tentativas_que_falham(monkeypatch):
+    monkeypatch.setenv("CRISIS_LLM_LIMITE_DIARIO", "1")
+    p = ProvedorFalso([RuntimeError("x"), diz("nunca")])
+    with pytest.raises(LLMIndisponivel, match="falha do provedor"):
+        llm.completar("", [], provedor=p)
+    with pytest.raises(LLMIndisponivel, match="teto diário"):
+        llm.completar("", [], provedor=p)
+    assert len(p.chamadas) == 1
+
+
+def test_teto_diario_padrao_500_e_env_invalido(monkeypatch):
+    assert llm.limite_diario() == 500
+    monkeypatch.setenv("CRISIS_LLM_LIMITE_DIARIO", "abc")
+    assert llm.limite_diario() == 500
+
+
+def test_teto_diario_thread_safe(monkeypatch):
+    import threading
+    monkeypatch.setenv("CRISIS_LLM_LIMITE_DIARIO", "20")
+    class P:
+        def completar(self, *a):
+            return diz("ok")
+    ok, bloq = [], []
+
+    def tarefa():
+        try:
+            llm.completar("", [], provedor=P()); ok.append(1)
+        except LLMIndisponivel:
+            bloq.append(1)
+    ts = [threading.Thread(target=tarefa) for _ in range(60)]
+    [t.start() for t in ts]; [t.join() for t in ts]
+    assert len(ok) == 20 and len(bloq) == 40

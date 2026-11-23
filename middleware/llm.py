@@ -6,14 +6,18 @@ acontece só aqui. Configuração somente por variáveis de ambiente:
   CRISIS_LLM_MODELO     modelo (padrão: claude-haiku-5-5)
   CRISIS_LLM_MAX_TOKENS teto de tokens da resposta (padrão: 1024)
   CRISIS_LLM_TIMEOUT    timeout em segundos (padrão: 30)
+  CRISIS_LLM_LIMITE_DIARIO  teto de chamadas ao provedor por dia UTC (padrão: 500)
 Qualquer falha do provedor vira LLMIndisponivel; nenhum tipo de exceção do SDK vaza.
 """
 import os
+import threading
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 
 MODELO_PADRAO = "claude-haiku-5-5"
 MAX_TOKENS_PADRAO = 1024
 TIMEOUT_PADRAO = 30.0
+LIMITE_DIARIO_PADRAO = 500
 
 
 class LLMIndisponivel(Exception):
@@ -170,12 +174,46 @@ def disponivel() -> bool:
     return bool(os.environ.get("ANTHROPIC_API_KEY"))
 
 
+# ---------- teto diário ----------
+# Contador em memória, por processo (um processo uvicorn): protege o custo contra laço/abuso sem
+# depender de armazenamento. Reiniciar o processo zera o contador; com vários workers o teto vale
+# por worker. Persistir (SQLite/Redis) é evolução futura. Conta TENTATIVAS ao provedor (inclusive as
+# que falham): chamadas com erro também podem custar tokens e o laço de retry é o risco típico.
+_trava = threading.Lock()
+_uso = {"dia": None, "n": 0}
+
+
+def _hoje() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")  # trocável em testes
+
+
+def limite_diario() -> int:
+    return _env_num("CRISIS_LLM_LIMITE_DIARIO", LIMITE_DIARIO_PADRAO, int)
+
+
+def _reservar_chamada() -> None:
+    """Conta uma tentativa no dia UTC corrente ou levanta LLMIndisponivel se o teto já foi atingido."""
+    hoje, teto = _hoje(), limite_diario()
+    with _trava:
+        if _uso["dia"] != hoje:
+            _uso["dia"], _uso["n"] = hoje, 0
+        if _uso["n"] >= teto:
+            raise LLMIndisponivel(f"teto diário de {teto} chamadas ao LLM atingido")
+        _uso["n"] += 1
+
+
+def chamadas_hoje() -> int:
+    with _trava:
+        return _uso["n"] if _uso["dia"] == _hoje() else 0
+
+
 def completar(sistema: str, historico, ferramentas=(), *, provedor=None) -> RespostaLLM:
     """Uma rodada: devolve RespostaLLM com texto OU chamadas de ferramenta. Levanta LLMIndisponivel."""
     global _padrao
     if provedor is None and _provedor is None and _padrao is None:
         _padrao = ProvedorAnthropic()
     p = provedor or _provedor or _padrao
+    _reservar_chamada()
     try:
         return p.completar(sistema, list(historico), list(ferramentas))
     except LLMIndisponivel:
