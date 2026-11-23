@@ -51,9 +51,3 @@ Pendências da fatia 1 (`feat/brasil-abrigos`). Contexto em `WALKTHROUGH.md` e n
 - **O quê:** com Node 24, `node --test` apontando para a pasta toda falha; rodar o arquivo `e2e/app.spec.mjs` direto funciona.
 - **Por quê:** quem rodar os testes de tela pela pasta vê falha que não é do código.
 - **Quem decide / o que destrava:** investigar o comportamento do Node 24 ou fixar o comando no README.
-
-## 9. Teste com data fixa vencida (`test_fr025`)
-- **O quê:** `test_inteligencia.py::test_fr025_descartada_sai_do_mapa_e_nao_verificada_expira_em_7_dias` usa a data fixa
-  `2026-10-16`, mais 7 dias de validade; depois de 2026-10-23 a notícia já nasce vencida e o teste falha.
-- **Por quê:** é a única falha da suíte e não vem desta branch; esconde falhas reais.
-- **Quem decide / o que destrava:** trocar a data fixa por uma relativa a "agora"; não precisa de decisão de produto.

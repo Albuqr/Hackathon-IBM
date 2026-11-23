@@ -18,11 +18,11 @@ def como(uid) -> dict:
     return {"X-Brasil-Usuario": str(uid)}
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
-AGORA = datetime(2026, 10, 16, 12, tzinfo=timezone.utc)
+AGORA = datetime.now(timezone.utc).replace(microsecond=0)  # relativo a hoje: a rota de não verificadas usa o relógio real
 DOMINIOS = noticias.carregar_fontes()["dominios"]
 
 
-def item(titulo, link="https://agenciabrasil.ebc.com.br/geral/noticia/2026-10/x", resumo="", quando="2026-10-16T09:00:00+00:00"):
+def item(titulo, link="https://agenciabrasil.ebc.com.br/geral/noticia/2026-10/x", resumo="", quando=(AGORA - timedelta(hours=3)).isoformat()):
     return {"titulo": titulo, "resumo": resumo, "link": link, "publicado_em": quando, "fonte": "teste"}
 
 
@@ -37,7 +37,7 @@ def test_ac_024_1_noticia_de_petropolis_vira_crise_nao_verificada_e_site_fora_da
     [e] = noticias.extrair(itens, DOMINIOS, AGORA)
     assert e["municipio_ibge"] == 3303906 and e["crisis_type"] == "geological"
     assert e["verificacao"] == "nao_verificada" and e["severity"] <= 3 and e["link_fonte"].startswith("https://agenciabrasil")
-    assert e["expira_em"].startswith("2026-10-23")
+    assert e["expira_em"] == (AGORA - timedelta(hours=3) + timedelta(days=7)).isoformat()
 
 
 def test_fr024_regras_de_municipio_e_tipo():
