@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 from . import db, ingestao
 from .config import carregar
+from .merge_brasil import _sql
 
 CRISES = [
     # AC-006.1: duas crises em Porto Alegre (4314902), severidades 2 e 4
@@ -148,11 +149,9 @@ def abrigos_teste(cfg, agora) -> dict:
     gestores = {p: rotas.dev_usuario(p)["id"] for p in ("gestor", "gestor2")}
     conn = db.conectar(cfg)
     try:
-        antigos = "SELECT id FROM abrigos WHERE gestor_id IN (?,?)"
         ids = tuple(gestores.values())
-        for sql in ("DELETE FROM abrigo_itens WHERE abrigo_id IN ({})", "DELETE FROM abrigados WHERE abrigo_id IN ({})",
-                    "DELETE FROM familias WHERE abrigo_id IN ({})", "DELETE FROM abrigo_crises WHERE abrigo_id IN ({})"):
-            conn.execute(sql.format(antigos), ids)
+        for tabela in ("abrigo_itens", "abrigados", "familias", "abrigo_crises"):
+            conn.execute(_sql("DELETE FROM {t} WHERE abrigo_id IN (SELECT id FROM abrigos WHERE gestor_id IN (?,?))", t=tabela), ids)
         conn.execute("DELETE FROM abrigos WHERE gestor_id IN (?,?)", ids)
         resumo = {"abrigos": 0, "pessoas": 0, "presentes": 0, "familias": 0, "estoque": 0}
         for a in ABRIGOS_TESTE:

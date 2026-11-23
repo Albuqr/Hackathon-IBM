@@ -186,3 +186,13 @@ def test_registro_de_buscas_entra_no_merge_com_usuario_remapeado(bancos):
     assert linhas(crisis, "SELECT user_id, consulta, buscado_em, resultados, origem FROM buscas_abrigados_log ORDER BY id") == [
         (g, "Pessoa Fictícia", "2026-11-18T13:00:00+00:00", 2, "brasil"), (7, "ninguem", "2026-11-18T13:05:00+00:00", 0, "brasil")]
     assert g != 4
+
+
+def test_ident_valida_e_coloca_aspas():
+    import pytest
+    from middleware.brasil.merge_brasil import _ident
+    assert _ident("abrigo_itens") == '"abrigo_itens"'
+    assert _ident("_x1") == '"_x1"'
+    for ruim in ("a;drop", 'a"b', "1abc", "", "a b", "a-b", "main.users", "a\n", None):
+        with pytest.raises(ValueError):
+            _ident(ruim)
