@@ -6,7 +6,8 @@ Nome, nome da mãe e CPF nunca saem para voluntário, ONG, admin, mapa ou log: n
 Busca por nome: se algum abrigo do gestor estiver verificado, procura em todos os abrigos; senão, só nos dele.
 Abrigo sensível (de proteção: mulheres, crianças...) só aparece na busca do próprio gestor (ADR 0008).
 De outros abrigos a busca devolve só o nome e o caminho de contato, e só de quem não saiu; CPF, datas e abrigo
-só aparecem para gente dos próprios abrigos. Toda busca entre abrigos é gravada em `buscas_abrigados_log`
+só aparecem para gente dos próprios abrigos. Em outros abrigos só se busca por nome e sobrenome (2+ palavras de 2+ letras), até 10 resultados e 30 buscas
+por hora por gestor (429 além disso). Toda busca entre abrigos é gravada em `buscas_abrigados_log`
 (quem, o quê, quando, quantos resultados), que nenhuma rota expõe.
 """
 import json
@@ -24,7 +25,14 @@ from .acesso import Acesso
 from .config import Config
 
 NECESSIDADES = ("idoso", "deficiencia", "saude", "gestante")
-LIMITE_BUSCA = 50  # por grupo: até 50 dos próprios abrigos e até 50 de outros
+LIMITE_BUSCA = 50  # até 50 dos próprios abrigos
+LIMITE_BUSCA_OUTROS = 10  # e até 10 de outros: buscar gente de outro abrigo é raro e sensível (ADR 0008)
+BUSCAS_OUTROS_POR_HORA = 30  # por gestor, contadas no registro de buscas
+JANELA_BUSCAS = timedelta(hours=1)
+MIN_PALAVRAS_OUTROS = 2  # nome e sobrenome...
+MIN_LETRAS_PALAVRA = 2  # ...de pelo menos 2 letras cada
+AVISO_NOME_COMPLETO = "Para buscar em outros abrigos, digite nome e sobrenome (pelo menos duas palavras de 2 letras ou mais)."
+MUITAS_BUSCAS = "Você fez muitas buscas em outros abrigos. Tente de novo em até uma hora."
 MAX_NOME_BUSCA = 200  # o mesmo limite do nome no cadastro
 FOLGA_FUTURO = timedelta(minutes=10)  # relógio do celular adiantado; mais que isso é engano
 INATIVO = "Este abrigo está inativo. Reative o abrigo antes de registrar chegadas."
@@ -48,6 +56,7 @@ SQL_BUSCA_OUTROS = (
     "ORDER BY p.nome_busca, p.id LIMIT ?"
 )
 # auditoria da busca entre abrigos (ADR 0008): só gravada; nenhuma rota lê esta tabela
+SQL_BUSCAS_RECENTES = "SELECT COUNT(*) FROM buscas_abrigados_log WHERE user_id=? AND buscado_em > ?"
 SQL_LOG_BUSCA = "INSERT INTO buscas_abrigados_log (user_id, consulta, buscado_em, resultados) VALUES (?,?,?,?)"
 
 
@@ -65,6 +74,11 @@ def nome_busca(texto: str) -> str:
     s = unicodedata.normalize("NFKD", s)
     s = "".join(c for c in s if not unicodedata.combining(c)).lower()
     return " ".join(re.sub(r"[\W_]+", " ", s).split())
+
+
+def pode_buscar_outros(termo: str) -> bool:
+    """A busca em outros abrigos exige nome e sobrenome: 2+ palavras de 2+ letras (termo já normalizado)."""
+    return sum(len(p) >= MIN_LETRAS_PALAVRA for p in termo.split()) >= MIN_PALAVRAS_OUTROS
 
 
 def _cpf(valor: str | None, n: int) -> str | None:
@@ -251,9 +265,21 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
         conn = conectar()
         try:
             todos = gestor_verificado(conn, u["id"])
+            aviso = None
+            em_outros = todos and pode_buscar_outros(termo)
+            if todos and not em_outros:
+                aviso = AVISO_NOME_COMPLETO  # só os próprios abrigos: não consulta outros, não conta, não registra
+            if em_outros:
+                # a contagem, a consulta e o registro ficam numa só transação com escrita reservada: duas buscas
+                # simultâneas do mesmo gestor não passam juntas do limite
+                conn.execute("BEGIN IMMEDIATE")
+                desde = (datetime.now(timezone.utc) - JANELA_BUSCAS).isoformat(timespec="seconds")
+                if conn.execute(SQL_BUSCAS_RECENTES, (u["id"], desde)).fetchone()[0] >= BUSCAS_OUTROS_POR_HORA:
+                    # busca recusada não consulta nada e, como as outras recusas (ADR 0008), não é registrada
+                    raise HTTPException(429, MUITAS_BUSCAS)
             meus = conn.execute(SQL_BUSCA_MEUS, (padrao, u["id"], LIMITE_BUSCA)).fetchall()
-            outros = conn.execute(SQL_BUSCA_OUTROS, (padrao, u["id"], LIMITE_BUSCA)).fetchall() if todos else []
-            if todos:  # busca entre abrigos: fica registrada, mesmo sem resultado (ADR 0008)
+            outros = conn.execute(SQL_BUSCA_OUTROS, (padrao, u["id"], LIMITE_BUSCA_OUTROS)).fetchall() if em_outros else []
+            if em_outros:  # busca entre abrigos: fica registrada, mesmo sem resultado (ADR 0008)
                 # logo depois da consulta, antes de montar a resposta: um erro depois não apaga o rastro.
                 # grava o termo usado na busca (normalizado), não o digitado: pontuação de enchimento não o esconde
                 conn.execute(SQL_LOG_BUSCA, (u["id"], termo, datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -268,7 +294,12 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
                                    "entrada_em": x["entrada_em"], "saida_em": x["saida_em"],
                                    "presente": x["saida_em"] is None, "meu_abrigo": True})
             resultados += [{"nome": x["nome"], "meu_abrigo": False, "contato": CONTATO_OUTRO_ABRIGO} for x in outros]
-            return {"escopo": "todos" if todos else "meus_abrigos", "resultados": resultados, "limite": LIMITE_BUSCA}
+            resposta = {"escopo": "todos" if todos else "meus_abrigos", "resultados": resultados, "limite": LIMITE_BUSCA}
+            if todos:  # campos novos só no escopo `todos`: a resposta de quem não é verificado não muda
+                resposta["limite_outros"] = LIMITE_BUSCA_OUTROS
+                if aviso:
+                    resposta["aviso"] = aviso
+            return resposta
         finally:
             conn.close()
 

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from middleware.brasil import db
-from middleware.brasil.abrigados import nome_busca
+from middleware.brasil.abrigados import AVISO_NOME_COMPLETO, MUITAS_BUSCAS, nome_busca
 
 POA = {"lat": -30.0346, "lon": -51.2177}      # Porto Alegre
 CANOAS = {"lat": -29.9177, "lon": -51.1836}   # Canoas
@@ -256,8 +256,9 @@ def test_busca_e_post_com_nome_no_corpo_e_get_nao_existe(cena):
     assert cli.get("/brasil/abrigados/busca", params={"nome": "joao"}, headers=como(g1)).status_code == 405
     assert cli.post("/brasil/abrigados/busca", params={"nome": "joao"}, json={}, headers=como(g1)).status_code == 422
     cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
-    r = busca(cli, g1, "jo").json()  # mesmas regras de escopo pelo POST
-    assert r["escopo"] == "todos" and {x["meu_abrigo"] for x in r["resultados"]} == {True, False}
+    r = busca(cli, g1, "joana fic").json()  # mesmas regras de escopo pelo POST (outros abrigos pedem nome e sobrenome)
+    assert r["escopo"] == "todos" and {x["meu_abrigo"] for x in r["resultados"]} == {False}
+    assert {x["meu_abrigo"] for x in busca(cli, g1, "joao fic").json()["resultados"]} == {True}
     assert busca(cli, g2, "joao").json() == {"escopo": "meus_abrigos", "resultados": [], "limite": 50}
 
 
@@ -278,8 +279,9 @@ def test_busca_sem_acento_acha_com_acento(cena):
 def test_busca_depois_de_verificar_acha_nos_dois_e_cpf_so_dos_proprios(cena):
     cli, g1, a1 = cena["cli"], cena["g1"], cena["a1"]
     assert cli.post(f"/brasil/dev/abrigos/{a1}/verificar", headers=como(g1)).json()["verificado"] is True
-    r = busca(cli, g1, "jo").json()
+    r = busca(cli, g1, "joana fic").json()
     assert r["escopo"] == "todos"
+    r["resultados"] += busca(cli, g1, "joao fic").json()["resultados"]  # os próprios e os de outro abrigo, em duas buscas
     por_nome = {x["nome"]: x for x in r["resultados"]}
     assert set(por_nome) == {"João Fictício da Silva", "Joana Fictícia Pereira"}
     meu, outro = por_nome["João Fictício da Silva"], por_nome["Joana Fictícia Pereira"]
@@ -289,7 +291,7 @@ def test_busca_depois_de_verificar_acha_nos_dois_e_cpf_so_dos_proprios(cena):
     assert outro == {"nome": "Joana Fictícia Pereira", "meu_abrigo": False,
                      "contato": "Entre em contato com a coordenação regional."}
     for vazado in ("Clara Fictícia Pereira", "Escola Fictícia de Canoas", "Canoas"):
-        assert vazado not in r_texto(cli, g1, "joana")
+        assert vazado not in r_texto(cli, g1, "joana fic")
     # gestor2 (não verificado) continua só nos dele
     r2 = busca(cli, cena["g2"], "jo").json()
     assert r2["escopo"] == "meus_abrigos" and [x["nome"] for x in r2["resultados"]] == ["Joana Fictícia Pereira"]
@@ -301,9 +303,9 @@ def test_abrigo_sensivel_de_outro_gestor_nunca_aparece_na_busca(cena):
     casa = abrigo(cli, g2, nome="Casa de Acolhimento Fictícia", sensivel=True, **CANOAS)
     assert chegar(cli, g2, casa, [{"nome": "Joaquina Fictícia Protegida", "nome_mae": "Mãe Fictícia"}]).status_code == 200
     cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
-    r = busca(cli, g1, "joaquina")
+    r = busca(cli, g1, "joaquina fic")
     assert r.json()["escopo"] == "todos" and r.json()["resultados"] == [] and "Protegida" not in r.text
-    assert sorted(x["nome"] for x in busca(cli, g1, "jo").json()["resultados"]) == ["Joana Fictícia Pereira", "João Fictício da Silva"]
+    assert [x["nome"] for x in busca(cli, g1, "joana fic").json()["resultados"]] == ["Joana Fictícia Pereira"]
     # o gestor da casa acha a própria gente, verificado ou não
     for _ in range(2):
         [x] = busca(cli, g2, "joaquina").json()["resultados"]
@@ -322,8 +324,9 @@ def r_texto(cli, uid, nome) -> str:
 def test_resultado_de_outro_abrigo_tem_so_nome_e_contato(cena):
     cli, g1, g2 = cena["cli"], cena["g1"], cena["g2"]
     cli.post(f"/brasil/dev/abrigos/{cena['a2']}/verificar", headers=como(g2))
-    r = busca(cli, g2, "fictici").json()
+    r = busca(cli, g2, "da silva").json()  # a família de g1, em outro abrigo
     assert r["escopo"] == "todos" and r["resultados"]
+    assert set(busca(cli, g2, "joana fic").json()["resultados"][0]) == CHAVES_MEU_ABRIGO
     for x in r["resultados"]:
         assert set(x) == (CHAVES_MEU_ABRIGO if x["meu_abrigo"] else CHAVES_OUTRO_ABRIGO), x
     outros = [x for x in r["resultados"] if not x["meu_abrigo"]]
@@ -338,9 +341,9 @@ def test_resultado_de_outro_abrigo_tem_so_nome_e_contato(cena):
 def test_quem_saiu_some_da_busca_de_outros_abrigos_e_continua_para_o_dono(cena):
     cli, g1, g2 = cena["cli"], cena["g1"], cena["g2"]
     cli.post(f"/brasil/dev/abrigos/{cena['a2']}/verificar", headers=como(g2))
-    assert [x["nome"] for x in busca(cli, g2, "joao").json()["resultados"]] == ["João Fictício da Silva"]
+    assert [x["nome"] for x in busca(cli, g2, "joao fic").json()["resultados"]] == ["João Fictício da Silva"]
     cli.post(f"/brasil/abrigados/{cena['chegada']['pessoas'][0]['id']}/saida", headers=como(g1))
-    assert busca(cli, g2, "joao").json()["resultados"] == []
+    assert busca(cli, g2, "joao fic").json()["resultados"] == []
     [x] = busca(cli, g1, "joao").json()["resultados"]
     assert x["meu_abrigo"] is True and x["presente"] is False and x["saida_em"]
 
@@ -368,21 +371,21 @@ def test_busca_mostra_quem_ja_saiu_como_nao_presente(cena):
 
 
 def test_muitos_de_outros_abrigos_nao_empurram_a_propria_gente_para_fora(cena):
-    """Limite separado: até 50 dos próprios abrigos (com quem saiu) e até 50 de outros; os próprios primeiro."""
+    """Limite separado: até 50 dos próprios abrigos (com quem saiu) e até 10 de outros; os próprios primeiro."""
     cli, g1, g2, a2 = cena["cli"], cena["g1"], cena["g2"], cena["a2"]
     for i in range(0, 60, 30):
-        r = chegar(cli, g2, a2, [{"nome": f"Silva Fic {i + j:03d}", "nome_mae": "M Fic"} for j in range(30)])
+        r = chegar(cli, g2, a2, [{"nome": f"Da Silva Fic {i + j:03d}", "nome_mae": "M Fic"} for j in range(30)])
         assert r.status_code == 200, r.text
-    pid = chegar(cli, g1, cena["a1"], [{"nome": "Zeca Silva Fic", "nome_mae": "M Fic"}]).json()["pessoas"][0]["id"]
+    pid = chegar(cli, g1, cena["a1"], [{"nome": "Zeca da Silva", "nome_mae": "M Fic"}]).json()["pessoas"][0]["id"]
     assert cli.post(f"/brasil/abrigados/{pid}/saida", headers=como(g1)).status_code == 200
     cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
-    r = busca(cli, g1, "silva").json()
+    r = busca(cli, g1, "da silva").json()
     meus = [x for x in r["resultados"] if x["meu_abrigo"]]
     assert sorted(x["nome"] for x in meus) == ["Ana Fictícia da Silva", "João Fictício da Silva",
-                                               "Pedrinho Fictício da Silva", "Zeca Silva Fic"]
-    assert [x["presente"] for x in meus if x["nome"] == "Zeca Silva Fic"] == [False]
+                                               "Pedrinho Fictício da Silva", "Zeca da Silva"]
+    assert [x["presente"] for x in meus if x["nome"] == "Zeca da Silva"] == [False]
     assert r["resultados"][:len(meus)] == meus  # os próprios primeiro
-    assert len(r["resultados"]) - len(meus) == r["limite"] == 50
+    assert len(r["resultados"]) - len(meus) == r["limite_outros"] == 10 and r["limite"] == 50
 
 
 @pytest.mark.parametrize("nome", ["", "a", "  b  ", "%"])
@@ -426,11 +429,11 @@ def test_toda_busca_entre_abrigos_fica_registrada_mesmo_sem_resultado(cena):
     cli, g1 = cena["cli"], cena["g1"]
     cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
     antes = datetime.now(timezone.utc).replace(microsecond=0)
-    assert len(busca(cli, g1, "  Jo ").json()["resultados"]) == 2
+    assert len(busca(cli, g1, "  Jo Fic ").json()["resultados"]) == 0
     assert busca(cli, g1, "ninguem ficticio").json()["resultados"] == []
     assert busca(cli, g1, "a").status_code == 422  # busca recusada não roda, não registra
     log = log_de_buscas(cena["rotas"])
-    assert [(x["user_id"], x["consulta"], x["resultados"]) for x in log] == [(g1, "jo", 2), (g1, "ninguem ficticio", 0)]
+    assert [(x["user_id"], x["consulta"], x["resultados"]) for x in log] == [(g1, "jo fic", 0), (g1, "ninguem ficticio", 0)]
     for x in log:
         quando = datetime.fromisoformat(x["buscado_em"])
         assert quando.utcoffset() == timedelta(0) and antes <= quando <= datetime.now(timezone.utc)
@@ -440,7 +443,7 @@ def test_toda_busca_entre_abrigos_fica_registrada_mesmo_sem_resultado(cena):
     ("." * 150 + " Joana Fictícia Pereira", "joana ficticia pereira"),
     ("j" + "'" * 150 + "oana ficticia", "joana ficticia"),
     ("j" + "́" * 150 + "oana ficticia", "joana ficticia"),
-    ("-" * 190 + "joana", "joana"),
+    ("-" * 190 + "joana fic", "joana fic"),
 ])
 def test_registro_guarda_o_termo_usado_mesmo_com_enchimento(cena, consulta, termo):
     """Enchimento que a normalização apaga não esconde do registro o nome de fato buscado."""
@@ -471,8 +474,8 @@ def test_busca_fica_registrada_mesmo_se_montar_a_resposta_falhar(cena, monkeypat
             raise RuntimeError("malha quebrada")
     monkeypatch.setattr(malha, "carregar", lambda: Quebrada())
     with pytest.raises(RuntimeError):
-        busca(cli, g1, "jo")
-    assert [(x["user_id"], x["consulta"], x["resultados"]) for x in log_de_buscas(cena["rotas"])] == [(g1, "jo", 2)]
+        busca(cli, g1, "joao fic")
+    assert [(x["user_id"], x["consulta"], x["resultados"]) for x in log_de_buscas(cena["rotas"])] == [(g1, "joao fic", 1)]
 
 
 def test_busca_so_nos_proprios_abrigos_nao_e_registrada(cena):
@@ -508,7 +511,7 @@ def test_registro_de_buscas_nao_sai_por_nenhuma_rota(cena):
              and "buscas_abrigados_log" in open(os.path.join(pasta, f), encoding="utf-8").read()}
     assert citam == {"db.py", "merge_brasil.py", "abrigados.py"}
     fonte = open(os.path.join(pasta, "abrigados.py"), encoding="utf-8").read()
-    assert fonte.count("buscas_abrigados_log") == 2 and "INSERT INTO buscas_abrigados_log" in fonte  # docstring + INSERT
+    assert fonte.count("buscas_abrigados_log") == 3 and "INSERT INTO buscas_abrigados_log" in fonte  # docstring + COUNT do limite + INSERT
     for base, _, arquivos in os.walk(os.path.join(raiz, "frontend", "brasil")):
         for f in arquivos:
             if f.endswith((".py", ".js", ".html")) and "tests" not in base:
@@ -610,3 +613,118 @@ def test_rotas_de_pessoas_nao_imprimem_dados(cena, capsys, caplog):
     texto = saida.out + saida.err + caplog.text
     for dado in ("Silencioso", "Mãe Silenciosa", "55566677788"):
         assert dado not in texto
+
+
+# ── limites da busca em outros abrigos (ADR 0008, emenda) ────────────
+def verificar(cena, uid=None, abrigo_id=None):
+    uid = uid or cena["g1"]
+    r = cena["cli"].post(f"/brasil/dev/abrigos/{abrigo_id or cena['a1']}/verificar", headers=como(uid))
+    assert r.status_code == 200, r.text
+
+
+def log_direto(rotas, uid, buscado_em, consulta="antigo ficticio"):
+    conn = db.conectar(rotas.CFG)
+    try:
+        conn.execute("INSERT INTO buscas_abrigados_log (user_id, consulta, buscado_em, resultados) VALUES (?,?,?,0)",
+                     (uid, consulta, buscado_em))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def ha(segundos) -> str:
+    return (datetime.now(timezone.utc) - timedelta(seconds=segundos)).isoformat(timespec="seconds")
+
+
+@pytest.mark.parametrize("termo", ["joana", "joana a", "j p", "a b"])
+def test_outros_abrigos_exigem_duas_palavras_de_duas_letras(cena, termo):
+    """Verificado, mas sem nome e sobrenome: só os próprios abrigos, com aviso; não consulta outros, não registra."""
+    cli, g1 = cena["cli"], cena["g1"]
+    verificar(cena)
+    chegar(cli, g1, cena["a1"], [{"nome": "Joana Ficticia Propria", "nome_mae": "Mae Ficticia"}])
+    r = busca(cli, g1, termo).json()
+    assert r["escopo"] == "todos" and r["aviso"] == AVISO_NOME_COMPLETO
+    assert all(x["meu_abrigo"] for x in r["resultados"]) and "Joana Fictícia Pereira" not in str(r)
+    assert log_de_buscas(cena["rotas"]) == []
+
+
+def test_busca_com_duas_palavras_valida_consulta_outros_registra_e_nao_traz_aviso(cena):
+    cli, g1 = cena["cli"], cena["g1"]
+    verificar(cena)
+    r = busca(cli, g1, "joana ficticia").json()
+    assert "aviso" not in r and r["limite_outros"] == 10
+    assert [x["nome"] for x in r["resultados"]] == ["Joana Fictícia Pereira"]
+    assert [(x["consulta"], x["resultados"]) for x in log_de_buscas(cena["rotas"])] == [("joana ficticia", 1)]
+    # palavra de 1 letra no meio não conta, mas duas de 2+ bastam
+    assert "aviso" not in busca(cli, g1, "joana d ficticia").json()
+
+
+def test_busca_nos_proprios_abrigos_nao_muda_com_uma_palavra(cena):
+    """Mesmo mínimo (2 letras), mesmos resultados, sem aviso para quem não é verificado; verificado ganha só o aviso."""
+    cli, g1, g2 = cena["cli"], cena["g1"], cena["g2"]
+    antes = busca(cli, g1, "jo").json()
+    assert antes == {"escopo": "meus_abrigos", "limite": 50,
+                     "resultados": [x for x in antes["resultados"] if x["meu_abrigo"]]}
+    assert [x["nome"] for x in antes["resultados"]] == ["João Fictício da Silva"]
+    assert busca(cli, g1, "a").status_code == 422
+    verificar(cena)
+    depois = busca(cli, g1, "jo").json()
+    assert depois["resultados"] == antes["resultados"] and depois["aviso"] == AVISO_NOME_COMPLETO
+    assert busca(cli, g2, "jo").json()["resultados"][0]["nome"] == "Joana Fictícia Pereira"
+
+
+def test_outros_abrigos_devolvem_no_maximo_10_e_o_limite_vem_na_resposta(cena):
+    cli, g1, g2 = cena["cli"], cena["g1"], cena["g2"]
+    chegar(cli, g2, cena["a2"], [{"nome": f"Maria Ficticia {i:02d}", "nome_mae": "Mae Ficticia"} for i in range(12)])
+    verificar(cena)
+    r = busca(cli, g1, "maria ficticia").json()
+    assert len(r["resultados"]) == 10 and r["limite_outros"] == 10 and r["limite"] == 50
+    assert not any(x["meu_abrigo"] for x in r["resultados"])
+    assert [x["nome"] for x in r["resultados"]] == [f"Maria Ficticia {i:02d}" for i in range(10)]
+    assert log_de_buscas(cena["rotas"])[-1]["resultados"] == 10
+    # os próprios continuam com o limite de 50: 12 pessoas próprias aparecem todas
+    chegar(cli, g1, cena["a1"], [{"nome": f"Paulo Ficticio {i:02d}", "nome_mae": "Mae Ficticia"} for i in range(12)])
+    assert len(busca(cli, g1, "paulo ficticio").json()["resultados"]) == 12
+
+
+def test_31a_busca_em_outros_abrigos_da_429_e_nao_e_registrada(cena):
+    cli, g1 = cena["cli"], cena["g1"]
+    verificar(cena)
+    for _ in range(30):
+        assert busca(cli, g1, "joana ficticia").status_code == 200
+    r = busca(cli, g1, "joana ficticia")
+    assert r.status_code == 429 and r.json()["detail"] == MUITAS_BUSCAS
+    assert len(log_de_buscas(cena["rotas"])) == 30
+    # com termo que não vai a outros abrigos, a busca nos próprios continua liberada e não conta
+    assert busca(cli, g1, "joao").status_code == 200
+    assert len(log_de_buscas(cena["rotas"])) == 30
+
+
+def test_limite_de_buscas_e_por_gestor(cena):
+    cli, g1, g2 = cena["cli"], cena["g1"], cena["g2"]
+    verificar(cena)
+    verificar(cena, g2, cena["a2"])
+    for _ in range(30):
+        busca(cli, g1, "joana ficticia")
+    assert busca(cli, g1, "joana ficticia").status_code == 429
+    assert busca(cli, g2, "joao fictício").status_code == 200
+
+
+def test_buscas_com_mais_de_uma_hora_nao_contam_para_o_limite(cena):
+    cli, g1, rotas = cena["cli"], cena["g1"], cena["rotas"]
+    verificar(cena)
+    for _ in range(40):
+        log_direto(rotas, g1, ha(3601))
+    for _ in range(29):
+        log_direto(rotas, g1, ha(3500))
+    assert busca(cli, g1, "joana ficticia").status_code == 200  # 29 recentes + esta = 30
+    assert busca(cli, g1, "joana ficticia").status_code == 429
+
+
+def test_busca_recusada_por_limite_nao_consulta_nem_registra(cena):
+    cli, g1, rotas = cena["cli"], cena["g1"], cena["rotas"]
+    verificar(cena)
+    for _ in range(30):
+        log_direto(rotas, g1, ha(10))
+    r = busca(cli, g1, "joana ficticia")
+    assert r.status_code == 429 and "Joana" not in r.text and len(log_de_buscas(rotas)) == 30

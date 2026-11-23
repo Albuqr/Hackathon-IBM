@@ -405,6 +405,7 @@ def test_busca_de_abrigados_vai_no_corpo_e_nunca_na_url(front, logar):
     assert api.chamadas[-1] == ("POST", "/abrigados/busca", 9, {"nome": "Joana Fictícia"}, None)
     js = open(os.path.join(os.path.dirname(__file__), "..", "static", "pessoas.js"), encoding="utf-8").read()
     assert 'acao("buscar_abrigados", { corpo: { nome: termo } })' in js
+    assert 'r.dados.aviso' in js and 'r.dados.limite_outros' in js  # dica de nome e sobrenome; limite de outros abrigos
 
 
 def test_tela_de_pessoas_nao_usa_dialogos_do_navegador_nem_console():

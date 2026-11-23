@@ -200,17 +200,19 @@ export function iniciarPessoas({ abrigo, msg }) {
     if (!r.ok) { resultados.replaceChildren(el("li", { class: "vazio", texto: r.erro })); return; }
     escopo.textContent = ESCOPO[r.dados.escopo] || escopo.textContent;
     const achados = r.dados.resultados;
-    if (!achados.length) { resultados.replaceChildren(el("li", { class: "vazio", texto: "Ninguém com esse nome." })); return; }
+    const dica = r.dados.aviso ? [el("li", { class: "vazio", texto: r.dados.aviso })] : [];  // outros abrigos pedem nome e sobrenome
+    if (!achados.length) { resultados.replaceChildren(el("li", { class: "vazio", texto: "Ninguém com esse nome." }), ...dica); return; }
     resultados.replaceChildren(...achados.map((x) => {
       // de outro abrigo só vêm o nome e o contato (ADR 0008)
       const meta = !x.meu_abrigo ? ["Em outro abrigo", x.contato].filter(Boolean).join(" · ") : [`Mãe: ${x.nome_mae}`,
         x.cpf ? `CPF ${cpfFormatado(x.cpf)}` : null, [x.abrigo.nome, x.abrigo.municipio].filter(Boolean).join(", "),
         `Entrada ${data(x.entrada_em)}`, x.presente ? "Presente" : `Saiu ${data(x.saida_em)}`].filter(Boolean).join(" · ");
       return el("li", {}, [el("div", { class: "item-texto" }, [el("span", { class: "item-titulo", texto: x.nome }), el("span", { class: "item-meta", texto: meta })])]);
-    }));
-    // o limite vale para cada grupo: os seus abrigos e os outros
+    }), ...dica);
+    // cada grupo tem seu limite: `limite` para os seus abrigos e `limite_outros` para os outros
+    const limiteOutros = r.dados.limite_outros || r.dados.limite;
     const meus = achados.filter((x) => x.meu_abrigo).length;
-    if (meus >= r.dados.limite || achados.length - meus >= r.dados.limite) resultados.append(el("li", { class: "vazio", texto: `Mostrando até ${r.dados.limite} dos seus abrigos e ${r.dados.limite} de outros. Digite mais do nome.` }));
+    if (meus >= r.dados.limite || achados.length - meus >= limiteOutros) resultados.append(el("li", { class: "vazio", texto: `Mostrando até ${r.dados.limite} dos seus abrigos e ${limiteOutros} de outros. Digite mais do nome.` }));
   }
   busca.addEventListener("input", () => { clearTimeout(t); t = setTimeout(procurar, 350); });
 
