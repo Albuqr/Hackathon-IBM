@@ -367,6 +367,24 @@ def test_busca_mostra_quem_ja_saiu_como_nao_presente(cena):
     assert x["presente"] is False and x["saida_em"]
 
 
+def test_muitos_de_outros_abrigos_nao_empurram_a_propria_gente_para_fora(cena):
+    """Limite separado: até 50 dos próprios abrigos (com quem saiu) e até 50 de outros; os próprios primeiro."""
+    cli, g1, g2, a2 = cena["cli"], cena["g1"], cena["g2"], cena["a2"]
+    for i in range(0, 60, 30):
+        r = chegar(cli, g2, a2, [{"nome": f"Silva Fic {i + j:03d}", "nome_mae": "M Fic"} for j in range(30)])
+        assert r.status_code == 200, r.text
+    pid = chegar(cli, g1, cena["a1"], [{"nome": "Zeca Silva Fic", "nome_mae": "M Fic"}]).json()["pessoas"][0]["id"]
+    assert cli.post(f"/brasil/abrigados/{pid}/saida", headers=como(g1)).status_code == 200
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+    r = busca(cli, g1, "silva").json()
+    meus = [x for x in r["resultados"] if x["meu_abrigo"]]
+    assert sorted(x["nome"] for x in meus) == ["Ana Fictícia da Silva", "João Fictício da Silva",
+                                               "Pedrinho Fictício da Silva", "Zeca Silva Fic"]
+    assert [x["presente"] for x in meus if x["nome"] == "Zeca Silva Fic"] == [False]
+    assert r["resultados"][:len(meus)] == meus  # os próprios primeiro
+    assert len(r["resultados"]) - len(meus) == r["limite"] == 50
+
+
 @pytest.mark.parametrize("nome", ["", "a", "  b  ", "%"])
 def test_busca_curta_422(cena, nome):
     assert busca(cena["cli"], cena["g1"], nome).status_code == 422

@@ -24,7 +24,7 @@ from .acesso import Acesso
 from .config import Config
 
 NECESSIDADES = ("idoso", "deficiencia", "saude", "gestante")
-LIMITE_BUSCA = 50
+LIMITE_BUSCA = 50  # por grupo: até 50 dos próprios abrigos e até 50 de outros
 MAX_NOME_BUSCA = 200  # o mesmo limite do nome no cadastro
 FOLGA_FUTURO = timedelta(minutes=10)  # relógio do celular adiantado; mais que isso é engano
 INATIVO = "Este abrigo está inativo. Reative o abrigo antes de registrar chegadas."
@@ -35,12 +35,17 @@ SQL_PESSOA = ("SELECT id, abrigo_id, familia_id, nome, nome_mae, cpf, entrada_em
               "FROM abrigados WHERE id=?")
 SQL_DO_ABRIGO = ("SELECT id, abrigo_id, familia_id, nome, nome_mae, cpf, entrada_em, saida_em, necessidades "
                  "FROM abrigados WHERE abrigo_id=? AND (? = 0 OR saida_em IS NULL) ORDER BY entrada_em DESC, id")
-SQL_BUSCA = (
+# duas consultas, cada uma com seu limite: gente de outros abrigos nunca empurra a própria gente para fora da lista
+SQL_BUSCA_MEUS = (
     "SELECT p.nome, p.nome_mae, p.cpf, p.entrada_em, p.saida_em, a.id AS abrigo_id, a.nome AS abrigo_nome, "
-    "a.municipio_ibge, a.gestor_id FROM abrigados p JOIN abrigos a ON a.id=p.abrigo_id "
-    "WHERE p.nome_busca LIKE ? ESCAPE '\\' "
-    "AND (a.gestor_id = ? OR (? = 1 AND a.sensivel = 0 AND p.saida_em IS NULL)) "
+    "a.municipio_ibge FROM abrigados p JOIN abrigos a ON a.id=p.abrigo_id "
+    "WHERE p.nome_busca LIKE ? ESCAPE '\\' AND a.gestor_id = ? "
     "ORDER BY p.saida_em IS NOT NULL, p.nome_busca, p.id LIMIT ?"
+)
+SQL_BUSCA_OUTROS = (
+    "SELECT p.nome FROM abrigados p JOIN abrigos a ON a.id=p.abrigo_id "
+    "WHERE p.nome_busca LIKE ? ESCAPE '\\' AND a.gestor_id != ? AND a.sensivel = 0 AND p.saida_em IS NULL "
+    "ORDER BY p.nome_busca, p.id LIMIT ?"
 )
 # auditoria da busca entre abrigos (ADR 0008): só gravada; nenhuma rota lê esta tabela
 SQL_LOG_BUSCA = "INSERT INTO buscas_abrigados_log (user_id, consulta, buscado_em, resultados) VALUES (?,?,?,?)"
@@ -246,17 +251,17 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
         conn = conectar()
         try:
             todos = gestor_verificado(conn, u["id"])
+            meus = conn.execute(SQL_BUSCA_MEUS, (padrao, u["id"], LIMITE_BUSCA)).fetchall()
+            outros = conn.execute(SQL_BUSCA_OUTROS, (padrao, u["id"], LIMITE_BUSCA)).fetchall() if todos else []
             resultados = []
-            for x in conn.execute(SQL_BUSCA, (padrao, u["id"], 1 if todos else 0, LIMITE_BUSCA)):
-                if x["gestor_id"] != u["id"]:
-                    resultados.append({"nome": x["nome"], "meu_abrigo": False, "contato": CONTATO_OUTRO_ABRIGO})
-                    continue
+            for x in meus:  # os próprios primeiro
                 info = malha.carregar().info(x["municipio_ibge"]) if x["municipio_ibge"] else None
                 resultados.append({"nome": x["nome"], "nome_mae": x["nome_mae"], "cpf": x["cpf"],
                                    "abrigo": {"id": x["abrigo_id"], "nome": x["abrigo_nome"],
                                               "municipio": info.get("nome") if info else None},
                                    "entrada_em": x["entrada_em"], "saida_em": x["saida_em"],
                                    "presente": x["saida_em"] is None, "meu_abrigo": True})
+            resultados += [{"nome": x["nome"], "meu_abrigo": False, "contato": CONTATO_OUTRO_ABRIGO} for x in outros]
             if todos:  # busca entre abrigos: fica registrada, mesmo sem resultado (ADR 0008)
                 # grava o termo usado na busca (normalizado), não o digitado: pontuação de enchimento não o esconde
                 conn.execute(SQL_LOG_BUSCA, (u["id"], termo,
