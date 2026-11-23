@@ -26,3 +26,34 @@ Pendências da fatia 1 (`feat/brasil-abrigos`). Contexto em `WALKTHROUGH.md` e n
   cadastrar como gestor de abrigo.
 - **Quem decide / o que destrava:** quem fizer o merge de `fix/security-backlog` com esta branch; não precisa de decisão
   de produto.
+
+## 4. Link da marca no cabeçalho com altura menor que 44px no celular
+- **O quê:** o link da marca no cabeçalho tem cerca de 25px de altura em 390px; as demais áreas de toque já têm 44px.
+- **Por quê:** difícil de tocar com o dedo; achado na conferência final (T11).
+- **Quem decide / o que destrava:** só ajuste de CSS; não precisa de decisão de produto.
+
+## 5. Botões desabilitados com pouco contraste e rodapé em 12px
+- **O quê:** botões desabilitados ficam com contraste baixo e o texto do rodapé usa 12px.
+- **Por quê:** acessibilidade (legibilidade para quem usa o celular ao ar livre ou tem baixa visão).
+- **Quem decide / o que destrava:** ajuste de CSS; confirmar com o design os valores de cor e tamanho.
+
+## 6. Zoom do mapa sobrepõe "Crises visíveis"
+- **O quê:** os botões de zoom do mapa ficam por cima do bloco "Crises visíveis".
+- **Por quê:** esconde parte da informação e do controle.
+- **Quem decide / o que destrava:** ajuste de layout do mapa; não precisa de decisão de produto.
+
+## 7. Nota no PRODUCT.md sobre a exceção do "Urgente"
+- **O quê:** registrar em `PRODUCT.md` que o "Urgente" do estoque é uma exceção deliberada à regra visual dos demais estados.
+- **Por quê:** sem a nota, a exceção parece um erro de estilo e pode ser "corrigida" por engano.
+- **Quem decide / o que destrava:** o João confirma o texto da nota.
+
+## 8. Node 24 falha quando a pasta de testes inteira roda
+- **O quê:** com Node 24, `node --test` apontando para a pasta toda falha; rodar o arquivo `e2e/app.spec.mjs` direto funciona.
+- **Por quê:** quem rodar os testes de tela pela pasta vê falha que não é do código.
+- **Quem decide / o que destrava:** investigar o comportamento do Node 24 ou fixar o comando no README.
+
+## 9. Teste com data fixa vencida (`test_fr025`)
+- **O quê:** `test_inteligencia.py::test_fr025_descartada_sai_do_mapa_e_nao_verificada_expira_em_7_dias` usa a data fixa
+  `2026-10-16`, mais 7 dias de validade; depois de 2026-10-23 a notícia já nasce vencida e o teste falha.
+- **Por quê:** é a única falha da suíte e não vem desta branch; esconde falhas reais.
+- **Quem decide / o que destrava:** trocar a data fixa por uma relativa a "agora"; não precisa de decisão de produto.
