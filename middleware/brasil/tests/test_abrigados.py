@@ -98,7 +98,9 @@ def test_uma_saida_da_familia_de_tres_deixa_2(cena):
 def test_saida_antes_da_entrada_422(cena):
     cli, g1 = cena["cli"], cena["g1"]
     pid = cena["chegada"]["pessoas"][0]["id"]
-    assert cli.post(f"/brasil/abrigados/{pid}/saida", json={"saida_em": "2020-01-01T00:00"}, headers=como(g1)).status_code == 422
+    r = cli.post(f"/brasil/abrigados/{pid}/saida", json={"saida_em": "2020-01-01T00:00"}, headers=como(g1))
+    assert r.status_code == 422 and r.json()["detail"] == "A saída não pode ser antes da entrada"
+    assert cli.get(f"/brasil/abrigos/{cena['a1']}/lotacao", headers=como(g1)).json()["presentes"] == 3  # continua presente
 
 
 def _ativar(cli, uid, aid, ativo: bool):
