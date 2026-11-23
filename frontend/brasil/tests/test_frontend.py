@@ -322,7 +322,7 @@ def test_pessoas_do_abrigo_lotado_avisa_e_verificado_busca_em_todos(front, logar
     api.respostas[("GET", "/abrigos")] = (200, [{**ABRIGO, "presentes": 125}, {**ABRIGO, "id": 5, "verificado": True}])
     html = cli.get("/brasil/abrigo/4/pessoas").get_data(as_text=True)
     assert "125 de 120" in html and "Acima da capacidade: 5 pessoas a mais." in html
-    assert 'id="lot-aviso" role="status" hidden' not in html and "Buscando em todos os abrigos." in html
+    assert 'id="lot-aviso" role="status" hidden' not in html and "Buscando em todos os abrigos, menos os sensíveis. De outros abrigos aparece só o nome." in html
     api.respostas[("GET", "/abrigos")] = (200, [{**ABRIGO, "presentes": 120}])
     html = cli.get("/brasil/abrigo/4/pessoas").get_data(as_text=True)
     assert "Abrigo lotado: não há vagas livres." in html and 'id="lot-aviso" role="status" hidden' not in html
@@ -384,3 +384,15 @@ def test_tela_de_pessoas_nao_usa_dialogos_do_navegador_nem_console():
     js = open(os.path.join(os.path.dirname(__file__), "..", "static", "pessoas.js"), encoding="utf-8").read()
     for proibido in ("alert(", "confirm(", "prompt(", "console."):
         assert proibido not in js
+
+
+def test_busca_de_outro_abrigo_mostra_so_nome_e_contato():
+    """ADR 0008: resultado de outro abrigo só tem nome, meu_abrigo e contato; a tela não lê abrigo/datas dele."""
+    import os
+    import re
+    js = open(os.path.join(os.path.dirname(__file__), "..", "static", "pessoas.js"), encoding="utf-8").read()
+    bloco = js[js.index("resultados.replaceChildren(...achados.map"):]
+    bloco = bloco[:bloco.index("}));")]
+    outro, meu = re.match(r".*?const meta = !x\.meu_abrigo \? (.*?) : (.*)", bloco, re.S).groups()
+    assert set(re.findall(r"x\.(\w+)", outro)) == {"contato"}
+    assert {"nome_mae", "cpf", "abrigo", "entrada_em", "presente", "saida_em"} <= set(re.findall(r"x\.(\w+)", meu))

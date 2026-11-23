@@ -220,8 +220,11 @@ def test_busca_depois_de_verificar_acha_nos_dois_e_cpf_so_dos_proprios(cena):
     meu, outro = por_nome["João Fictício da Silva"], por_nome["Joana Fictícia Pereira"]
     assert meu["cpf"] == "12345678901" and meu["meu_abrigo"] is True
     assert "cpf" not in outro and outro["meu_abrigo"] is False and "11122233344" not in str(r)
-    assert outro["nome_mae"] == "Clara Fictícia Pereira" and outro["presente"] is True
-    assert outro["abrigo"] == {"id": cena["a2"], "nome": "Escola Fictícia de Canoas", "municipio": "Canoas"}
+    # ADR 0008: de outro abrigo, só o nome e o caminho de contato
+    assert outro == {"nome": "Joana Fictícia Pereira", "meu_abrigo": False,
+                     "contato": "Entre em contato com a coordenação regional."}
+    for vazado in ("Clara Fictícia Pereira", "Escola Fictícia de Canoas", "Canoas"):
+        assert vazado not in r_texto(cli, g1, "joana")
     # gestor2 (não verificado) continua só nos dele
     r2 = busca(cli, cena["g2"], "jo").json()
     assert r2["escopo"] == "meus_abrigos" and [x["nome"] for x in r2["resultados"]] == ["Joana Fictícia Pereira"]
@@ -241,6 +244,55 @@ def test_abrigo_sensivel_de_outro_gestor_nunca_aparece_na_busca(cena):
         [x] = busca(cli, g2, "joaquina").json()["resultados"]
         assert x["nome"] == "Joaquina Fictícia Protegida" and x["meu_abrigo"] is True and x["abrigo"]["id"] == casa
         cli.post(f"/brasil/dev/abrigos/{casa}/verificar", headers=como(g2))
+
+
+CHAVES_MEU_ABRIGO = {"nome", "nome_mae", "cpf", "abrigo", "entrada_em", "saida_em", "presente", "meu_abrigo"}
+CHAVES_OUTRO_ABRIGO = {"nome", "meu_abrigo", "contato"}
+
+
+def r_texto(cli, uid, nome) -> str:
+    return busca(cli, uid, nome).text
+
+
+def test_resultado_de_outro_abrigo_tem_so_nome_e_contato(cena):
+    cli, g1, g2 = cena["cli"], cena["g1"], cena["g2"]
+    cli.post(f"/brasil/dev/abrigos/{cena['a2']}/verificar", headers=como(g2))
+    r = busca(cli, g2, "fictici").json()
+    assert r["escopo"] == "todos" and r["resultados"]
+    for x in r["resultados"]:
+        assert set(x) == (CHAVES_MEU_ABRIGO if x["meu_abrigo"] else CHAVES_OUTRO_ABRIGO), x
+    outros = [x for x in r["resultados"] if not x["meu_abrigo"]]
+    assert sorted(x["nome"] for x in outros) == ["Ana Fictícia da Silva", "João Fictício da Silva", "Pedrinho Fictício da Silva"]
+    assert {x["contato"] for x in outros} == {"Entre em contato com a coordenação regional."}
+    texto = r_texto(cli, g2, "silva")  # só gente do abrigo de g1
+    for vazado in ("Maria Fictícia da Silva", "Rosa Fictícia Souza", "Abrigo Ginásio Fictício", "Porto Alegre",
+                   "12345678901", "98765432100", "nome_mae", "entrada_em", "saida_em", "presente", '"abrigo"'):
+        assert vazado not in texto, vazado
+
+
+def test_quem_saiu_some_da_busca_de_outros_abrigos_e_continua_para_o_dono(cena):
+    cli, g1, g2 = cena["cli"], cena["g1"], cena["g2"]
+    cli.post(f"/brasil/dev/abrigos/{cena['a2']}/verificar", headers=como(g2))
+    assert [x["nome"] for x in busca(cli, g2, "joao").json()["resultados"]] == ["João Fictício da Silva"]
+    cli.post(f"/brasil/abrigados/{cena['chegada']['pessoas'][0]['id']}/saida", headers=como(g1))
+    assert busca(cli, g2, "joao").json()["resultados"] == []
+    [x] = busca(cli, g1, "joao").json()["resultados"]
+    assert x["meu_abrigo"] is True and x["presente"] is False and x["saida_em"]
+
+
+def test_visao_do_proprio_gestor_continua_completa(cena):
+    """O que o dono vê dos próprios abrigos não muda com a ADR 0008: CPF, datas, abrigo e município."""
+    cli, g1, a1 = cena["cli"], cena["g1"], cena["a1"]
+    entrada = cena["chegada"]["pessoas"][0]["entrada_em"]
+    for verificar in (False, True):
+        if verificar:
+            cli.post(f"/brasil/dev/abrigos/{a1}/verificar", headers=como(g1))
+        [x] = busca(cli, g1, "joao").json()["resultados"]
+        assert x == {"nome": "João Fictício da Silva", "nome_mae": "Maria Fictícia da Silva", "cpf": "12345678901",
+                     "abrigo": {"id": a1, "nome": "Abrigo Ginásio Fictício", "municipio": "Porto Alegre"},
+                     "entrada_em": entrada, "saida_em": None, "presente": True, "meu_abrigo": True}
+    pessoas = cli.get(f"/brasil/abrigos/{a1}/pessoas", headers=como(g1)).json()["grupos"][0]["pessoas"]
+    assert [p["cpf"] for p in pessoas] == ["12345678901", "98765432100", None]
 
 
 def test_busca_mostra_quem_ja_saiu_como_nao_presente(cena):

@@ -186,7 +186,7 @@ export function iniciarPessoas({ abrigo, msg }) {
   const busca = document.getElementById("busca");
   const resultados = document.getElementById("resultados");
   const escopo = document.getElementById("escopo");
-  const ESCOPO = { todos: "Buscando em todos os abrigos.", meus_abrigos: "Buscando só nos seus abrigos até um deles ser verificado." };
+  const ESCOPO = { todos: "Buscando em todos os abrigos, menos os sensíveis. De outros abrigos aparece só o nome.", meus_abrigos: "Buscando só nos seus abrigos até um deles ser verificado." };
   let t, pedido = 0;
   async function procurar() {
     const termo = busca.value.trim();
@@ -200,8 +200,9 @@ export function iniciarPessoas({ abrigo, msg }) {
     const achados = r.dados.resultados;
     if (!achados.length) { resultados.replaceChildren(el("li", { class: "vazio", texto: "Ninguém com esse nome." })); return; }
     resultados.replaceChildren(...achados.map((x) => {
-      const onde = [x.abrigo.nome, x.abrigo.municipio].filter(Boolean).join(", ");
-      const meta = [`Mãe: ${x.nome_mae}`, x.cpf ? `CPF ${cpfFormatado(x.cpf)}` : null, onde,
+      // de outro abrigo só vêm o nome e o contato (ADR 0008)
+      const meta = !x.meu_abrigo ? ["Em outro abrigo", x.contato].filter(Boolean).join(" · ") : [`Mãe: ${x.nome_mae}`,
+        x.cpf ? `CPF ${cpfFormatado(x.cpf)}` : null, [x.abrigo.nome, x.abrigo.municipio].filter(Boolean).join(", "),
         `Entrada ${data(x.entrada_em)}`, x.presente ? "Presente" : `Saiu ${data(x.saida_em)}`].filter(Boolean).join(" · ");
       return el("li", {}, [el("div", { class: "item-texto" }, [el("span", { class: "item-titulo", texto: x.nome }), el("span", { class: "item-meta", texto: meta })])]);
     }));

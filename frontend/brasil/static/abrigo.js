@@ -110,7 +110,7 @@ export function iniciarCadastro(raiz, { msg, editar = null, painel }) {
       const b = continuar();
       c.append(el("label", { class: "interruptor" }, [el("span", { texto: "Ativo, recebendo pessoas" }), ativo]),
         el("label", { class: "interruptor" }, [el("span", { texto: "Abrigo sensível" }), sensivel]),
-        el("p", { class: "dica", texto: "Sensível: o local não deve ser divulgado em público. Por enquanto a marcação fica só guardada." }),
+        el("p", { class: "dica", texto: "Sensível (abrigo de proteção, como de mulheres ou crianças): o local não deve ser divulgado e as pessoas daqui não aparecem na busca de outros abrigos." }),
         linhaAcoes(b));
       b.addEventListener("click", ok);
     },
