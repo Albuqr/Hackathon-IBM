@@ -53,10 +53,13 @@ def nome_busca(texto: str) -> str:
 
 
 def _cpf(valor: str | None, n: int) -> str | None:
-    """CPF opcional: guarda só os dígitos; se vier, precisa ter 11 (não confere dígito verificador)."""
+    """CPF opcional: aceita pontos, hífen e espaços e guarda só os dígitos; se vier, precisa ter 11
+    (não confere dígito verificador). Letra ou outro caractere → 422."""
     if valor is None:
         return None
-    digitos = re.sub(r"\D", "", valor)
+    if re.search(r"[^0-9.\-\s]", valor):  # 0-9 e não \d: \d aceita dígitos de outras escritas
+        raise HTTPException(422, f"Pessoa {n}: o CPF deve ter só números (11 dígitos)")
+    digitos = re.sub(r"[^0-9]", "", valor)
     if not digitos:
         return None
     if len(digitos) != 11:

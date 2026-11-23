@@ -152,6 +152,20 @@ def test_cpf_em_branco_ou_so_pontuacao_vira_nulo(cena):
     assert r.status_code == 200 and r.json()["pessoas"][0]["cpf"] is None
 
 
+@pytest.mark.parametrize("cpf", ["123.456.789-0a", "abc12345678901", "123/456/789-01", "１２３４５６７８９０１"])
+def test_cpf_com_letra_ou_outro_caractere_422(cena, cpf):
+    cli, g1, a1 = cena["cli"], cena["g1"], cena["a1"]
+    r = chegar(cli, g1, a1, [{"nome": "Letra Fictícia", "nome_mae": "Mãe Fictícia", "cpf": cpf}])
+    assert r.status_code == 422 and "só números" in r.json()["detail"]
+    assert cli.get(f"/brasil/abrigos/{a1}/lotacao", headers=como(g1)).json()["presentes"] == 3
+
+
+def test_cpf_com_pontos_hifen_e_espacos_vale(cena):
+    cli, g1, a1 = cena["cli"], cena["g1"], cena["a1"]
+    r = chegar(cli, g1, a1, [{"nome": "Pontuado Fictício", "nome_mae": "Mãe Fictícia", "cpf": " 123.456.789 - 01 "}])
+    assert r.status_code == 200 and r.json()["pessoas"][0]["cpf"] == "12345678901"
+
+
 def test_passar_da_capacidade_avisa_mas_registra(api):
     cli, _ = api
     g1 = cli.post("/brasil/dev/usuario/gestor").json()["id"]
