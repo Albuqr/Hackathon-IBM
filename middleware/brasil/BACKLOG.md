@@ -22,6 +22,9 @@ Pendências da fatia 1 (`feat/brasil-abrigos`). Contexto em `WALKTHROUGH.md` e n
   `fix/security-backlog` (CSRF), a página precisa de `{% csrf_token %}` no formulário e, no `<head>`, das duas linhas
   do `base.html` daquela branch (`<meta name="csrf-token" content="{{ csrf_value() }}">` e o `<script>` de
   `csrf.js`); e `cadastro.html` deve entrar em `FORMULARIOS` no `test_csrf.py` daquela branch.
+- **Também `entrar.html`:** o Semgrep (`django-no-csrf-token`) acusa o formulário de `entrar.html` (linha 24) do mesmo jeito.
+  A página já existia em `main` e também não estende `base.html`; vale a mesma correção e entrar em `FORMULARIOS` no
+  `test_csrf.py` daquela branch.
 - **Por quê:** com o CSRF em modo de bloqueio, o `POST` do cadastro sem o token responde 400 e ninguém consegue se
   cadastrar como gestor de abrigo.
 - **Quem decide / o que destrava:** quem fizer o merge de `fix/security-backlog` com esta branch; não precisa de decisão
