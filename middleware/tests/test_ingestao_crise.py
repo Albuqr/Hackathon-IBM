@@ -245,8 +245,17 @@ def test_endpoint_tipo_invalido_rejeitado_e_logado(app_db, cli, rede_gravada, ca
     assert all(l["crisis_type"] != "banana" for l in app_db.linhas().values())
 
 
-def test_endpoint_nao_chama_orchestrate(app_db, cli, rede_gravada, monkeypatch):
+def test_nucleo_nao_chama_orchestrate(app_db, cli, rede_gravada, monkeypatch):
+    """/ingest, /chat e /predictions não tocam o watsonx (call_orchestrate só sobrevive para o Brasil)."""
+    from middleware import orquestracao_wxo
     monkeypatch.setenv("MONITORING_AGENT_ID", "agente")
+    for nome in ("call_orchestrate", "get_wxo_token"):
+        monkeypatch.setattr(orquestracao_wxo, nome, lambda *a, **k: pytest.fail("watsonx não deve ser chamado"))
     monkeypatch.setattr(app_db, "call_orchestrate", lambda *a, **k: pytest.fail("watsonx não deve ser chamado"))
+    assert not hasattr(app_db, "get_wxo_token") and not hasattr(app_db, "_token_cache")
     llm.definir_provedor(Classificador())
     assert cli.post("/ingest").json()["ok"]
+    llm.definir_provedor(ProvedorFalso([diz("ok")]))
+    assert cli.post("/chat", json={"text": "oi"}).json()["reply"] == "ok"
+    llm.definir_provedor(ProvedorFalso([LLMIndisponivel("x")]))
+    assert cli.get("/predictions").status_code == 200
