@@ -337,6 +337,19 @@ def test_pessoas_de_abrigo_que_nao_e_do_gestor_da_404(front, logar):
     assert cli.get("/brasil/abrigo/4/pessoas").status_code == 502
 
 
+def test_pessoas_e_estoque_de_abrigo_alheio_dao_404_quando_a_api_diz_que_nao_e_dele(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    # ordem importa: a ApiFalsa casa por prefixo, "/abrigos/77" antes de "/abrigos"
+    api.respostas[("GET", "/abrigos/77")] = (404, {"detail": "Abrigo não encontrado"})
+    api.respostas[("GET", "/abrigos")] = (200, [ABRIGO])  # a lista do gestor não tem o 77
+    r = cli.get("/brasil/abrigo/77/pessoas")
+    assert r.status_code == 404 and "Ginásio Fictício" not in r.get_data(as_text=True)
+    assert api.chamadas[-1][:3] == ("GET", "/abrigos", 9)
+    assert cli.get("/brasil/abrigo/77/estoque").status_code == 404
+    assert api.chamadas[-1][:3] == ("GET", "/abrigos/77", 9)  # parou no 404: nem estoque nem grupos
+
+
 @pytest.mark.parametrize("papel", ["volunteer", "org", "admin"])
 def test_pessoas_do_abrigo_so_para_gestor(front, logar, papel):
     cli, api = front
