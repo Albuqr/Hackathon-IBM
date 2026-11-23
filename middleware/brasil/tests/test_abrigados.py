@@ -227,6 +227,22 @@ def test_busca_depois_de_verificar_acha_nos_dois_e_cpf_so_dos_proprios(cena):
     assert r2["escopo"] == "meus_abrigos" and [x["nome"] for x in r2["resultados"]] == ["Joana Fictícia Pereira"]
 
 
+def test_abrigo_sensivel_de_outro_gestor_nunca_aparece_na_busca(cena):
+    """ADR 0008: abrigo de proteção (sensível) fica fora da busca entre abrigos; o próprio gestor ainda acha."""
+    cli, g1, g2 = cena["cli"], cena["g1"], cena["g2"]
+    casa = abrigo(cli, g2, nome="Casa de Acolhimento Fictícia", sensivel=True, **CANOAS)
+    assert chegar(cli, g2, casa, [{"nome": "Joaquina Fictícia Protegida", "nome_mae": "Mãe Fictícia"}]).status_code == 200
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+    r = busca(cli, g1, "joaquina")
+    assert r.json()["escopo"] == "todos" and r.json()["resultados"] == [] and "Protegida" not in r.text
+    assert sorted(x["nome"] for x in busca(cli, g1, "jo").json()["resultados"]) == ["Joana Fictícia Pereira", "João Fictício da Silva"]
+    # o gestor da casa acha a própria gente, verificado ou não
+    for _ in range(2):
+        [x] = busca(cli, g2, "joaquina").json()["resultados"]
+        assert x["nome"] == "Joaquina Fictícia Protegida" and x["meu_abrigo"] is True and x["abrigo"]["id"] == casa
+        cli.post(f"/brasil/dev/abrigos/{casa}/verificar", headers=como(g2))
+
+
 def test_busca_mostra_quem_ja_saiu_como_nao_presente(cena):
     cli, g1 = cena["cli"], cena["g1"]
     cli.post(f"/brasil/abrigados/{cena['chegada']['pessoas'][0]['id']}/saida", headers=como(g1))

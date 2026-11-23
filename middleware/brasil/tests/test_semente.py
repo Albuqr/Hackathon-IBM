@@ -71,3 +71,22 @@ def test_semente_pela_api_estoque_lotacao_e_busca_sem_verificar(ambiente):
     busca = cli.get("/brasil/abrigados/busca", params={"nome": "exemplo"}, headers=g1).json()
     assert busca["escopo"] == "meus_abrigos" and busca["resultados"]
     assert all(r["meu_abrigo"] for r in busca["resultados"])
+
+
+def test_semente_casa_de_acolhimento_e_sensivel_e_fica_fora_da_busca_de_outro_gestor(ambiente):
+    """ADR 0008: a Casa de Acolhimento de Teste (sensível) não aparece para `gestor`, mesmo verificado."""
+    rotas = semear()
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    app = FastAPI()
+    app.include_router(rotas.router)
+    cli = TestClient(app)
+    g1 = {"X-Brasil-Usuario": str(rotas.dev_usuario("gestor")["id"])}
+    g2 = {"X-Brasil-Usuario": str(rotas.dev_usuario("gestor2")["id"])}
+    casa = [a for a in cli.get("/brasil/abrigos", headers=g2).json() if a["nome"] == "Casa de Acolhimento de Teste"]
+    assert len(casa) == 1 and casa[0]["sensivel"] is True
+    (abrigo,) = cli.get("/brasil/abrigos", headers=g1).json()
+    cli.post(f"/brasil/dev/abrigos/{abrigo['id']}/verificar", headers=g1)
+    r = cli.get("/brasil/abrigados/busca", params={"nome": "joana ficticia reis"}, headers=g1)
+    assert r.json()["escopo"] == "todos" and r.json()["resultados"] == [] and "Joana" not in r.text
+    assert len(cli.get("/brasil/abrigados/busca", params={"nome": "joana ficticia reis"}, headers=g2).json()["resultados"]) == 1

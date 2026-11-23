@@ -4,6 +4,7 @@ Só o gestor de abrigo usa estas rotas, e só nos próprios abrigos (abrigo de o
 Nome, nome da mãe e CPF nunca saem para voluntário, ONG, admin, mapa ou log: nada aqui imprime ou loga pessoas.
 
 Busca por nome: se algum abrigo do gestor estiver verificado, procura em todos os abrigos; senão, só nos dele.
+Abrigo sensível (de proteção: mulheres, crianças...) só aparece na busca do próprio gestor (ADR 0008).
 CPF só aparece para gente dos próprios abrigos.
 """
 import json
@@ -31,7 +32,7 @@ SQL_DO_ABRIGO = ("SELECT id, abrigo_id, familia_id, nome, nome_mae, cpf, entrada
 SQL_BUSCA = (
     "SELECT p.nome, p.nome_mae, p.cpf, p.entrada_em, p.saida_em, a.id AS abrigo_id, a.nome AS abrigo_nome, "
     "a.municipio_ibge, a.gestor_id FROM abrigados p JOIN abrigos a ON a.id=p.abrigo_id "
-    "WHERE p.nome_busca LIKE ? ESCAPE '\\' AND (? = 1 OR a.gestor_id = ?) "
+    "WHERE p.nome_busca LIKE ? ESCAPE '\\' AND (a.gestor_id = ? OR (? = 1 AND a.sensivel = 0)) "
     "ORDER BY p.saida_em IS NOT NULL, p.nome_busca, p.id LIMIT ?"
 )
 
@@ -222,7 +223,7 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
         try:
             todos = gestor_verificado(conn, u["id"])
             resultados = []
-            for x in conn.execute(SQL_BUSCA, (padrao, 1 if todos else 0, u["id"], LIMITE_BUSCA)):
+            for x in conn.execute(SQL_BUSCA, (padrao, u["id"], 1 if todos else 0, LIMITE_BUSCA)):
                 info = malha.carregar().info(x["municipio_ibge"]) if x["municipio_ibge"] else None
                 item = {"nome": x["nome"], "nome_mae": x["nome_mae"],
                         "abrigo": {"id": x["abrigo_id"], "nome": x["abrigo_nome"], "municipio": info.get("nome") if info else None},
