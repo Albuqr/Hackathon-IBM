@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from middleware import llm
 from middleware.gravacao import TIPOS_CRISE
 from middleware.llm import LLMIndisponivel, RespostaLLM
-from middleware.tests.falsos import ProvedorFalso
+from middleware.tests.falsos import ProvedorFalso, diz
 
 # 3 USGS + 4 GDACS (fixtures, sem as duplicatas) + 9 conflitos fixos do fallback
 DISTINTOS = 16
@@ -42,11 +42,11 @@ def sem_provedor_global():
     llm._uso.update(dia=None, n=0)
 
 
-def ingerir(app_db, provedor):
+def ingerir(app_db, provedor, **kw):
     db = app_db.get_db()
     try:
         from middleware.ingestao_crise import executar_ingestao
-        return executar_ingestao(db, llm=provedor)
+        return executar_ingestao(db, llm=provedor, **kw)
     finally:
         db.close()
 
@@ -106,6 +106,97 @@ def test_classificacao_existente_nao_e_sobrescrita(app_db, rede_gravada):
     ingerir(app_db, p)
     assert len(p.chamadas) == DISTINTOS - 1
     assert app_db.linhas()["gdacs-EQ1578798"]["severity"] == 5
+
+
+# ---------- limite de classificação por ciclo (CRISIS_LLM_MAX_POR_CICLO) ----------
+
+def _ok():
+    return diz(json.dumps({"tipo": "seismic", "severidade": 4, "urgencia": "24h", "confianca": 0.9,
+                           "justificativa": "teste"}))
+
+
+def _evento(i, data="sem"):
+    e = {"id": f"t-{i}", "title": f"Evento {i}", "country": "X", "country_iso3": "XXX", "lat": 1.0, "lon": 2.0,
+         "severity": 1, "urgency": "monitoring", "crisis_type": "seismic", "source": "teste", "people_affected": 0}
+    if data != "sem":
+        e["date"] = data
+    return e
+
+
+def _marcados(app_db):
+    import sqlite3
+    conn = sqlite3.connect(app_db.get_db().execute("PRAGMA database_list").fetchone()[2])
+    try:
+        return {r[0] for r in conn.execute("SELECT crisis_id FROM classifications_log WHERE needs_review=1")}
+    finally:
+        conn.close()
+
+
+def test_limite_por_ciclo_classifica_os_mais_recentes_e_o_excedente_vai_ao_fallback(app_db, monkeypatch):
+    monkeypatch.setenv("CRISIS_LLM_MAX_POR_CICLO", "2")
+    eventos = [_evento(1, "2026-11-20T10:00:00Z"), _evento(2, "2026-11-23T10:00:00Z"), _evento(3),
+               _evento(4, "2026-11-22T10:00:00Z"), _evento(5, "2026-11-21T10:00:00Z")]
+    p = ProvedorFalso([_ok(), _ok()])
+    r = ingerir(app_db, p, coletar=lambda: eventos)
+    assert len(p.chamadas) == 2
+    assert r["crises_classified"] == 2 and r["excedente_por_limite"] == 3 and r["degradado"] is False
+    assert r["crises_saved"] == 5 and r["errors"] == []  # nenhum some
+    linhas = app_db.linhas()
+    assert set(linhas) == {f"t-{i}" for i in range(1, 6)}
+    assert {i for i in linhas if linhas[i]["severity"] == 4} == {"t-2", "t-4"}  # os 2 mais recentes foram ao LLM
+    assert {i for i in linhas if linhas[i]["severity"] == 1} == {"t-1", "t-3", "t-5"}  # regra da fonte
+    assert _marcados(app_db) == {"t-1", "t-3", "t-5"}  # só o excedente fica marcado para revisão
+
+
+def test_evento_sem_data_vai_por_ultimo_em_ordem_estavel(app_db, monkeypatch):
+    monkeypatch.setenv("CRISIS_LLM_MAX_POR_CICLO", "2")
+    eventos = [_evento(1), _evento(2), _evento(3, "2026-11-01T00:00:00Z")]
+    p = ProvedorFalso([_ok(), _ok()])
+    ingerir(app_db, p, coletar=lambda: eventos)
+    vistos = [json.loads(c[1][0].texto.split("<evento_nao_confiavel>")[1].split("</evento_nao_confiavel>")[0])["id"]
+              for c in p.chamadas]
+    assert vistos == ["t-3", "t-1"]
+
+
+def test_ids_existentes_nao_sao_reclassificados_em_ciclos_seguintes(app_db, monkeypatch):
+    monkeypatch.setenv("CRISIS_LLM_MAX_POR_CICLO", "2")
+    eventos = [_evento(i, f"2026-11-0{i}T00:00:00Z") for i in range(1, 6)]
+    p1 = ProvedorFalso([_ok(), _ok()])
+    ingerir(app_db, p1, coletar=lambda: eventos)
+    antes = app_db.linhas()
+    p2 = ProvedorFalso([])  # qualquer chamada estoura (roteiro esgotado)
+    r = ingerir(app_db, p2, coletar=lambda: eventos)
+    assert p2.chamadas == [] and len(p1.chamadas) == 2
+    assert r["crises_classified"] == 0 and r["excedente_por_limite"] == 0 and r["crises_saved"] == 0
+    assert r["skipped_existing"] == 5
+    assert app_db.linhas() == antes  # nada novo gravado nem atualizado (inclusive o excedente do ciclo 1)
+
+
+def test_limite_e_excedente_coexistem_com_degradado(app_db, monkeypatch):
+    monkeypatch.setenv("CRISIS_LLM_MAX_POR_CICLO", "3")
+    eventos = [_evento(i, f"2026-11-0{i}T00:00:00Z") for i in range(1, 6)]
+    r = ingerir(app_db, ProvedorFalso([_ok(), LLMIndisponivel("teto")]), coletar=lambda: eventos)
+    assert r["degradado"] is True and r["crises_classified"] == 1 and r["excedente_por_limite"] == 2
+    assert len(app_db.linhas()) == 5 and r["crises_saved"] == 5
+    assert _marcados(app_db) == {"t-2", "t-1"}  # só o excedente por limite; o degradado não é marcado
+
+
+@pytest.mark.parametrize("valor", [None, "abc", "0", "-3"])
+def test_limite_invalido_usa_o_padrao_30_e_loga(app_db, monkeypatch, caplog, valor):
+    from middleware.ingestao_crise import limite_por_ciclo
+    if valor is None:
+        monkeypatch.delenv("CRISIS_LLM_MAX_POR_CICLO", raising=False)
+    else:
+        monkeypatch.setenv("CRISIS_LLM_MAX_POR_CICLO", valor)
+    with caplog.at_level(logging.WARNING):
+        assert limite_por_ciclo() == 30
+    assert ("CRISIS_LLM_MAX_POR_CICLO" in caplog.text) == (valor is not None)
+
+
+def test_limite_valido_e_lido(monkeypatch):
+    from middleware.ingestao_crise import limite_por_ciclo
+    monkeypatch.setenv("CRISIS_LLM_MAX_POR_CICLO", "7")
+    assert limite_por_ciclo() == 7
 
 
 # ---------- endpoint ----------
