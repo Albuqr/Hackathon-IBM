@@ -101,6 +101,58 @@ def test_saida_antes_da_entrada_422(cena):
     assert cli.post(f"/brasil/abrigados/{pid}/saida", json={"saida_em": "2020-01-01T00:00"}, headers=como(g1)).status_code == 422
 
 
+def _ativar(cli, uid, aid, ativo: bool):
+    corpo = {"nome": "Abrigo Ginásio Fictício", "endereco": "", **POA, "capacidade": 120, "tipo": "temporario", "ativo": ativo}
+    r = cli.put(f"/brasil/abrigos/{aid}", json=corpo, headers=como(uid))
+    assert r.status_code == 200 and r.json()["ativo"] is ativo, r.text
+
+
+def test_chegada_em_abrigo_inativo_409_e_nada_e_gravado(cena):
+    cli, g1, a1 = cena["cli"], cena["g1"], cena["a1"]
+    _ativar(cli, g1, a1, False)
+    r = chegar(cli, g1, a1, [{"nome": "Inativo Fictício", "nome_mae": "Mãe Fictícia"}, {"nome": "Outro Fictício", "nome_mae": "Mãe Fictícia"}])
+    assert r.status_code == 409
+    assert r.json()["detail"] == "Este abrigo está inativo. Reative o abrigo antes de registrar chegadas."
+    conn = db.conectar(cena["rotas"].CFG)
+    assert conn.execute("SELECT COUNT(*) FROM abrigados WHERE abrigo_id=?", (a1,)).fetchone()[0] == 3
+    assert conn.execute("SELECT COUNT(*) FROM familias WHERE abrigo_id=?", (a1,)).fetchone()[0] == 1
+    conn.close()
+
+
+def test_abrigo_criado_inativo_tambem_recusa_chegada(api):
+    cli, _ = api
+    g = cli.post("/brasil/dev/usuario/gestor").json()["id"]
+    aid = abrigo(cli, g, ativo=False)
+    assert chegar(cli, g, aid, [{"nome": "Inativo Fictício", "nome_mae": "Mãe Fictícia"}]).status_code == 409
+    assert cli.get(f"/brasil/abrigos/{aid}/lotacao", headers=como(g)).json()["presentes"] == 0
+
+
+def test_reativar_o_abrigo_volta_a_aceitar_chegada(cena):
+    cli, g1, a1 = cena["cli"], cena["g1"], cena["a1"]
+    pessoa = [{"nome": "Reativado Fictício", "nome_mae": "Mãe Fictícia"}]
+    _ativar(cli, g1, a1, False)
+    assert chegar(cli, g1, a1, pessoa).status_code == 409
+    _ativar(cli, g1, a1, True)
+    r = chegar(cli, g1, a1, pessoa)
+    assert r.status_code == 200, r.text
+    assert r.json()["lotacao"]["presentes"] == 4
+
+
+def test_saida_de_abrigo_inativo_continua_valendo(cena):
+    cli, g1, a1 = cena["cli"], cena["g1"], cena["a1"]
+    _ativar(cli, g1, a1, False)
+    pid = cena["chegada"]["pessoas"][0]["id"]
+    r = cli.post(f"/brasil/abrigados/{pid}/saida", headers=como(g1))
+    assert r.status_code == 200, r.text
+    assert r.json()["pessoa"]["presente"] is False and r.json()["lotacao"]["presentes"] == 2
+
+
+def test_abrigo_inativo_de_outro_gestor_continua_404(cena):
+    cli = cena["cli"]
+    _ativar(cli, cena["g2"], cena["a2"], False)
+    assert chegar(cli, cena["g1"], cena["a2"], [{"nome": "Intruso Fictício", "nome_mae": "Mãe Fictícia"}]).status_code == 404
+
+
 def test_entrada_no_futuro_422_com_folga_de_10_minutos(cena):
     cli, g1, a1 = cena["cli"], cena["g1"], cena["a1"]
     agora = datetime.now(timezone.utc)

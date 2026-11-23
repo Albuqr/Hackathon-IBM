@@ -23,6 +23,7 @@ from .config import Config
 NECESSIDADES = ("idoso", "deficiencia", "saude", "gestante")
 LIMITE_BUSCA = 50
 FOLGA_FUTURO = timedelta(minutes=10)  # relógio do celular adiantado; mais que isso é engano
+INATIVO = "Este abrigo está inativo. Reative o abrigo antes de registrar chegadas."
 
 SQL_PESSOA = ("SELECT id, abrigo_id, familia_id, nome, nome_mae, cpf, entrada_em, saida_em, necessidades "
               "FROM abrigados WHERE id=?")
@@ -144,6 +145,8 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
         conn = conectar()
         try:
             a = abrigo_do_gestor(conn, abrigo_id, u)
+            if not a["ativo"]:  # saída continua liberada: quem está lá sempre pode sair
+                raise HTTPException(409, INATIVO)
             avisos = []
             cpfs = [c for _, _, c, _ in limpas if c]
             if len(cpfs) != len(set(cpfs)):
