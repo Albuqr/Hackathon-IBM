@@ -566,3 +566,12 @@ body.solta { min-height: 100dvh; display: grid; place-items: center; padding: 24
   /* botões (inclusive os pequenos), chips e opções dos controles segmentados */
   .botao, .pilula, .chip, .segmentado button { min-height: 44px; }
 }
+
+/* ---------- celular: controles segmentados dos formulários em grade de 2 colunas, células iguais ----------
+   (status Urgente/Precisa/OK/Sobrando, os 4 grupos, Temporário/Permanente, urgência da campanha) */
+@media (max-width: 860px) {
+  .etapa-corpo .segmentado, .secao .segmentado { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px;
+    border-radius: var(--r-medio); }
+  .etapa-corpo .segmentado button, .secao .segmentado button { border-radius: calc(var(--r-medio) - 3px); padding: 7px 10px;
+    white-space: normal; line-height: 1.2; text-align: center; }
+}
