@@ -1,0 +1,55 @@
+{% extends "brasil/base.html" %}
+{% block titulo %}Pessoas · {{ a.nome }} · Crisis Monitor Brasil{% endblock %}
+{% block leaflet %}{% endblock %}
+{% block principal %}
+{% set presentes = a.presentes or 0 %}
+<div class="rolagem"><div class="pagina pessoas-pagina">
+  <p><a class="voltar" href="{{ url_for('brasil.abrigo') }}">‹ Meus abrigos</a></p>
+  <div class="pagina-cabeca">
+    <h1>{{ a.nome }}</h1>
+    <p>{{ [a.municipio, a.uf]|select|join(' · ') }}{% if not a.ativo %} · Inativo{% endif %}</p>
+  </div>
+
+  <section class="secao lotacao" aria-label="Lotação">
+    <div class="numeros">
+      <div><b id="lot-num">{{ presentes }} de {{ a.capacidade }}</b><span>pessoas presentes</span></div>
+    </div>
+    <p class="aviso" id="lot-aviso" role="status" {% if presentes < a.capacidade %}hidden{% endif %}>
+      {% if presentes > a.capacidade %}Acima da capacidade: {{ presentes - a.capacidade }} {{ 'pessoa' if presentes - a.capacidade == 1 else 'pessoas' }} a mais.{% else %}Abrigo lotado: não há vagas livres.{% endif %}
+    </p>
+  </section>
+
+  <p class="aviso" id="msg" role="alert" hidden></p>
+
+  {% if a.ativo %}
+  <div class="acoes" id="chegada-acoes">
+    <button class="botao botao-primario" type="button" id="abrir-chegada">Registrar chegada</button>
+  </div>
+  <div id="chegada" hidden></div>
+  {% else %}
+  <p class="aviso" id="abrigo-inativo">Este abrigo está inativo. Reative o abrigo antes de registrar chegadas.
+    <a href="{{ url_for('brasil.abrigo_editar', aid=a.id) }}">Reativar o abrigo</a></p>
+  {% endif %}
+
+  <section class="secao" aria-labelledby="t-presentes">
+    <h2 id="t-presentes">Quem está no abrigo</h2>
+    <ul class="lista" id="presentes"><li class="vazio">Carregando…</li></ul>
+  </section>
+
+  <section class="secao" aria-labelledby="t-busca">
+    <h2 id="t-busca">Procurar uma pessoa</h2>
+    <p class="dica" id="escopo">{{ 'Buscando em todos os abrigos, menos os sensíveis. De outros abrigos aparece só o nome.' if busca_todos else 'Buscando só nos seus abrigos até um deles ser verificado.' }}</p>
+    <label class="rotulo">Nome da pessoa
+      <input type="search" id="busca" autocomplete="off" placeholder="ex.: joao silva" maxlength="200">
+    </label>
+    <ul class="lista" id="resultados" hidden></ul>
+  </section>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script id="br-abrigo" type="application/json">{{ {'id': a.id, 'nome': a.nome, 'capacidade': a.capacidade, 'presentes': a.presentes or 0}|tojson }}</script>
+<script type="module">
+import { iniciarPessoas } from "{{ url_for('brasil.static', filename='pessoas.js') }}";
+iniciarPessoas({ abrigo: JSON.parse(document.getElementById("br-abrigo").textContent), msg: document.getElementById("msg") });
+</script>
+{% endblock %}

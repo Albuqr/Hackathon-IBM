@@ -22,8 +22,10 @@ class WatsonxProvedor(Provedor):
         self._chamar = chamar
 
     def disponivel(self, agente: str) -> tuple[bool, str]:
+        if agente not in IDS:  # agente só local (ex.: itens_duplicados, ADR 0007)
+            return False, f"sem agente {agente} no watsonx"
         faltam = [v for v in ("WO_API_KEY", "WO_INSTANCE") if not os.environ.get(v)]
-        if agente in IDS and not os.environ.get(IDS[agente]):
+        if not os.environ.get(IDS[agente]):
             faltam.append(IDS[agente])
         return (not faltam, f"sem {', '.join(faltam)}" if faltam else "")
 

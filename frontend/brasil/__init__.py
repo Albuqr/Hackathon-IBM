@@ -13,8 +13,8 @@ from flask import (Blueprint, Response, abort, current_app, jsonify, redirect, r
 from .api_cliente import ApiHttp
 from .encaminhador import Recusa, encaminhar
 
-PERFIS = {"voluntario": "volunteer", "ong": "org", "admin": "admin"}
-NOME_PAPEL = {"volunteer": "Voluntário", "org": "ONG", "admin": "Admin"}
+PERFIS = {"voluntario": "volunteer", "ong": "org", "admin": "admin", "gestor": "gestor_abrigo", "gestor2": "gestor_abrigo"}
+NOME_PAPEL = {"volunteer": "Voluntário", "org": "ONG", "admin": "Admin", "gestor_abrigo": "Gestor de Abrigo"}
 
 bp = Blueprint("brasil", __name__, url_prefix="/brasil",
                template_folder="templates", static_folder="static", static_url_path="/static")
@@ -51,6 +51,11 @@ def exige_login(*papeis):
     return deco
 
 
+def _destino():
+    """Primeira tela depois de entrar: o gestor de abrigo vai para o próprio abrigo; os outros, para o mapa."""
+    return url_for("brasil.abrigo") if session.get("br_role") == "gestor_abrigo" else url_for("brasil.mapa")
+
+
 def _entrar(usuario: dict):
     session["br_user_id"] = usuario["id"]
     session["br_role"] = usuario["role"]
@@ -67,7 +72,7 @@ def contexto():
 # ── entrada ───────────────────────────────────────────────────────────
 @bp.route("/")
 def inicio():
-    return redirect(url_for("brasil.mapa") if "br_user_id" in session else url_for("brasil.entrar"))
+    return redirect(_destino() if "br_user_id" in session else url_for("brasil.entrar"))
 
 
 @bp.route("/entrar", methods=["GET", "POST"])
@@ -77,9 +82,30 @@ def entrar():
         st, d = api()("POST", "/login", json={"email": request.form.get("email", ""), "senha": request.form.get("senha", "")})
         if st == 200:
             _entrar(d)
-            return redirect(url_for("brasil.mapa"))
+            return redirect(_destino())
         erro = d.get("detail", "Não foi possível entrar") if isinstance(d, dict) else "Não foi possível entrar"
     return render_template("brasil/entrar.html", erro=erro, dev_login=dev_login_ligado())
+
+
+@bp.route("/cadastro", methods=["GET", "POST"])
+def cadastro():
+    """Cadastro aberto, só para gestor de abrigo (ADR 0005); entra e vai direto para o abrigo."""
+    erro, f = None, request.form
+    if request.method == "POST":
+        corpo = {"name": f.get("nome", "").strip(), "email": f.get("email", "").strip(),
+                 "phone": f.get("telefone", "").strip() or None, "senha": f.get("senha", "")}
+        if len(corpo["name"]) < 2:
+            erro = "Informe seu nome."
+        elif len(corpo["senha"]) < 8:
+            erro = "A senha precisa ter pelo menos 8 caracteres."
+        else:
+            st, d = api()("POST", "/cadastro", json=corpo)
+            if st == 200:
+                _entrar(d)
+                return redirect(_destino())
+            detalhe = d.get("detail") if isinstance(d, dict) else None
+            erro = detalhe if isinstance(detalhe, str) else "Não foi possível cadastrar. Confira os dados."
+    return render_template("brasil/cadastro.html", erro=erro, f=f)
 
 
 @bp.route("/dev-login/<perfil>")
@@ -91,7 +117,7 @@ def dev_login(perfil):
     if st != 200:
         abort(st if st in (404, 503) else 502)
     _entrar(d)
-    return redirect(url_for("brasil.mapa"))
+    return redirect(_destino())
 
 
 @bp.route("/sair")
@@ -168,6 +194,57 @@ def ong_campanha(cid):
     if st != 200:
         abort(404)
     return render_template("brasil/ong_campanha.html", c=c)
+
+
+@bp.route("/abrigo")
+@exige_login("gestor_abrigo")
+def abrigo():
+    """Sem abrigo: cadastro em etapas. Com abrigos: um painel por abrigo (ADR 0005)."""
+    st, lista = como_eu("GET", "/abrigos")
+    abrigos = lista if st == 200 and isinstance(lista, list) else []
+    erro = None if st == 200 else "Não foi possível carregar seus abrigos agora. Tente de novo."
+    criar = not erro and (not abrigos or request.args.get("novo") == "1")
+    return render_template("brasil/abrigo.html", abrigos=abrigos, criar=criar, editar=None, erro=erro,
+                           dev_login=dev_login_ligado())
+
+
+@bp.route("/abrigo/<int:aid>/editar")
+@exige_login("gestor_abrigo")
+def abrigo_editar(aid):
+    st, a = como_eu("GET", f"/abrigos/{aid}")
+    if st != 200:
+        abort(404)
+    return render_template("brasil/abrigo.html", abrigos=[a], criar=True, editar=a, erro=None, dev_login=dev_login_ligado())
+
+
+@bp.route("/abrigo/<int:aid>/estoque")
+@exige_login("gestor_abrigo")
+def abrigo_estoque(aid):
+    """Estoque e necessidades do abrigo (ADR 0007). Abrigo de outro gestor: a API responde 404."""
+    st, a = como_eu("GET", f"/abrigos/{aid}")
+    if st != 200:
+        abort(404)
+    st_e, estoque = como_eu("GET", f"/abrigos/{aid}/estoque")
+    st_g, grupos = como_eu("GET", "/itens/grupos")
+    erro = None if st_e == 200 and st_g == 200 else "Não foi possível carregar o estoque agora. Tente de novo."
+    dados = {"abrigo": {"id": a["id"], "nome": a["nome"]}, "estoque": estoque if st_e == 200 else [],
+             "grupos": grupos if st_g == 200 else []}
+    return render_template("brasil/estoque.html", a=a, dados=dados, erro=erro)
+
+
+@bp.route("/abrigo/<int:aid>/pessoas")
+@exige_login("gestor_abrigo")
+def abrigo_pessoas(aid):
+    """Pessoas do abrigo (ADR 0006): lotação, registrar chegada em etapas, saída e busca por nome.
+    A lista de abrigos diz também se a busca vale para todos (algum abrigo do gestor verificado)."""
+    st, lista = como_eu("GET", "/abrigos")
+    if st != 200 or not isinstance(lista, list):
+        abort(st if st in (401, 403, 404) else 502)
+    abrigos = lista
+    a = next((x for x in abrigos if x.get("id") == aid), None)
+    if a is None:
+        abort(404)
+    return render_template("brasil/pessoas.html", a=a, busca_todos=any(x.get("verificado") for x in abrigos))
 
 
 @bp.route("/admin")

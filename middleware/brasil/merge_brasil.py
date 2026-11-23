@@ -9,6 +9,7 @@
 - Recusa rodar duas vezes no mesmo banco (tabela `brasil_merge`), a menos que se passe --forcar.
 """
 import argparse
+import re
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -24,13 +25,58 @@ REFERENCIAS = {
     "matches": {"volunteer_id": "users", "mission_id": "missions"},
     "subscriptions": {"user_id": "users"},
     "notificacoes_pendentes": {"user_id": "users"},
+    "abrigos": {"gestor_id": "users"},
+    "abrigo_crises": {"abrigo_id": "abrigos"},  # sem id próprio: a chave (abrigo_id, crisis_id) é remapeada
+    "itens": {"criado_por": "users"},
+    "abrigo_itens": {"abrigo_id": "abrigos", "item_id": "itens"},
+    # abrigados (ADR 0006)
+    "familias": {"abrigo_id": "abrigos"},
+    "abrigados": {"abrigo_id": "abrigos", "familia_id": "familias"},
+    "buscas_abrigados_log": {"user_id": "users"},  # auditoria da busca (ADR 0008)
 }
+# tabela com id próprio e uma coluna UNIQUE: a linha que já existe no Crisis é reaproveitada (ADR 0007)
+CHAVE_NATURAL = {"itens": "nome_busca"}
 ORDEM = ["campaigns", "campaign_volunteers", "crisis_associations", "missions", "matches",
-         "subscriptions", "classifications_log", "telegram_subscribers", "notificacoes_pendentes"]
+         "subscriptions", "classifications_log", "telegram_subscribers", "notificacoes_pendentes",
+         "abrigos", "abrigo_crises", "itens", "abrigo_itens", "familias", "abrigados",
+         "buscas_abrigados_log"]
+
+
+_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _ident(nome: str) -> str:
+    """Valida um nome de tabela/coluna/banco e o devolve entre aspas duplas, pronto para entrar no SQL.
+    Os nomes vêm do próprio esquema (PRAGMA), nunca do usuário; a validação garante isso mesmo assim."""
+    if not isinstance(nome, str) or not _IDENT.fullmatch(nome):
+        raise ValueError(f"nome inválido para SQL: {nome!r}")
+    return f'"{nome}"'
+
+
+_TRECHO = re.compile(r"""[A-Za-z0-9_ .()'"\[\]{}-]*""")
+
+
+def _lista(nomes) -> str:
+    return ", ".join(_ident(n) for n in nomes)
+
+
+def _sql(modelo: str, **nomes) -> str:
+    """Preenche `{chave}` do modelo com nomes validados por _ident (um nome) ou _lista (lista de nomes).
+    É o único ponto onde nomes de tabela/coluna entram num SQL; valores continuam sempre em parâmetros `?`."""
+    def trocar(m):
+        chave, v = m.group(1), nomes[m.group(1)]
+        if chave == "marcas":  # número de parâmetros `?`
+            return ", ".join("?" * int(v))
+        if chave in ("tipo", "padrao"):  # trechos do ESQUEMA do projeto (ex.: INTEGER, 'crisis', 0)
+            if not _TRECHO.fullmatch(v):
+                raise ValueError(f"trecho de esquema inválido para SQL: {v!r}")
+            return v
+        return _lista(v) if isinstance(v, (list, tuple)) else _ident(v)
+    return re.sub(r"\{(\w+)\}", trocar, modelo)
 
 
 def _colunas(conn, banco: str, tabela: str) -> list[str]:
-    return [r[1] for r in conn.execute(f"PRAGMA {banco}.table_info({tabela})")]
+    return [r[1] for r in conn.execute(_sql("PRAGMA {b}.table_info({t})", b=banco, t=tabela))]
 
 
 def _preparar_crisis(conn):
@@ -43,13 +89,18 @@ def _preparar_crisis(conn):
             conn.execute(ddl)
             continue
         existentes = set(_colunas(conn, "main", tabela))
-        for col in temp.execute(f"PRAGMA table_info({tabela})"):
+        for col in temp.execute(_sql("PRAGMA table_info({t})", t=tabela)):
             nome, tipo, padrao = col[1], col[2], col[4]
             if nome == "origem":
                 padrao = "'crisis'"  # linhas que já existem (e as futuras do Crisis) são do Crisis
             if nome not in existentes:
                 # SQLite não aceita UNIQUE/CHECK em ADD COLUMN: vai só o tipo e o padrão
-                conn.execute(f"ALTER TABLE {tabela} ADD COLUMN {nome} {tipo}" + (f" DEFAULT {padrao}" if padrao is not None else ""))
+                # tipo e padrão vêm do ESQUEMA do próprio projeto (constantes), só os nomes são interpolados
+                if padrao is None:
+                    conn.execute(_sql("ALTER TABLE {t} ADD COLUMN {c} {tipo}", t=tabela, c=nome, tipo=tipo))
+                else:
+                    conn.execute(_sql("ALTER TABLE {t} ADD COLUMN {c} {tipo} DEFAULT {padrao}",
+                                      t=tabela, c=nome, tipo=tipo, padrao=str(padrao)))
     temp.close()
 
 
@@ -80,14 +131,14 @@ def unir(crisis_path: str, brasil_path: str, simular: bool = False, forcar: bool
             if "link_code" in cols and u["link_code"] and conn.execute(
                     "SELECT 1 FROM main.users WHERE link_code=?", (u["link_code"],)).fetchone():
                 valores[cols.index("link_code")] = None  # código repetido: o Crisis gera outro na subida
-            cur = conn.execute(f"INSERT INTO main.users ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", valores)
+            cur = conn.execute(_sql("INSERT INTO main.users ({c}) VALUES ({marcas})", c=cols, marcas=len(cols)), valores)
             mapa["users"][u["id"]] = cur.lastrowid
             rel["usuarios_novos"] += 1
 
         # crises: IDs de texto mantidos; a versão do Brasil prevalece
         ccols = _colunas(conn, "br", "crises")
         rel["crises"] = conn.execute(
-            f"INSERT OR REPLACE INTO main.crises ({', '.join(ccols)}) SELECT {', '.join(ccols)} FROM br.crises").rowcount
+            _sql("INSERT OR REPLACE INTO main.crises ({c}) SELECT {c} FROM br.crises", c=ccols)).rowcount
 
         for tabela in ORDEM:
             tcols = _colunas(conn, "br", tabela)
@@ -97,7 +148,9 @@ def unir(crisis_path: str, brasil_path: str, simular: bool = False, forcar: bool
             outras = [c for c in tcols if c != "id"]
             mapa[tabela] = {}
             n = 0
-            for linha in conn.execute(f"SELECT * FROM br.{tabela}").fetchall():
+            ler = _sql("SELECT * FROM br.{t}", t=tabela)
+            inserir = _sql("INSERT OR IGNORE INTO main.{t} ({c}) VALUES ({marcas})", t=tabela, c=outras, marcas=len(outras))
+            for linha in conn.execute(ler).fetchall():
                 valores = []
                 for c in outras:
                     v = linha[c]
@@ -105,15 +158,20 @@ def unir(crisis_path: str, brasil_path: str, simular: bool = False, forcar: bool
                     if alvo and v is not None:
                         v = mapa.get(alvo, {}).get(v, v)
                     valores.append(v)
-                cur = conn.execute(
-                    f"INSERT OR IGNORE INTO main.{tabela} ({', '.join(outras)}) VALUES ({', '.join('?' * len(outras))})", valores)
+                cur = conn.execute(inserir, valores)
                 if tem_id and cur.rowcount:
                     mapa[tabela][linha["id"]] = cur.lastrowid
+                elif tem_id and tabela in CHAVE_NATURAL:  # ignorada pelo UNIQUE: aponta para a do Crisis
+                    col = CHAVE_NATURAL[tabela]
+                    achar = _sql("SELECT id FROM main.{t} WHERE {c}=?", t=tabela, c=col)
+                    existe = conn.execute(achar, (linha[col],)).fetchone()
+                    if existe:
+                        mapa[tabela][linha["id"]] = existe["id"]
                 n += cur.rowcount
             rel[tabela] = n
 
         fcols = _colunas(conn, "br", "fontes_status")
-        conn.execute(f"INSERT OR REPLACE INTO main.fontes_status ({', '.join(fcols)}) SELECT {', '.join(fcols)} FROM br.fontes_status")
+        conn.execute(_sql("INSERT OR REPLACE INTO main.fontes_status ({c}) SELECT {c} FROM br.fontes_status", c=fcols))
         conn.execute("INSERT INTO brasil_merge VALUES (?,?,?)",
                      (datetime.now(timezone.utc).isoformat(), brasil_path, str(rel)))
         conn.execute("ROLLBACK" if simular else "COMMIT")

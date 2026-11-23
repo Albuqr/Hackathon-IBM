@@ -137,6 +137,100 @@ CREATE TABLE IF NOT EXISTS notificacoes_pendentes (
     criada_em TEXT DEFAULT CURRENT_TIMESTAMP,
     origem TEXT DEFAULT 'brasil'
 );
+-- gestão de abrigos (ADR 0005): o abrigo nasce não verificado e já funciona
+CREATE TABLE IF NOT EXISTS abrigos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    gestor_id INTEGER NOT NULL REFERENCES users(id),
+    nome TEXT NOT NULL,
+    endereco TEXT DEFAULT '',
+    lat REAL NOT NULL,
+    lon REAL NOT NULL,
+    municipio_ibge INTEGER,
+    uf TEXT,
+    capacidade INTEGER NOT NULL CHECK(capacidade > 0),
+    tipo TEXT NOT NULL CHECK(tipo IN ('permanente','temporario')),
+    ativo INTEGER DEFAULT 1,
+    sensivel INTEGER DEFAULT 0,
+    verificado INTEGER DEFAULT 0,
+    verificado_em TEXT,
+    criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+    origem TEXT DEFAULT 'brasil'
+);
+CREATE TABLE IF NOT EXISTS abrigo_crises (
+    abrigo_id INTEGER NOT NULL REFERENCES abrigos(id),
+    crisis_id TEXT NOT NULL,
+    PRIMARY KEY (abrigo_id, crisis_id)
+);
+-- estoque e necessidades dos abrigos (ADR 0007): lista de itens compartilhada, que cresce
+CREATE TABLE IF NOT EXISTS itens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    nome_busca TEXT NOT NULL UNIQUE,
+    grupo TEXT NOT NULL CHECK(grupo IN ('sustento','profissionais','energia_mobilidade','estrutura_ativos')),
+    unidade TEXT NOT NULL DEFAULT 'unidades',
+    so_necessidade INTEGER NOT NULL DEFAULT 0 CHECK(so_necessidade IN (0,1)),
+    criado_por INTEGER REFERENCES users(id),
+    criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+    origem TEXT DEFAULT 'brasil'
+);
+CREATE TABLE IF NOT EXISTS abrigo_itens (
+    abrigo_id INTEGER NOT NULL REFERENCES abrigos(id),
+    item_id INTEGER NOT NULL REFERENCES itens(id),
+    status TEXT NOT NULL CHECK(status IN ('urgente','precisa','ok','sobrando')),
+    quantidade REAL CHECK(quantidade IS NULL OR quantidade >= 0),
+    atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+    origem TEXT DEFAULT 'brasil',
+    PRIMARY KEY (abrigo_id, item_id)
+);
+-- lista base (nome_busca = estoque.normalizar(nome)); INSERT OR IGNORE: roda em toda subida sem duplicar
+INSERT OR IGNORE INTO itens (nome, nome_busca, grupo, unidade, so_necessidade) VALUES
+    ('Alimentos', 'alimentos', 'sustento', 'kg', 0),
+    ('Cesta básica', 'cesta basica', 'sustento', 'cestas', 0),
+    ('Água', 'agua', 'sustento', 'litros', 0),
+    ('Equipe de saúde', 'equipe de saude', 'profissionais', 'pessoas', 1),
+    ('Bombeiros', 'bombeiros', 'profissionais', 'pessoas', 1),
+    ('Polícia', 'policia', 'profissionais', 'pessoas', 1),
+    ('Gasolina', 'gasolina', 'energia_mobilidade', 'litros', 0),
+    ('Etanol', 'etanol', 'energia_mobilidade', 'litros', 0),
+    ('Diesel', 'diesel', 'energia_mobilidade', 'litros', 0),
+    ('AVGAS', 'avgas', 'energia_mobilidade', 'litros', 0),
+    ('Carro', 'carro', 'energia_mobilidade', 'veículos', 1),
+    ('Caminhão', 'caminhao', 'energia_mobilidade', 'veículos', 1),
+    ('Ambulância', 'ambulancia', 'energia_mobilidade', 'veículos', 1),
+    ('Colchões', 'colchoes', 'estrutura_ativos', 'unidades', 0),
+    ('Cobertores', 'cobertores', 'estrutura_ativos', 'unidades', 0),
+    ('Roupas', 'roupas', 'estrutura_ativos', 'peças', 0),
+    ('Ferramentas', 'ferramentas', 'estrutura_ativos', 'unidades', 0);
+-- abrigados (ADR 0006): dados pessoais só para o gestor do abrigo; CPF opcional, só 11 dígitos
+CREATE TABLE IF NOT EXISTS familias (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    abrigo_id INTEGER NOT NULL REFERENCES abrigos(id),
+    criada_em TEXT DEFAULT CURRENT_TIMESTAMP,
+    origem TEXT DEFAULT 'brasil'
+);
+CREATE TABLE IF NOT EXISTS abrigados (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    abrigo_id INTEGER NOT NULL REFERENCES abrigos(id),
+    familia_id INTEGER REFERENCES familias(id),
+    nome TEXT NOT NULL,
+    nome_mae TEXT NOT NULL,
+    cpf TEXT CHECK(cpf IS NULL OR (length(cpf) = 11 AND cpf NOT GLOB '*[^0-9]*')),
+    nome_busca TEXT NOT NULL,
+    entrada_em TEXT NOT NULL,
+    saida_em TEXT,
+    necessidades TEXT DEFAULT '[]',
+    origem TEXT DEFAULT 'brasil'
+);
+CREATE INDEX IF NOT EXISTS abrigados_abrigo ON abrigados (abrigo_id, saida_em);
+-- auditoria da busca entre abrigos (ADR 0008): quem buscou, o quê, quando e quantos resultados; nenhuma rota lê
+CREATE TABLE IF NOT EXISTS buscas_abrigados_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    consulta TEXT NOT NULL,
+    buscado_em TEXT NOT NULL,
+    resultados INTEGER NOT NULL,
+    origem TEXT DEFAULT 'brasil'
+);
 """
 
 _prontos: set[str] = set()

@@ -1,7 +1,7 @@
 # Dash Brasil
 
 Crises brasileiras por município, dentro do Crisis Monitor, em `/brasil/` (frontend) e `/brasil/...` (API).
-Decisões: `docs/adr/0001` a `0003`. Requisitos: spec da feature `brasil-dash`.
+Decisões: `docs/adr/0001` a `0007`. Roteiro da gestão de abrigos: `WALKTHROUGH.md`; pendências: `BACKLOG.md`. Requisitos: spec da feature `brasil-dash`.
 
 ## O que tem
 | Parte | Onde |
@@ -32,21 +32,46 @@ Começar (voluntário), Nova campanha e acompanhamento da campanha (ONG) e Rotin
 Próximo passo, nesta ordem: crise saiu do mapa › agravou (sugere a meta da nova severidade) › faltam pessoas › convites
 sem resposta há 24 h › equipe completa. Regras em `middleware/brasil/assistentes.py` (`proximo_passo`, `situacao_campanha`).
 
+### Gestor de abrigo (ADR 0005)
+Cadastro aberto em `/brasil/cadastro` (cria só `gestor_abrigo`). Em `/brasil/abrigo` o gestor cadastra o abrigo em etapas
+(nome e tipo, local por GPS ou lat/lon, capacidade, situação, crises) e vê um painel por abrigo. O abrigo funciona na hora,
+marcado "Não verificado". API em `middleware/brasil/abrigos.py` (`/brasil/abrigos...`); abrigo de outro gestor responde 404.
+
+### Pessoas do abrigo (ADR 0006)
+Em `/brasil/abrigo/<id>/pessoas` o gestor vê a lotação (presentes x capacidade), registra a chegada em etapas (uma pessoa
+ou um grupo, que vira família; nome e nome da mãe obrigatórios, CPF opcional com 11 dígitos, necessidades especiais),
+registra a saída e busca por nome sem acento. A busca vale para todos os abrigos se algum abrigo do gestor estiver
+verificado; senão só para os dele; CPF só de gente dos próprios abrigos. Voluntário, ONG e admin nunca veem pessoas (403).
+API em `middleware/brasil/abrigados.py` (`/brasil/abrigos/{id}/chegadas|pessoas|lotacao`, `/brasil/abrigados...`).
+
+### Estoque do abrigo (ADR 0007)
+Em `/brasil/abrigo/<id>/estoque` o gestor vê o que precisa agora, procura o item ("Que item?", sugestões ao digitar) e marca
+Urgente/Precisa/OK/Sobrando com a quantidade aproximada. Se o item não existe, cria com grupo e unidade, e ele passa a valer para
+todos os abrigos. Profissionais e veículos são só pedidos (Urgente/Precisa com quantos precisa). Nome parecido com um item que
+existe aparece como "Possível duplicado de: …" (agente `itens_duplicados`, regra no provedor `local`); nada é unido sozinho.
+API em `middleware/brasil/estoque.py` (`/brasil/itens...`, `/brasil/abrigos/{id}/estoque...`).
+
 ## Rodar local
 ```bash
-python init_db.py                                   # banco do Crisis (se ainda não existe)
+python init_db.py                                   # banco do Crisis com as tabelas (cria data/crisis.db na pasta atual)
 export BRASIL_DEV_LOGIN=1                           # liga os logins de teste
 uvicorn middleware.main:app --port 8000 &
-API_URL=http://localhost:8000 python frontend/app.py
+API_URL=http://127.0.0.1:8000 python frontend/app.py
 ```
-Abra http://localhost:5000/brasil/ e entre por um dos links de teste (Voluntário, ONG, Admin).
+- O `crisis.db` (`DB_PATH`, padrão `data/crisis.db`) precisa existir **com as tabelas** antes de subir a API: rode
+  `init_db.py` da pasta onde o banco deve ficar (ele grava em `data/crisis.db` relativo à pasta atual).
+- No Windows use `API_URL=http://127.0.0.1:8000`, não `localhost`: o `localhost` tenta primeiro o IPv6 (`::1`), o
+  uvicorn só escuta em `127.0.0.1`, e cada chamada do Flask para a API passa a levar ~2 s.
+Abra http://localhost:5000/brasil/ e entre por um dos links de teste (Voluntário, ONG, Admin, Gestor de Abrigo e
+Gestor de Abrigo 2, perfis `gestor` e `gestor2`). Abrigos, pessoas e estoque fictícios desses dois gestores (e as crises
+de teste): `BRASIL_DB_PATH=... BRASIL_DEV_LOGIN=1 python -m middleware.brasil.semear_teste` (pode repetir; recria).
 No Admin, "Atualizar dados" faz a primeira ingestão (≈ 15 s).
 
 ## Configuração
 | Variável | Padrão | Valores |
 |---|---|---|
 | `BRASIL_DB_PATH` | `brasil.db` ao lado de `DB_PATH` | caminho; não pode ser igual a `DB_PATH` |
-| `BRASIL_DEV_LOGIN` | desligado | `1` liga `/brasil/dev-login/<voluntario/ong/admin>`. Nunca em produção. |
+| `BRASIL_DEV_LOGIN` | desligado | `1` liga `/brasil/dev-login/<voluntario/ong/admin/gestor/gestor2>` e a verificação de teste do abrigo. Nunca em produção. |
 | `BRASIL_ORQUESTRADOR` | `local` | `local`, `watsonx`, `claude` |
 | `BRASIL_INGESTAO_AUTO_MIN` | `0` (só manual) | `0` ou `15`–`1440` |
 | `BRASIL_NOTIFICACOES` | `fila` | `fila` (nada sai; fila visível ao admin), `enviar` |
@@ -79,6 +104,7 @@ BRASIL_DB_PATH=data/brasil-e2e.db BRASIL_DEV_LOGIN=1 python -m middleware.brasil
 # suba API e frontend com o mesmo BRASIL_DB_PATH e BRASIL_DEV_LOGIN=1, depois:
 BASE_URL=http://localhost:5000 node --test --test-concurrency=1 frontend/brasil/tests/e2e/app.spec.mjs
 node --test frontend/brasil/tests/visao.test.mjs          # regras do mapa, sem navegador
+node --test frontend/brasil/tests/estoque.test.mjs        # aviso de possível duplicado no estoque
 ```
 
 ## Malha

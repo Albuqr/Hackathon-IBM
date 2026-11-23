@@ -1,0 +1,64 @@
+{% extends "brasil/base.html" %}
+{% block titulo %}{{ 'Editar abrigo' if editar else 'Meu abrigo' }} · Crisis Monitor Brasil{% endblock %}
+{% block leaflet %}{% endblock %}
+{% block principal %}
+<div class="rolagem"><div class="pagina">
+  {% if erro %}<p class="aviso" role="alert">{{ erro }}</p>{% endif %}
+  {% if request.args.get('criado') %}<p class="aviso ok" role="status">Abrigo criado. Ele já funciona e aparece como não verificado.</p>{% endif %}
+  {% if request.args.get('salvo') %}<p class="aviso ok" role="status">Alterações salvas.</p>{% endif %}
+  <p class="aviso" id="msg" role="alert" hidden></p>
+  {% if criar %}
+  <div id="etapas"></div>
+  {% if abrigos %}<p style="margin-top:16px"><a class="voltar" href="{{ url_for('brasil.abrigo') }}">‹ Voltar aos meus abrigos</a></p>{% endif %}
+  {% elif abrigos %}
+  <div class="pagina-cabeca">
+    <h1>{{ 'Meu abrigo' if abrigos|length == 1 else 'Meus abrigos' }}</h1>
+    <p>Registre quem chega e o que falta. Cada abrigo tem sua lista de pessoas e seu estoque.</p>
+  </div>
+  <ul class="abrigos">
+    {% for a in abrigos %}
+    <li class="abrigo" data-abrigo="{{ a.id }}">
+      <div class="abrigo-topo">
+        <h2>{{ a.nome }}</h2>
+        {% if a.verificado %}<span class="selo verificada">Verificado</span>{% else %}<span class="selo selo-nv">Não verificado</span>{% endif %}
+      </div>
+      <p class="item-meta">{{ [a.municipio, a.uf]|select|join(' · ') }}{% if a.endereco %} · {{ a.endereco }}{% endif %}</p>
+      <div class="numeros">
+        {% if a.presentes is defined %}
+        <div><b>{{ a.presentes }}<small> / {{ a.capacidade }}</small></b><span>pessoas presentes</span></div>
+        {% else %}
+        <div><b>{{ a.capacidade }}</b><span>vagas de capacidade</span></div>
+        {% endif %}
+      </div>
+      <p class="item-meta">{{ 'Permanente' if a.tipo == 'permanente' else 'Temporário' }} · {{ 'Ativo' if a.ativo else 'Inativo' }}{% if a.sensivel %} · Sensível{% endif %}{% if a.crises %} · {{ a.crises|map(attribute='title')|join(', ') }}{% endif %}</p>
+      {% if not a.verificado %}<p class="dica">Ainda não verificado: o abrigo já funciona, mas a busca de pessoas fica restrita aos seus abrigos até um deles ser verificado.</p>{% endif %}
+      <div class="acoes">
+        <a class="botao botao-primario" href="{{ url_for('brasil.abrigo') }}/{{ a.id }}/pessoas">Pessoas</a>
+        <a class="botao botao-secundario" href="{{ url_for('brasil.abrigo') }}/{{ a.id }}/estoque">Estoque</a>
+        <a class="texto-link pequeno" href="{{ url_for('brasil.abrigo_editar', aid=a.id) }}">Editar</a>
+      </div>
+      {% if dev_login %}
+      <div class="abrigo-teste">
+        <span class="dica">Teste (BRASIL_DEV_LOGIN=1)</span>
+        <button class="botao botao-neutro botao-pequeno" type="button" data-verificar="{{ a.id }}">{{ 'Marcar como não verificado' if a.verificado else 'Marcar como verificado' }}</button>
+      </div>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  <div class="acoes" style="margin-top:20px">
+    <a class="botao botao-secundario" href="{{ url_for('brasil.abrigo', novo=1) }}">Novo abrigo</a>
+  </div>
+  {% endif %}
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script id="br-abrigo" type="application/json">{{ editar|tojson }}</script>
+<script type="module">
+import { iniciarCadastro, iniciarPainel } from "{{ url_for('brasil.static', filename='abrigo.js') }}";
+const msg = document.getElementById("msg");
+const raiz = document.getElementById("etapas");
+if (raiz) iniciarCadastro(raiz, { msg, editar: JSON.parse(document.getElementById("br-abrigo").textContent), painel: "{{ url_for('brasil.abrigo') }}" });
+else iniciarPainel({ msg });
+</script>
+{% endblock %}

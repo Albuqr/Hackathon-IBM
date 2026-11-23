@@ -52,7 +52,7 @@ def _casos():
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
     pol = import_module("brasil.encaminhador").POLITICA
     for nome, regra in pol.items():
-        for papel in ("volunteer", "org", "admin"):
+        for papel in ("volunteer", "org", "admin", "gestor_abrigo"):
             yield nome, regra, papel
 
 
@@ -154,3 +154,301 @@ def test_ac_014_1_paginas_renderizam_no_shell_com_o_menu_do_perfil(front, logar,
     assert (">Nova campanha<" in html) == (papel == "org")
     assert ('href="/brasil/admin"' in html) == (papel == "admin")
     assert ('id="lateral"' in html) == url.endswith("/mapa")  # só o mapa tem barra lateral
+
+
+def test_dev_login_de_gestor_de_abrigo(front, monkeypatch):
+    monkeypatch.setenv("BRASIL_DEV_LOGIN", "1")
+    cli, api = front
+    api.respostas[("POST", "/dev/usuario/gestor2")] = (200, {"id": 9, "role": "gestor_abrigo", "name": "Gestor 2", "email": "gestor2@teste.brasil"})
+    assert cli.get("/brasil/dev-login/gestor2").status_code == 302
+    with cli.session_transaction() as s:
+        assert s["br_role"] == "gestor_abrigo" and s["br_user_id"] == 9
+
+
+# ── gestor de abrigo (ADR 0005) ──────────────────────────────────────
+ABRIGO = {"id": 4, "gestor_id": 9, "nome": "Ginásio Fictício", "endereco": "Rua de Teste, 1", "lat": -30.03, "lon": -51.22,
+          "municipio_ibge": 4314902, "municipio": "Porto Alegre", "uf": "RS", "capacidade": 120, "tipo": "temporario",
+          "ativo": True, "sensivel": False, "verificado": False, "verificado_em": None, "crises": []}
+
+
+def test_gestor_entra_e_cai_no_abrigo(front, monkeypatch, logar):
+    monkeypatch.setenv("BRASIL_DEV_LOGIN", "1")
+    cli, api = front
+    api.respostas[("POST", "/dev/usuario/gestor")] = (200, {"id": 9, "role": "gestor_abrigo", "name": "Gestora", "email": "gestor@teste.brasil"})
+    assert cli.get("/brasil/dev-login/gestor").headers["Location"].endswith("/brasil/abrigo")
+    assert cli.get("/brasil/").headers["Location"].endswith("/brasil/abrigo")
+    api.respostas[("POST", "/login")] = (200, {"id": 9, "role": "gestor_abrigo", "name": "Gestora", "email": "gestor@teste.brasil"})
+    assert cli.post("/brasil/entrar", data={"email": "gestor@teste.brasil", "senha": "x"}).headers["Location"].endswith("/brasil/abrigo")
+
+
+def test_abrigo_sem_abrigo_mostra_o_cadastro_em_etapas(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    api.respostas[("GET", "/abrigos")] = (200, [])
+    html = cli.get("/brasil/abrigo").get_data(as_text=True)
+    assert 'id="etapas"' in html and "abrigo.js" in html and "leaflet" not in html.lower()
+    assert ">Meu abrigo<" in html and api.chamadas[-1][:3] == ("GET", "/abrigos", 9)
+
+
+def test_abrigo_com_abrigos_mostra_o_painel_e_marca_nao_verificado(front, logar, monkeypatch):
+    monkeypatch.delenv("BRASIL_DEV_LOGIN", raising=False)
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    api.respostas[("GET", "/abrigos")] = (200, [ABRIGO, {**ABRIGO, "id": 5, "nome": "Escola Fictícia", "verificado": True}])
+    html = cli.get("/brasil/abrigo").get_data(as_text=True)
+    assert 'id="etapas"' not in html and "Ginásio Fictício" in html and "Porto Alegre · RS" in html
+    assert html.count(">Não verificado<") == 1 and html.count(">Verificado<") == 1
+    assert 'href="/brasil/abrigo/4/pessoas"' in html and 'href="/brasil/abrigo/4/estoque"' in html
+    assert 'href="/brasil/abrigo/4/editar"' in html and "Novo abrigo" in html
+    assert "data-verificar" not in html  # botão de teste só com o login de teste
+    monkeypatch.setenv("BRASIL_DEV_LOGIN", "1")
+    assert 'data-verificar="4"' in cli.get("/brasil/abrigo").get_data(as_text=True)
+    assert 'id="etapas"' in cli.get("/brasil/abrigo?novo=1").get_data(as_text=True)
+
+
+def test_editar_abrigo_de_outro_gestor_da_404(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    api.respostas[("GET", "/abrigos/4")] = (200, ABRIGO)
+    html = cli.get("/brasil/abrigo/4/editar").get_data(as_text=True)
+    assert '"municipio_ibge": 4314902' in html and 'id="etapas"' in html  # o abrigo vai para as etapas já preenchidas
+    assert cli.get("/brasil/abrigo/77/editar").status_code == 404  # a API respondeu 404
+
+
+@pytest.mark.parametrize("papel", ["volunteer", "org", "admin"])
+def test_paginas_do_abrigo_so_para_gestor(front, logar, papel):
+    cli, api = front
+    logar(cli, papel)
+    assert cli.get("/brasil/abrigo").status_code == 403
+    assert cli.get("/brasil/abrigo/4/editar").status_code == 403
+    assert ">Meu abrigo<" not in cli.get("/brasil/mapa").get_data(as_text=True)
+    assert api.chamadas == []
+
+
+def test_abrigo_exige_login(front):
+    cli, _ = front
+    assert cli.get("/brasil/abrigo").headers["Location"].endswith("/brasil/entrar")
+
+
+def test_cadastro_de_gestor_entra_e_vai_para_o_abrigo(front):
+    cli, api = front
+    assert "Cadastrar meu abrigo" in cli.get("/brasil/entrar").get_data(as_text=True)
+    assert cli.get("/brasil/cadastro").status_code == 200
+    api.respostas[("POST", "/cadastro")] = (200, {"id": 12, "role": "gestor_abrigo", "name": "Maria Fictícia", "email": "m@teste.brasil"})
+    r = cli.post("/brasil/cadastro", data={"nome": "Maria Fictícia", "email": "m@teste.brasil", "telefone": "", "senha": "senha-forte-1"})
+    assert r.status_code == 302 and r.headers["Location"].endswith("/brasil/abrigo")
+    assert api.chamadas[-1][3] == {"name": "Maria Fictícia", "email": "m@teste.brasil", "phone": None, "senha": "senha-forte-1"}
+    with cli.session_transaction() as s:
+        assert s["br_user_id"] == 12 and s["br_role"] == "gestor_abrigo"
+
+
+def test_cadastro_com_erro_mostra_a_mensagem_e_nao_entra(front):
+    cli, api = front
+    api.respostas[("POST", "/cadastro")] = (409, {"detail": "Já existe uma conta com este e-mail. Entre com a sua senha."})
+    html = cli.post("/brasil/cadastro", data={"nome": "Maria", "email": "m@teste.brasil", "senha": "senha-forte-1"}).get_data(as_text=True)
+    assert "Já existe uma conta com este e-mail" in html and 'value="m@teste.brasil"' in html
+    n = len(api.chamadas)
+    html = cli.post("/brasil/cadastro", data={"nome": "Maria", "email": "m@teste.brasil", "senha": "curta"}).get_data(as_text=True)
+    assert "pelo menos 8 caracteres" in html and len(api.chamadas) == n  # nem chega à API
+    with cli.session_transaction() as s:
+        assert "br_user_id" not in s
+
+
+# ── estoque do abrigo (ADR 0007) ─────────────────────────────────────
+GRUPOS = [{"id": "sustento", "nome": "Sustento"}, {"id": "profissionais", "nome": "Profissionais"},
+          {"id": "energia_mobilidade", "nome": "Energia e Mobilidade"}, {"id": "estrutura_ativos", "nome": "Estrutura e Ativos"}]
+
+
+def test_estoque_do_abrigo_renderiza_leve_com_a_lista_e_os_grupos(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    agua = {"id": 3, "nome": "Água", "grupo": "sustento", "grupo_nome": "Sustento", "unidade": "litros", "so_necessidade": False,
+            "status": "urgente", "status_nome": "Urgente", "quantidade": 500, "atualizado_em": "2026-11-18T10:00:00+00:00"}
+    api.respostas[("GET", "/abrigos/4/estoque")] = (200, [agua])  # antes de "/abrigos/4": a ApiFalsa casa por prefixo
+    api.respostas[("GET", "/abrigos/4")] = (200, ABRIGO)
+    api.respostas[("GET", "/itens/grupos")] = (200, GRUPOS)
+    html = cli.get("/brasil/abrigo/4/estoque").get_data(as_text=True)
+    assert "estoque.js" in html and "leaflet" not in html.lower() and "Ginásio Fictício" in html
+    import json, re
+    dados = json.loads(re.search(r'<script id="br-estoque" type="application/json">(.*?)</script>', html, re.S).group(1))
+    assert dados == {"abrigo": {"id": 4, "nome": "Ginásio Fictício"}, "estoque": [agua], "grupos": GRUPOS}
+    assert 'href="/brasil/abrigo"' in html
+    assert [c[:3] for c in api.chamadas] == [("GET", "/abrigos/4", 9), ("GET", "/abrigos/4/estoque", 9), ("GET", "/itens/grupos", 9)]
+    assert 'aria-current=page' in html and ">Meu abrigo<" in html
+
+
+def test_estoque_de_abrigo_de_outro_gestor_da_404_e_outros_perfis_403(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    assert cli.get("/brasil/abrigo/77/estoque").status_code == 404  # a API respondeu 404
+    for papel in ("volunteer", "org", "admin"):
+        logar(cli, papel)
+        n = len(api.chamadas)
+        assert cli.get("/brasil/abrigo/4/estoque").status_code == 403 and len(api.chamadas) == n
+
+
+def test_estoque_com_api_fora_mostra_aviso(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    api.respostas[("GET", "/abrigos/4/estoque")] = (503, {"detail": "fora"})
+    api.respostas[("GET", "/abrigos/4")] = (200, ABRIGO)
+    assert "Não foi possível carregar o estoque agora" in cli.get("/brasil/abrigo/4/estoque").get_data(as_text=True)
+
+
+def test_politica_do_estoque_so_para_gestor():
+    from importlib import import_module
+    pol = import_module("brasil.encaminhador").POLITICA
+    for nome in ("sugerir_itens", "grupos_itens", "criar_item", "estoque_abrigo", "atualizar_estoque", "remover_estoque"):
+        assert pol[nome].papeis == ("gestor_abrigo",), nome
+    assert (pol["atualizar_estoque"].metodo, pol["atualizar_estoque"].caminho) == ("PUT", "/abrigos/{abrigo_id}/estoque/{item_id}")
+    assert pol["remover_estoque"].metodo == "DELETE"
+# ── pessoas do abrigo (ADR 0006) ─────────────────────────────────────
+def test_pessoas_do_abrigo_mostra_lotacao_etapas_e_escopo_da_busca(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    api.respostas[("GET", "/abrigos")] = (200, [{**ABRIGO, "presentes": 3}])
+    r = cli.get("/brasil/abrigo/4/pessoas")
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200 and api.chamadas[-1][:3] == ("GET", "/abrigos", 9)
+    assert "Ginásio Fictício" in html and "3 de 120" in html and "pessoas.js" in html and "leaflet" not in html.lower()
+    assert 'id="lot-aviso" role="status" hidden' in html and "Registrar chegada" in html
+    assert "Buscando só nos seus abrigos até um deles ser verificado." in html
+    assert 'aria-current=page>Meu abrigo<' in html.replace('"', "")
+
+
+def test_pessoas_do_abrigo_lotado_avisa_e_verificado_busca_em_todos(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    api.respostas[("GET", "/abrigos")] = (200, [{**ABRIGO, "presentes": 125}, {**ABRIGO, "id": 5, "verificado": True}])
+    html = cli.get("/brasil/abrigo/4/pessoas").get_data(as_text=True)
+    assert "125 de 120" in html and "Acima da capacidade: 5 pessoas a mais." in html
+    assert 'id="lot-aviso" role="status" hidden' not in html and "Buscando em todos os abrigos, menos os sensíveis. De outros abrigos aparece só o nome." in html
+    api.respostas[("GET", "/abrigos")] = (200, [{**ABRIGO, "presentes": 120}])
+    html = cli.get("/brasil/abrigo/4/pessoas").get_data(as_text=True)
+    assert "Abrigo lotado: não há vagas livres." in html and 'id="lot-aviso" role="status" hidden' not in html
+
+
+def test_pessoas_de_abrigo_inativo_pede_para_reativar_em_vez_de_registrar_chegada(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    api.respostas[("GET", "/abrigos")] = (200, [{**ABRIGO, "ativo": False, "presentes": 2}])
+    r = cli.get("/brasil/abrigo/4/pessoas")
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200 and "2 de 120" in html and " · Inativo" in html
+    assert "Este abrigo está inativo. Reative o abrigo antes de registrar chegadas." in html
+    assert 'href="/brasil/abrigo/4/editar"' in html
+    assert 'id="abrir-chegada"' not in html and "Procurar uma pessoa" in html
+    api.respostas[("GET", "/abrigos")] = (200, [ABRIGO])
+    html = cli.get("/brasil/abrigo/4/pessoas").get_data(as_text=True)
+    assert 'id="abrir-chegada"' in html and "Este abrigo está inativo" not in html
+
+
+def test_pessoas_de_abrigo_que_nao_e_do_gestor_da_404(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    api.respostas[("GET", "/abrigos")] = (200, [ABRIGO])
+    assert cli.get("/brasil/abrigo/77/pessoas").status_code == 404
+    api.respostas[("GET", "/abrigos")] = (503, {"detail": "fora"})
+    assert cli.get("/brasil/abrigo/4/pessoas").status_code == 502
+
+
+def test_pessoas_e_estoque_de_abrigo_alheio_dao_404_quando_a_api_diz_que_nao_e_dele(front, logar):
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    # ordem importa: a ApiFalsa casa por prefixo, "/abrigos/77" antes de "/abrigos"
+    api.respostas[("GET", "/abrigos/77")] = (404, {"detail": "Abrigo não encontrado"})
+    api.respostas[("GET", "/abrigos")] = (200, [ABRIGO])  # a lista do gestor não tem o 77
+    r = cli.get("/brasil/abrigo/77/pessoas")
+    assert r.status_code == 404 and "Ginásio Fictício" not in r.get_data(as_text=True)
+    assert api.chamadas[-1][:3] == ("GET", "/abrigos", 9)
+    assert cli.get("/brasil/abrigo/77/estoque").status_code == 404
+    assert api.chamadas[-1][:3] == ("GET", "/abrigos/77", 9)  # parou no 404: nem estoque nem grupos
+
+
+@pytest.mark.parametrize("papel", ["volunteer", "org", "admin"])
+def test_pessoas_do_abrigo_so_para_gestor(front, logar, papel):
+    cli, api = front
+    logar(cli, papel)
+    assert cli.get("/brasil/abrigo/4/pessoas").status_code == 403
+    assert api.chamadas == []
+
+
+def test_pessoas_do_abrigo_exige_login(front):
+    cli, _ = front
+    assert cli.get("/brasil/abrigo/4/pessoas").headers["Location"].endswith("/brasil/entrar")
+
+
+def test_politica_de_abrigados_so_para_gestor_de_abrigo():
+    from importlib import import_module
+    pol = import_module("brasil.encaminhador").POLITICA
+    esperado = {
+        "registrar_chegada": ("POST", "/abrigos/{abrigo_id}/chegadas"),
+        "pessoas_abrigo": ("GET", "/abrigos/{abrigo_id}/pessoas"),
+        "registrar_saida": ("POST", "/abrigados/{pessoa_id}/saida"),
+        "lotacao_abrigo": ("GET", "/abrigos/{abrigo_id}/lotacao"),
+        "buscar_abrigados": ("POST", "/abrigados/busca"),
+    }
+    for nome, (metodo, caminho) in esperado.items():
+        assert (pol[nome].metodo, pol[nome].caminho, pol[nome].papeis) == (metodo, caminho, ("gestor_abrigo",))
+    # nenhuma outra ação alcança as rotas de pessoas
+    assert {n for n, r in pol.items() if "/abrigados" in r.caminho or r.caminho.endswith(("/chegadas", "/pessoas", "/lotacao"))} == set(esperado)
+
+
+def test_busca_de_abrigados_vai_no_corpo_e_nunca_na_url(front, logar):
+    """O nome buscado não pode cair no log de acesso: o encaminhador manda no corpo do POST, e a tela usa `corpo`."""
+    import os
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    api.respostas[("POST", "/abrigados/busca")] = (200, {"escopo": "meus_abrigos", "resultados": [], "limite": 50})
+    r = cli.post("/brasil/acao/buscar_abrigados", json={"corpo": {"nome": "Joana Fictícia"}})
+    assert r.status_code == 200
+    assert api.chamadas[-1] == ("POST", "/abrigados/busca", 9, {"nome": "Joana Fictícia"}, None)
+    js = open(os.path.join(os.path.dirname(__file__), "..", "static", "pessoas.js"), encoding="utf-8").read()
+    assert 'acao("buscar_abrigados", { corpo: { nome: termo } })' in js
+    assert 'r.dados.aviso' in js and 'r.dados.limite_outros' in js  # dica de nome e sobrenome; limite de outros abrigos
+
+
+def test_tela_de_pessoas_nao_usa_dialogos_do_navegador_nem_console():
+    import os
+    js = open(os.path.join(os.path.dirname(__file__), "..", "static", "pessoas.js"), encoding="utf-8").read()
+    for proibido in ("alert(", "confirm(", "prompt(", "console."):
+        assert proibido not in js
+
+
+def test_busca_de_outro_abrigo_mostra_so_nome_e_contato():
+    """ADR 0008: resultado de outro abrigo só tem nome, meu_abrigo e contato; a tela não lê abrigo/datas dele."""
+    import os
+    import re
+    js = open(os.path.join(os.path.dirname(__file__), "..", "static", "pessoas.js"), encoding="utf-8").read()
+    bloco = js[js.index("resultados.replaceChildren(...achados.map"):]
+    bloco = bloco[:bloco.index("}));")]
+    outro, meu = re.match(r".*?const meta = !x\.meu_abrigo \? (.*?) : (.*)", bloco, re.S).groups()
+    assert set(re.findall(r"x\.(\w+)", outro)) == {"contato"}
+    assert {"nome_mae", "cpf", "abrigo", "entrada_em", "presente", "saida_em"} <= set(re.findall(r"x\.(\w+)", meu))
+
+
+def test_cpf_aparece_sempre_no_span_cpf_que_nao_quebra():
+    """Em 390px o CPF não pode quebrar no meio: todo CPF exibido passa por cpfParte (span.cpf, nowrap no CSS)."""
+    import os
+    import re
+    base = os.path.join(os.path.dirname(__file__), "..", "static")
+    js = open(os.path.join(base, "pessoas.js"), encoding="utf-8").read()
+    css = open(os.path.join(base, "brasil.css"), encoding="utf-8").read()
+    assert re.search(r"\.cpf\s*\{[^}]*white-space:\s*nowrap", css)
+    assert 'class: "cpf"' in js and js.count("cpfFormatado(") == 1  # só o helper formata
+    assert "`CPF ${" not in js  # nenhum "CPF 000..." montado como texto puro
+    assert js.count("cpfParte(") == 3  # lista, confirmação e busca
+
+
+def test_registro_de_buscas_nao_tem_acao_nem_pagina(front):
+    """ADR 0008: o registro das buscas entre abrigos não é visível para gestor, voluntário, ONG ou admin."""
+    from importlib import import_module
+    cli, _ = front
+    import re
+
+    def suspeito(texto):  # `/brasil/login` não conta
+        return any(p in ("log", "logs", "auditoria", "buscas", "historico") for p in re.split(r"[/_\-]", texto.lower()))
+    pol = import_module("brasil.encaminhador").POLITICA
+    assert "buscar_abrigados" in pol and not [n for n, r in pol.items() if suspeito(n) or suspeito(r.caminho)]
+    regras = [r.rule for r in cli.application.url_map.iter_rules() if r.rule.startswith("/brasil")]
+    assert regras and not [r for r in regras if suspeito(r)]

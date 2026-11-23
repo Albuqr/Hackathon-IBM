@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cadastrar meu abrigo · Crisis Monitor Brasil</title>
+  <script>
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem("br-tema"); } catch (e) {}
+      if (t !== "light" && t !== "dark") t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='lp/public/logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('brasil.static', filename='brasil.css') }}">
+</head>
+<body class="solta">
+  <main class="entrar cartao">
+    <a class="marca" href="{{ url_for('brasil.inicio') }}"><span class="marca-nome">Crisis Monitor</span> <span class="marca-selo">Brasil</span></a>
+    <h1>Cadastrar meu abrigo</h1>
+    <p class="vazio">Para quem coordena um abrigo. Depois de criar a conta você cadastra o abrigo, que já funciona na hora, marcado como não verificado.</p>
+    <form class="form" method="post">
+      {% if erro %}<p class="aviso" role="alert">{{ erro }}</p>{% endif %}
+      <label>Seu nome <input name="nome" required minlength="2" maxlength="200" autocomplete="name" value="{{ f.get('nome', '') }}"></label>
+      <label>E-mail <input type="email" name="email" required autocomplete="email" value="{{ f.get('email', '') }}"></label>
+      <label>Telefone (opcional) <input type="tel" name="telefone" maxlength="40" autocomplete="tel" inputmode="tel" value="{{ f.get('telefone', '') }}"></label>
+      <label>Senha (mínimo 8 caracteres) <input type="password" name="senha" required minlength="8" autocomplete="new-password"></label>
+      <button class="botao botao-primario" type="submit">Criar conta</button>
+    </form>
+    <p class="dica">Já tem conta? <a class="texto-link pequeno seta" href="{{ url_for('brasil.entrar') }}">Entrar</a></p>
+  </main>
+</body>
+</html>
