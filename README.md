@@ -43,7 +43,7 @@ Quando uma crise eclode — um terremoto, conflito armado, enchente ou surto epi
 O Crisis Monitor resolve isso com:
 
 - **Ingestão automática** de dados de 5 fontes internacionais (USGS, GDACS, NASA EONET, GDELT, ReliefWeb) em tempo real
-- **Pipeline de IA** com IBM watsonx Orchestrate e IBM Granite 3.3-8B para classificar, priorizar e fazer matching entre crises e voluntários
+- **Pipeline de IA** (Claude via `middleware/llm.py`, sem watsonx no núcleo) para classificar eventos, conversar e prever riscos; matching de voluntários por pontuação determinística
 - **Plataforma web** com mapas interativos e dashboards diferenciados por perfil (Voluntário, ONG, Admin)
 - **Bot Telegram** para alertas automáticos e inscrição em missões diretamente pelo celular
 - **Previsão preditiva** de riscos humanitários futuros com horizonte de 7 a 30 dias
@@ -78,8 +78,8 @@ O Crisis Monitor resolve isso com:
 ┌────────────────────────────────────────────────────────────────────────┐
 │              FastAPI Middleware (port 8000)                            │
 │  - REST API completa (40+ endpoints)                                   │
-│  - Ingestão de dados + pipeline de IA via watsonx Orchestrate          │
-│  - Previsão preditiva com Granite                                      │
+│  - Ingestão + classificação via Claude (llm.py), degrada p/ regras     │
+│  - Chat e previsão via Claude (agentes.py, previsao.py)                │
 │  - Banco de dados SQLite                                               │
 │  - Startup automático: backfill de link_codes                          │
 └────────┬──────────────────────────────────────────┬────────────────────┘
@@ -116,6 +116,10 @@ O Crisis Monitor resolve isso com:
 
 ---
 
+> **Estado atual do núcleo (sem watsonx):** `/ingest`, `/chat` e `/predictions` não chamam mais o watsonx Orchestrate. O trecho do diagrama acima com o Orchestrate/Granite descreve a arquitetura anterior e hoje só vale para o módulo Brasil (provedor `watsonx`) e para as tools publicadas. Módulos do núcleo em `middleware/`: `llm.py` (único ponto que importa o SDK `anthropic`; teto diário), `agentes.py` (carrega os YAMLs de `agents/` e executa o laço de ferramentas), `classificacao.py` (classifica evento com saída validada), `previsao.py` (previsão de risco validada), `chat.py` (`/chat`), `ingestao_crise.py` (ciclo de `/ingest`) e `gravacao.py` (gravação validada em `crises`). Sem `ANTHROPIC_API_KEY` ou acima do teto, tudo degrada em vez de falhar.
+
+---
+
 ### Stack Tecnológica
 
 | Camada | Tecnologia | Detalhes |
@@ -125,8 +129,8 @@ O Crisis Monitor resolve isso com:
 | **Mapas** | Leaflet.js + Stadia Maps | Tiles de satélite/rua com marcadores de crises |
 | **Middleware** | FastAPI + Uvicorn | API REST assíncrona, Python 3.12 |
 | **Banco de Dados** | SQLite 3 | Arquivo único `data/crisis.db`, compartilhado via volume Docker |
-| **IA — Orquestração** | IBM watsonx Orchestrate 2.8.0 | Pipeline de agentes, região `br-sao` |
-| **IA — Modelos** | IBM Granite 3.3-8B Instruct | Classificação, chat, previsão |
+| **IA — LLM** | Claude (SDK `anthropic` 2.12.0) | Classificação, chat e previsão via `middleware/llm.py`; modelo em `CRISIS_LLM_MODELO` |
+| **IA — Orquestração (legado)** | IBM watsonx Orchestrate 2.19.0 (`requirements.txt`) | Só módulo Brasil/tools publicadas; fora do núcleo |
 | **IA — Embeddings** | IBM Granite Embedding 278M Multilingual | Matching semântico de voluntários |
 | **Bot** | python-telegram-bot 20.x + job-queue | Long-polling, alertas automáticos a cada 30 min |
 | **Notificações** | Telegram Bot API + Twilio (WhatsApp) | Twilio ativado apenas para severity ≥ 4 |
@@ -138,6 +142,8 @@ O Crisis Monitor resolve isso com:
 ### Agentes de IA
 
 Todos os agentes são do tipo `native`, usam o modelo `watsonx/ibm/granite-3-8b-instruct` com estilo ReAct/default, e são registrados no IBM watsonx Orchestrate.
+
+> **Hoje:** o núcleo só lê o campo `instructions` de `assistant_agent` e `volunteer_agent` (usado por `/chat` via `agentes.py` + Claude). Os demais YAMLs (`crisis_orchestrator`, `monitoring`, `classification`, `communication`, `matching`, `optimization`, `prediction`) não são chamados pelo núcleo; a ingestão e a previsão agora são `ingestao_crise.py`/`classificacao.py` e `previsao.py`.
 
 #### `crisis_orchestrator`
 Agente supervisor do pipeline de ingestão de dados. Coordena o ciclo completo: delega coleta de dados ao `monitoring_agent`, coleta classificações do `classification_agent` para cada evento, salva os resultados via API do VPS e retorna um relatório JSON estruturado com contagens e erros. **Não é usado para chat com usuários.**
@@ -200,7 +206,7 @@ Especialista em planejamento de campanhas humanitárias para ONGs. Responde semp
 
 ### Ferramentas
 
-As tools são registradas no IBM watsonx Orchestrate via decorator `@tool` e também utilizadas diretamente pelo middleware como fallback.
+As tools são registradas no IBM watsonx Orchestrate via decorator `@tool` e também utilizadas diretamente pelo middleware como fallback. `classify_crisis` e `predict_humanitarian_risk` não são mais usadas pelo núcleo (substituídas por `classificacao.py` e `previsao.py`); seguem no repositório só para o watsonx.
 
 | Ferramenta | Descrição |
 |-----------|-----------|
@@ -357,7 +363,7 @@ Base URL: `http://localhost:8000` (dev) | `http://middleware:8000` (Docker)
 | `GET` | `/` | Status da API |
 | `GET` | `/stats` | Contadores: crises, voluntários, missões, matches, alta severidade |
 | `GET` | `/ingest/status` | Último ingest: timestamp, contagem e se está desatualizado |
-| `POST` | `/ingest` | Dispara ingestão completa (Orchestrate + fallback direto) |
+| `POST` | `/ingest` | Ciclo de ingestão: coleta, classifica com Claude só ids novos (até `CRISIS_LLM_MAX_POR_CICLO` por ciclo; o excedente e o que o LLM não puder classificar vão às regras por fonte, `degradado`/`excedente_por_limite` no retorno) e grava. Sem Orchestrate |
 
 #### Crises
 | Método | Rota | Descrição |
@@ -368,7 +374,7 @@ Base URL: `http://localhost:8000` (dev) | `http://middleware:8000` (Docker)
 | `GET` | `/events/{crisis_id}/associations` | Contagem de voluntários e ONGs associados a uma crise |
 | `POST` | `/events/{crisis_id}/associate` | Associa usuário a uma crise (voluntário ou ONG) |
 | `DELETE` | `/events/{crisis_id}/associate/{user_id}` | Remove associação de usuário com crise |
-| `GET` | `/predictions` | Previsões de risco humanitário (cache de 1 hora) |
+| `GET` | `/predictions` | Previsões de risco humanitário via Claude (`previsao.py`). Cache de 1 hora só para resultado válido; falha devolve 200 com `degradado: true` (e a última previsão válida como `stale`, se houver) |
 
 #### Usuários
 | Método | Rota | Descrição |
@@ -414,7 +420,7 @@ Base URL: `http://localhost:8000` (dev) | `http://middleware:8000` (Docker)
 #### Chat & Notificações
 | Método | Rota | Descrição |
 |--------|------|-----------|
-| `POST` | `/chat` | Envia mensagem para agente de IA (volunteer_agent ou assistant_agent) |
+| `POST` | `/chat` | Envia mensagem a `volunteer_agent` (`context_type=volunteer`) ou `assistant_agent`, via Claude. Resposta `{reply, response, degradado}`; sem LLM/teto diário devolve 200 com aviso fixo e `degradado: true`; acima de `CRISIS_CHAT_MAX_CHARS` recusa sem chamar o LLM |
 | `POST` | `/subscribe` | Inscreve usuário Telegram para alertas por país |
 | `GET` | `/subscribers` | Lista inscritos de um país |
 
@@ -425,7 +431,7 @@ Base URL: `http://localhost:8000` (dev) | `http://middleware:8000` (Docker)
 #### Pré-requisitos
 - Docker Desktop 24+ e Docker Compose v2
 - Python 3.12 (para desenvolvimento local)
-- Conta IBM Cloud com watsonx Orchestrate e watsonx AI (região `br-sao`)
+- (Opcional) `ANTHROPIC_API_KEY` para classificação, chat e previsão; sem ela o núcleo roda degradado. Conta IBM Cloud/watsonx só para o legado (Brasil/tools)
 - Bot Telegram criado via [@BotFather](https://t.me/BotFather)
 - (Opcional) Conta Stadia Maps para tiles de mapa, conta Twilio para WhatsApp
 
@@ -437,7 +443,7 @@ cd Hackathon-IBM
 cp .env.example .env   # editar com seus valores
 ```
 
-Edite o `.env` com suas credenciais (veja a tabela de [Variáveis de Ambiente](#variáveis-de-ambiente)).
+Edite o `.env` com suas credenciais. A lista completa, com padrões, está em [`.env.example`](.env.example) (veja também a tabela de [Variáveis de Ambiente](#variáveis-de-ambiente)).
 
 #### 2. Inicializar o banco de dados
 
@@ -459,6 +465,8 @@ Serviços disponíveis:
 - Middleware: `http://localhost:8001`
 - Bot Telegram: ativo em background (long-polling)
 
+Um `docker run` solto da imagem precisa da pasta `data/` gravável (no docker-compose o volume `./data` resolve).
+
 #### 4. Rodar localmente (sem Docker)
 
 ```bash
@@ -474,6 +482,16 @@ python frontend/app.py
 pip install -r telegram_bot/requirements.txt
 python telegram_bot/bot.py
 ```
+
+#### Testes
+
+```bash
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements-dev.txt   # Linux/macOS: .venv/bin/python
+.venv/Scripts/python -m pytest -q -p no:cacheprovider
+```
+
+A suíte roda sem rede e sem chaves (o LLM é substituído por um provedor falso). `requirements-dev.txt` inclui o middleware, as tools, o Flask do frontend e o pytest.
 
 #### 5. Deploy em produção com Easypanel
 
@@ -532,6 +550,8 @@ Ao enviar qualquer mensagem de texto, o bot:
 ---
 
 ### Variáveis de Ambiente
+
+Lista completa e padrões em [`.env.example`](.env.example). Variáveis do núcleo sem watsonx: `ANTHROPIC_API_KEY` (vazia = modo degradado), `CRISIS_LLM_MODELO` (padrão `claude-haiku-5-5`), `CRISIS_LLM_MAX_TOKENS` (1024), `CRISIS_LLM_TIMEOUT` (30 s), `CRISIS_LLM_LIMITE_DIARIO` (500 chamadas/dia UTC, contador em memória por processo), `CRISIS_LLM_MAX_POR_CICLO` (30 eventos novos por ciclo de `/ingest`) e `CRISIS_CHAT_MAX_CHARS` (6000). As variáveis `WO_*`, `*_AGENT_ID` e `WATSONX_*` abaixo são **legado**: o núcleo não as usa mais.
 
 | Variável | Descrição (PT) | Descrição (EN) | Exemplo |
 |----------|---------------|---------------|---------|
@@ -596,7 +616,7 @@ When a crisis erupts — an earthquake, armed conflict, flood, or disease outbre
 Crisis Monitor solves this with:
 
 - **Automatic ingestion** of data from 5 international sources (USGS, GDACS, NASA EONET, GDELT, ReliefWeb) in real time
-- **AI pipeline** using IBM watsonx Orchestrate and IBM Granite 3.3-8B to classify, prioritize, and match crises to volunteers
+- **AI pipeline** (Claude via `middleware/llm.py`, no watsonx in the core) to classify events, chat and forecast risk; volunteer matching by deterministic scoring
 - **Web platform** with interactive maps and role-differentiated dashboards (Volunteer, NGO, Admin)
 - **Telegram Bot** for automatic alerts and mission enrollment directly from mobile
 - **Predictive forecasting** of future humanitarian risks with a 7–30 day horizon
@@ -631,8 +651,8 @@ Crisis Monitor solves this with:
 ┌────────────────────────────────────────────────────────────────────────┐
 │              FastAPI Middleware (port 8000)                            │
 │  - Full REST API (40+ endpoints)                                       │
-│  - Data ingestion + AI pipeline via watsonx Orchestrate                │
-│  - Predictive forecasting with Granite                                 │
+│  - Ingestion + classification via Claude (llm.py), degrades to rules   │
+│  - Chat and forecasting via Claude (agentes.py, previsao.py)           │
 │  - SQLite database                                                     │
 │  - Startup: auto-backfill missing link_codes                           │
 └────────┬──────────────────────────────────────────┬────────────────────┘
@@ -669,6 +689,10 @@ Crisis Monitor solves this with:
 
 ---
 
+> **Current state of the core (no watsonx):** `/ingest`, `/chat` and `/predictions` no longer call watsonx Orchestrate. The Orchestrate/Granite part of the diagram above describes the previous architecture and now only applies to the Brasil module (`watsonx` provider) and the published tools. Core modules in `middleware/`: `llm.py` (the only place importing the `anthropic` SDK; daily cap), `agentes.py` (loads the YAMLs in `agents/` and runs the tool loop), `classificacao.py` (event classification with validated output), `previsao.py` (validated risk forecast), `chat.py` (`/chat`), `ingestao_crise.py` (the `/ingest` cycle) and `gravacao.py` (validated writes to `crises`). Without `ANTHROPIC_API_KEY` or above the cap, everything degrades instead of failing.
+
+---
+
 ### Tech Stack
 
 | Layer | Technology | Details |
@@ -678,8 +702,8 @@ Crisis Monitor solves this with:
 | **Maps** | Leaflet.js + Stadia Maps | Satellite/street tiles with crisis markers |
 | **Middleware** | FastAPI + Uvicorn | Async REST API, Python 3.12 |
 | **Database** | SQLite 3 | Single file `data/crisis.db`, shared via Docker volume |
-| **AI — Orchestration** | IBM watsonx Orchestrate 2.8.0 | Multi-agent pipeline, `br-sao` region |
-| **AI — Models** | IBM Granite 3.3-8B Instruct | Classification, chat, prediction |
+| **AI — LLM** | Claude (`anthropic` SDK 2.12.0) | Classification, chat and forecasting via `middleware/llm.py`; model in `CRISIS_LLM_MODELO` |
+| **AI — Orchestration (legacy)** | IBM watsonx Orchestrate 2.19.0 (`requirements.txt`) | Brasil module / published tools only; out of the core |
 | **AI — Embeddings** | IBM Granite Embedding 278M Multilingual | Semantic volunteer matching |
 | **Bot** | python-telegram-bot 20.x + job-queue | Long-polling, automatic alerts every 30 min |
 | **Notifications** | Telegram Bot API + Twilio (WhatsApp) | Twilio enabled only for severity ≥ 4 |
@@ -691,6 +715,8 @@ Crisis Monitor solves this with:
 ### AI Agents
 
 All agents are of type `native`, use the model `watsonx/ibm/granite-3-8b-instruct` with ReAct/default style, and are registered in IBM watsonx Orchestrate.
+
+> **Today:** the core only reads the `instructions` field of `assistant_agent` and `volunteer_agent` (used by `/chat` through `agentes.py` + Claude). The other YAMLs (`crisis_orchestrator`, `monitoring`, `classification`, `communication`, `matching`, `optimization`, `prediction`) are not called by the core; ingestion and forecasting are now `ingestao_crise.py`/`classificacao.py` and `previsao.py`.
 
 #### `crisis_orchestrator`
 Supervisor agent for the data ingestion pipeline. Coordinates the full cycle: delegates data collection to `monitoring_agent`, collects classifications from `classification_agent` for each event, saves results via the VPS API, and returns a structured JSON report with counts and errors. **Not used for user chat.**
@@ -753,7 +779,7 @@ Humanitarian campaign planning specialist for NGOs. Always responds in Portugues
 
 ### Tools
 
-Tools are registered in IBM watsonx Orchestrate via the `@tool` decorator and also used directly by the middleware as a fallback.
+Tools are registered in IBM watsonx Orchestrate via the `@tool` decorator and also used directly by the middleware as a fallback. `classify_crisis` and `predict_humanitarian_risk` are no longer used by the core (replaced by `classificacao.py` and `previsao.py`); they stay in the repository only for watsonx.
 
 | Tool | Description |
 |------|-------------|
@@ -910,7 +936,7 @@ Base URL: `http://localhost:8000` (dev) | `http://middleware:8000` (Docker)
 | `GET` | `/` | API status |
 | `GET` | `/stats` | Counters: crises, volunteers, missions, matches, high severity |
 | `GET` | `/ingest/status` | Last ingest: timestamp, count, and staleness flag |
-| `POST` | `/ingest` | Trigger full ingestion (Orchestrate + direct fallback) |
+| `POST` | `/ingest` | Ingestion cycle: collect, classify only new ids with Claude (up to `CRISIS_LLM_MAX_POR_CICLO` per cycle; the excess and anything the LLM cannot classify go to per-source rules, `degradado`/`excedente_por_limite` in the response) and save. No Orchestrate |
 
 #### Crises
 | Method | Route | Description |
@@ -921,7 +947,7 @@ Base URL: `http://localhost:8000` (dev) | `http://middleware:8000` (Docker)
 | `GET` | `/events/{crisis_id}/associations` | Count of volunteers and NGOs associated with a crisis |
 | `POST` | `/events/{crisis_id}/associate` | Associate user with a crisis (volunteer or NGO) |
 | `DELETE` | `/events/{crisis_id}/associate/{user_id}` | Remove user association with crisis |
-| `GET` | `/predictions` | Humanitarian risk predictions (1-hour cache) |
+| `GET` | `/predictions` | Humanitarian risk predictions via Claude (`previsao.py`). 1-hour cache only for valid results; failure returns 200 with `degradado: true` (and the last valid forecast as `stale`, if any) |
 
 #### Users
 | Method | Route | Description |
@@ -967,7 +993,7 @@ Base URL: `http://localhost:8000` (dev) | `http://middleware:8000` (Docker)
 #### Chat & Notifications
 | Method | Route | Description |
 |--------|-------|-------------|
-| `POST` | `/chat` | Send message to AI agent (volunteer_agent or assistant_agent) |
+| `POST` | `/chat` | Sends a message to `volunteer_agent` (`context_type=volunteer`) or `assistant_agent`, via Claude. Response `{reply, response, degradado}`; without LLM/daily cap returns 200 with a fixed notice and `degradado: true`; above `CRISIS_CHAT_MAX_CHARS` it refuses without calling the LLM |
 | `POST` | `/subscribe` | Subscribe Telegram user to country alerts |
 | `GET` | `/subscribers` | List subscribers for a country |
 
@@ -978,7 +1004,7 @@ Base URL: `http://localhost:8000` (dev) | `http://middleware:8000` (Docker)
 #### Prerequisites
 - Docker Desktop 24+ and Docker Compose v2
 - Python 3.12 (for local development)
-- IBM Cloud account with watsonx Orchestrate and watsonx AI (`br-sao` region)
+- (Optional) `ANTHROPIC_API_KEY` for classification, chat and forecasting; without it the core runs degraded. IBM Cloud/watsonx account only for the legacy parts (Brasil/tools)
 - Telegram bot created via [@BotFather](https://t.me/BotFather)
 - (Optional) Stadia Maps account for map tiles, Twilio account for WhatsApp
 
@@ -990,7 +1016,7 @@ cd Hackathon-IBM
 cp .env.example .env   # fill in your values
 ```
 
-Edit `.env` with your credentials (see the [Environment Variables](#environment-variables) table).
+Edit `.env` with your credentials. The full list, with defaults, is in [`.env.example`](.env.example) (see also the [Environment Variables](#environment-variables) table).
 
 #### 2. Initialize the database
 
@@ -1012,6 +1038,8 @@ Services available:
 - Middleware: `http://localhost:8001`
 - Telegram Bot: running in background (long-polling)
 
+A bare `docker run` of the image needs a writable `data/` folder (in docker-compose the `./data` volume covers it).
+
 #### 4. Run locally (without Docker)
 
 ```bash
@@ -1027,6 +1055,16 @@ python frontend/app.py
 pip install -r telegram_bot/requirements.txt
 python telegram_bot/bot.py
 ```
+
+#### Tests
+
+```bash
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements-dev.txt   # Linux/macOS: .venv/bin/python
+.venv/Scripts/python -m pytest -q -p no:cacheprovider
+```
+
+The suite runs without network or keys (the LLM is replaced by a fake provider). `requirements-dev.txt` includes the middleware, the tools, the frontend's Flask and pytest.
 
 #### 5. Production deployment with Easypanel
 
@@ -1085,6 +1123,8 @@ When any text message is sent, the bot:
 ---
 
 ### Environment Variables
+
+Full list and defaults in [`.env.example`](.env.example). Core variables (no watsonx): `ANTHROPIC_API_KEY` (empty = degraded mode), `CRISIS_LLM_MODELO` (default `claude-haiku-5-5`), `CRISIS_LLM_MAX_TOKENS` (1024), `CRISIS_LLM_TIMEOUT` (30 s), `CRISIS_LLM_LIMITE_DIARIO` (500 calls/UTC day, in-memory per-process counter), `CRISIS_LLM_MAX_POR_CICLO` (30 new events per `/ingest` cycle) and `CRISIS_CHAT_MAX_CHARS` (6000). The `WO_*`, `*_AGENT_ID` and `WATSONX_*` variables below are **legacy**: the core no longer uses them.
 
 | Variable | Description (PT) | Description (EN) | Example |
 |----------|-----------------|-----------------|---------|

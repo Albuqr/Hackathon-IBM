@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import json
@@ -9,10 +10,17 @@ import time
 import asyncio
 import requests
 from datetime import datetime
+from typing import List
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from middleware.chat import responder as chat_responder
+from middleware.gravacao import gravar_eventos
+from middleware.ingestao_crise import executar_ingestao
+from middleware.llm import LLMIndisponivel
+from middleware.orquestracao_wxo import call_orchestrate  # noqa: F401  (só para middleware/brasil/orquestracao/watsonx.py)
+from middleware.previsao import prever_risco
 
 # ── Predictions cache ──
 _predictions_cache = {"data": None, "ts": 0}
@@ -106,72 +114,6 @@ def fix_missing_link_codes():
     db.close()
 
 
-# ── Token cache ──
-_token_cache = {"token": None, "exp": 0}
-
-def get_wxo_token():
-    if _token_cache["token"] and time.time() < _token_cache["exp"] - 60:
-        return _token_cache["token"]
-    r = requests.post(
-        "https://iam.cloud.ibm.com/identity/token",
-        data={"grant_type": "urn:ibm:params:oauth:grant-type:apikey",
-              "apikey": os.environ["WO_API_KEY"]}, timeout=30
-    )
-    r.raise_for_status()
-    d = r.json()
-    _token_cache["token"] = d["access_token"]
-    _token_cache["exp"] = time.time() + d["expires_in"]
-    return _token_cache["token"]
-
-def call_orchestrate(message: str, agent_id: str = None, max_wait: int = 120) -> dict:
-    base = os.environ["WO_INSTANCE"]
-    token = get_wxo_token()
-    headers = {"Authorization": f"Bearer {token}",
-               "Content-Type": "application/json"}
-    aid = agent_id or os.environ["ORCHESTRATOR_AGENT_ID"]
-    r = requests.post(
-        f"{base}/v1/orchestrate/runs?stream=false",
-        headers=headers,
-        json={"message": {"role": "user", "content": message},
-              "agent_id": aid},
-        timeout=120
-    )
-    r.raise_for_status()
-    data = r.json()
-    run_id = data.get("run_id")
-
-    interval   = 5
-    iterations = max_wait // interval
-    print(f"[orchestrate] run_id={run_id} | timeout={max_wait}s | polling every {interval}s (max {iterations} attempts)")
-
-    start = time.time()
-    for attempt in range(1, iterations + 1):
-        time.sleep(interval)
-        elapsed = time.time() - start
-        r2 = requests.get(
-            f"{base}/v1/orchestrate/runs/{run_id}",
-            headers=headers, timeout=30
-        )
-        if r2.status_code == 200:
-            run_data = r2.json()
-            status   = run_data.get("status", "unknown")
-            print(f"[orchestrate] attempt {attempt}/{iterations} | status={status} | elapsed={elapsed:.1f}s")
-            if status == "completed":
-                try:
-                    content = run_data.get("result", {}).get("data", {}).get("message", {}).get("content", "")
-                    if isinstance(content, list):
-                        content = " ".join(c.get("text", "") for c in content if isinstance(c, dict))
-                    print(f"[orchestrate] COMPLETED | run_id={run_id} | response: {str(content)[:500]}")
-                except Exception as _le:
-                    print(f"[orchestrate] COMPLETED | run_id={run_id} | (could not parse response: {_le})")
-                return run_data
-            elif status == "failed":
-                return {"error": run_data.get("last_error")}
-        else:
-            print(f"[orchestrate] attempt {attempt}/{iterations} | poll HTTP {r2.status_code} | elapsed={elapsed:.1f}s")
-
-    print(f"[orchestrate] TIMEOUT after {time.time() - start:.1f}s (limit={max_wait}s) | run_id={run_id}")
-    return {"error": "timeout"}
 
 # ── Models ──
 class VolunteerCreate(BaseModel):
@@ -208,6 +150,7 @@ class ChatMessage(BaseModel):
     telegram_id: int = None
     username: str = None
     context_type: str = None
+    context: str = None  # opcional: contexto extra, entregue ao modelo como dado delimitado
 
 class AssociateRequest(BaseModel):
     user_id: int
@@ -485,101 +428,42 @@ def ingest_status():
 
 @app.post("/save_event")
 def save_event(event: dict):
-    """Save a single crisis event dict to the crises table. Unauthenticated."""
+    """Save a single crisis event dict to the crises table. Unauthenticated. Adapter of gravar_eventos."""
     now = datetime.utcnow().isoformat()
     eid = event.get("id") or f"api-{now}"
     try:
         db = get_db()
-        existing = db.execute("SELECT id FROM crises WHERE id=?", (eid,)).fetchone()
-        if existing:
-            db.execute(
-                "UPDATE crises SET severity=?, urgency=?, crisis_type=?, updated_at=? WHERE id=?",
-                (event.get("severity", 1), event.get("urgency", "monitoring"),
-                 event.get("crisis_type", "humanitarian"), now, eid)
-            )
-        else:
-            db.execute("""
-                INSERT INTO crises
-                (id, title, country, country_iso3, lat, lon,
-                 severity, urgency, crisis_type, source,
-                 people_affected, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (
-                eid,
-                event.get("title", ""),
-                event.get("country", ""),
-                event.get("country_iso3", "UNK"),
-                float(event.get("lat", 0)),
-                float(event.get("lon", 0)),
-                event.get("severity", 1),
-                event.get("urgency", "monitoring"),
-                event.get("crisis_type", "humanitarian"),
-                event.get("source", "api"),
-                int(event.get("people_affected", 0)),
-                now, now
-            ))
-        db.commit()
-        db.close()
+        try:
+            res = gravar_eventos(db, [{**event, "id": eid}], agora=now)
+        finally:
+            db.close()
+        if res["errors"]:
+            return {"ok": False, "error": res["errors"][0]["error"], "errors": res["errors"]}
         return {"ok": True, "id": eid}
     except Exception as e:
+        logging.getLogger("middleware.gravacao").warning("evento rejeitado: id=%s motivo=%s", eid, e)
         return {"ok": False, "error": str(e)}
 
 
 @app.post("/save_events")
-def save_events(events: list):
-    """Save a list of crisis event dicts to the crises table. Unauthenticated."""
-    now = datetime.utcnow().isoformat()
-    saved = 0
-    errors = []
+def save_events(events: List[dict]):
+    """Save a list of crisis event dicts to the crises table. Unauthenticated. Adapter of gravar_eventos."""
     db = get_db()
-    for event in events:
-        eid = event.get("id") or f"api-{now}-{saved}"
-        try:
-            existing = db.execute("SELECT id FROM crises WHERE id=?", (eid,)).fetchone()
-            if existing:
-                db.execute(
-                    "UPDATE crises SET severity=?, urgency=?, crisis_type=?, updated_at=? WHERE id=?",
-                    (event.get("severity", 1), event.get("urgency", "monitoring"),
-                     event.get("crisis_type", "humanitarian"), now, eid)
-                )
-            else:
-                db.execute("""
-                    INSERT INTO crises
-                    (id, title, country, country_iso3, lat, lon,
-                     severity, urgency, crisis_type, source,
-                     people_affected, created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """, (
-                    eid,
-                    event.get("title", ""),
-                    event.get("country", ""),
-                    event.get("country_iso3", "UNK"),
-                    float(event.get("lat", 0)),
-                    float(event.get("lon", 0)),
-                    event.get("severity", 1),
-                    event.get("urgency", "monitoring"),
-                    event.get("crisis_type", "humanitarian"),
-                    event.get("source", "api"),
-                    int(event.get("people_affected", 0)),
-                    now, now
-                ))
-                saved += 1
-        except Exception as e:
-            errors.append({"id": eid, "error": str(e)})
-    db.commit()
-    db.close()
+    try:
+        res = gravar_eventos(db, events)
+    finally:
+        db.close()
     # Update ingest tracking
     _last_ingest["ts"]    = time.time()
-    _last_ingest["count"] = _last_ingest["count"] + saved
-    return {"ok": True, "saved": saved, "errors": errors}
+    _last_ingest["count"] = _last_ingest["count"] + res["saved"]
+    return {"ok": True, "saved": res["saved"], "errors": res["errors"]}
 
 
-def _ingest_fallback():
-    """Direct tool calls used as fallback when Orchestrate is unavailable."""
+def _coletar_eventos():
+    """Coleta direta (USGS, EONET, GDACS RSS, GDELT e conflitos fixos). Só busca e normaliza: não grava."""
     import defusedxml.ElementTree as ET
     import re as _re
     events = []
-    now = datetime.utcnow().isoformat()
 
     # 1. USGS Earthquakes
     try:
@@ -797,64 +681,54 @@ def _ingest_fallback():
                 "people_affected": 0,
             })
     print(f"Fallback conflicts: {len(_FALLBACK)} adicionados")
+    return events
 
-    # Salvar no banco
-    db = get_db()
-    saved = 0
-    saved_events = []
-    for event in events:
-        if not event.get("id"):
-            continue
-        try:
-            existing = db.execute(
-                "SELECT id FROM crises WHERE id=?", (event["id"],)
-            ).fetchone()
-            if not existing:
-                db.execute("""
-                    INSERT INTO crises
-                    (id, title, country, country_iso3, lat, lon,
-                     severity, urgency, crisis_type, source,
-                     people_affected, created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """, (
-                    event["id"], event["title"],
-                    event["country"], event["country_iso3"],
-                    event["lat"], event["lon"],
-                    event["severity"], event["urgency"],
-                    event["crisis_type"], event["source"],
-                    event["people_affected"], now, now
+
+def _avisar_novos(saved_events):
+    """Avisa os assinantes do Telegram sobre crises recém-gravadas (falha de aviso não derruba o ingest)."""
+    try:
+        _tools_dir = os.path.join(os.path.dirname(__file__), "..", "tools")
+        if _tools_dir not in sys.path:
+            sys.path.insert(0, _tools_dir)
+        from notify_telegram import broadcast_to_subscribers
+        for ev in saved_events:
+            country = ev.get("country", "")
+            if country:
+                asyncio.run(broadcast_to_subscribers(
+                    country=country,
+                    crisis_title=ev.get("title", "Nova crise"),
+                    severity=int(ev.get("severity", 1)),
                 ))
-                saved += 1
-                saved_events.append(event)
-        except Exception as e:
-            print(f"DB error {event.get('id')}: {e}")
-            continue
+    except Exception as _be:
+        print(f"[broadcast] error: {_be}")
 
-    db.commit()
-    db.close()
+
+def _ingest_fallback(events=None):
+    """Rede de segurança do /ingest: coleta direta (ou os `events` já coletados) e gravação por regras, sem LLM."""
+    if events is None:
+        events = _coletar_eventos()
+    # Só eventos cujo id ainda não existe (atualizar=False): a regra por fonte não pode sobrescrever
+    # severidade/urgência/tipo de uma classificação melhor feita antes (LLM ou manual).
+    db = get_db()
+    try:
+        res = gravar_eventos(db, [e for e in events if e.get("id")], atualizar=False)
+    finally:
+        db.close()
+    saved = res["saved"]
+    novos = set(res["ids"])
+    saved_events = []
+    for e in events:  # um por id (a coleta pode repetir)
+        if e.get("id") in novos:
+            novos.discard(e["id"])
+            saved_events.append(e)
 
     sources_count = {}
     for e in events:
         s = e["source"]
         sources_count[s] = sources_count.get(s, 0) + 1
 
-    # Broadcast new crises to Telegram subscribers
     if saved_events:
-        try:
-            _tools_dir = os.path.join(os.path.dirname(__file__), "..", "tools")
-            if _tools_dir not in sys.path:
-                sys.path.insert(0, _tools_dir)
-            from notify_telegram import broadcast_to_subscribers
-            for ev in saved_events:
-                country = ev.get("country", "")
-                if country:
-                    asyncio.run(broadcast_to_subscribers(
-                        country=country,
-                        crisis_title=ev.get("title", "Nova crise"),
-                        severity=int(ev.get("severity", 1)),
-                    ))
-        except Exception as _be:
-            print(f"[broadcast] error: {_be}")
+        _avisar_novos(saved_events)
 
     # Update ingest tracking
     _last_ingest["ts"]    = time.time()
@@ -866,116 +740,31 @@ def _ingest_fallback():
         "events_collected": len(events),
         "events_saved":    saved,
         "by_source":       sources_count,
+        "errors":          res["errors"],
     }
 
 
 @app.post("/ingest")
 def trigger_ingest():
-    """Trigger crisis data ingestion.
-    Primary path: watsonx Orchestrate monitoring_agent.
-    Fallback: direct tool calls if Orchestrate fails or times out.
-    """
-    global _last_ingest
-    vps_url    = os.environ.get("VPS_API_URL", "http://31.97.83.21:17291")
-    agent_id   = os.environ.get("MONITORING_AGENT_ID",
-                                os.environ.get("ORCHESTRATOR_AGENT_ID", ""))
-
-    # ── Primary: Orchestrate ──────────────────────────────────────────
-    if agent_id:
-        try:
-            message = (
-                f"Fetch all crisis data from USGS, GDACS, EONET and conflict APIs, "
-                f"classify each event, and save them to the database at {vps_url}"
-            )
-            print("[ingest] Trying Orchestrate monitoring_agent...")
-            result = call_orchestrate(message, agent_id=agent_id, max_wait=300)
-            if not result.get("error"):
-                _last_ingest["ts"] = time.time()
-                print("[ingest] Orchestrate path succeeded")
-                return {"ok": True, "triggered_by": "orchestrate"}
-            else:
-                print(f"[ingest] Orchestrate returned error: {result.get('error')} — falling back")
-        except Exception as e:
-            print(f"[ingest] Orchestrate exception: {e} — falling back")
-    else:
-        print("[ingest] No agent_id configured — using fallback directly")
-
-    # ── Fallback: direct tool calls ───────────────────────────────────
-    print("[ingest] Running fallback (direct tool calls)")
-    return _ingest_fallback()
+    """Ciclo de ingestão: coleta, classificação por LLM (middleware/classificacao.py) e gravação em Python.
+    Com o LLM indisponível (inclui o teto diário) cai na rede de segurança por regras (_ingest_fallback)
+    e sinaliza `degradado`. O watsonx Orchestrate não é mais usado aqui."""
+    db = get_db()
+    try:
+        res = executar_ingestao(db)
+    finally:
+        db.close()
+    _last_ingest["ts"] = time.time()
+    _last_ingest["count"] = res.get("events_saved", 0)
+    return res
 
 
 @app.post("/chat")
 def chat(msg: ChatMessage):
-    try:
-        text = msg.message or msg.text or ""
-        if not text:
-            return {"reply": "Mensagem vazia.", "response": "Mensagem vazia."}
+    """Chat dos agentes (ONG/voluntário) sobre middleware/chat.py. Mantém `reply`/`response` e acrescenta
+    `degradado`; falha do provedor responde 200 com mensagem degradada, nunca 500. Sem watsonx."""
+    return chat_responder(msg.message or msg.text or "", msg.context_type, msg.context)
 
-        if msg.context_type == "volunteer":
-            agent_id = os.environ.get("VOLUNTEER_AGENT_ID")
-        else:
-            agent_id = os.environ.get("ASSISTANT_AGENT_ID")
-        result = call_orchestrate(text, agent_id=agent_id)
-        print("AGENT RAW RESPONSE:", result)
-
-        # Safely extract reply — try multiple paths in order
-        reply = None
-
-        # Path 1: deep Orchestrate structure result["result"]["data"]["message"]["content"]
-        try:
-            content = result["result"]["data"]["message"]["content"]
-            if isinstance(content, list):
-                parts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("text")]
-                reply = " ".join(parts).strip() or None
-            elif isinstance(content, dict):
-                reply = content.get("text") or str(content) or None
-            elif isinstance(content, str):
-                reply = content or None
-        except (KeyError, TypeError, AttributeError):
-            pass
-
-        # Path 2: result["output"]
-        if not reply:
-            val = result.get("output")
-            if val and isinstance(val, str):
-                reply = val
-
-        # Path 3: result["reply"]
-        if not reply:
-            val = result.get("reply")
-            if val and isinstance(val, str):
-                reply = val
-
-        # Path 4: result["text"]
-        if not reply:
-            val = result.get("text")
-            if val and isinstance(val, str):
-                reply = val
-
-        # Path 5: result["content"]
-        if not reply:
-            val = result.get("content")
-            if val and isinstance(val, str):
-                reply = val
-
-        # Path 6: str(result) as last resort before hardcoded fallback
-        if not reply:
-            raw = str(result)
-            if raw and raw not in ("None", "{}", "[]", "{'error': 'timeout'}", "{'error': None}"):
-                reply = raw
-
-        if not reply:
-            reply = "Agente indisponível no momento. Tente mais tarde."
-
-        return {"reply": reply, "response": reply}
-
-    except Exception as e:
-        return {
-            "reply": "Desculpe, ocorreu um erro interno. Tente novamente.",
-            "response": "Desculpe, ocorreu um erro interno. Tente novamente.",
-            "error": str(e)
-        }
 
 @app.get("/stats")
 def get_stats():
@@ -1323,17 +1112,27 @@ def users_with_telegram():
     db.close()
     return [dict(r) for r in rows]
 
+PREVISOES_TTL = 3600  # 1 hora, só para resultado válido (lista não vazia)
+
+
+def _previsoes_degradadas(erro: str) -> dict:
+    """Falha: 200 com lista vazia e `degradado`. Se havia um resultado válido anterior (mesmo expirado),
+    serve-o como `stale` em vez de esvaziar a tela."""
+    anterior = _predictions_cache["data"]
+    if anterior:
+        return {**anterior, "error": erro, "degradado": True, "stale": True}
+    return {"predictions": [], "error": erro, "degradado": True}
+
+
 @app.get("/predictions")
 def get_predictions():
-    """Retorna previsões de risco humanitário geradas pelo Granite.
-    Resultado cacheado por 1 hora para evitar chamadas excessivas ao modelo."""
-    global _predictions_cache
+    """Previsões de risco humanitário (middleware/previsao.py sobre o LLM, sem watsonx).
+    Cache de 1 hora SOMENTE para resultado válido: erro, LLMIndisponivel e resultado vazio não são
+    cacheados. Falha responde 200 com {"predictions": [], "error", "degradado": true}."""
     now = time.time()
-    # Return cache if still fresh (1 hour = 3600s)
-    if _predictions_cache["data"] and (now - _predictions_cache["ts"]) < 3600:
+    if _predictions_cache["data"] and (now - _predictions_cache["ts"]) < PREVISOES_TTL:
         return _predictions_cache["data"]
 
-    # Fetch latest 50 events from DB
     db = get_db()
     rows = db.execute(
         "SELECT id, title, country, country_iso3, lat, lon, severity, "
@@ -1346,18 +1145,21 @@ def get_predictions():
     if not events:
         return {"predictions": [], "note": "Sem eventos no banco de dados"}
 
-    # Call predict_humanitarian_risk via watsonx orchestrate tool directly
-    import sys, os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
     try:
-        from predict_humanitarian_risk import predict_humanitarian_risk
-        result_str = predict_humanitarian_risk(json.dumps(events))
-        result = json.loads(result_str)
-    except Exception as e:
-        result = {"error": str(e), "predictions": []}
-
-    _predictions_cache["data"] = result
-    _predictions_cache["ts"]   = now
+        result = prever_risco(events)
+    except LLMIndisponivel as e:
+        logging.getLogger(__name__).warning("/predictions degradado: LLM indisponível (%s)", e)
+        return _previsoes_degradadas("Previsões indisponíveis no momento.")
+    except Exception:
+        logging.getLogger(__name__).exception("/predictions degradado: erro inesperado")
+        return _previsoes_degradadas("Previsões indisponíveis no momento.")
+    if result.get("error"):
+        return _previsoes_degradadas("Previsões indisponíveis no momento.")
+    if result["predictions"]:
+        _predictions_cache["data"] = result
+        _predictions_cache["ts"] = now
     return result
+
+
 app.include_router(__import__("middleware.brasil", fromlist=["router"]).router)  # Dash Brasil (ADR 0001)
 app = __import__("middleware.seguranca", fromlist=["instalar"]).instalar(app)  # segredo da API (ADR 0004)

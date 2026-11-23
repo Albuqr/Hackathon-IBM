@@ -18,8 +18,6 @@ CABECALHO = "X-Crisis-Token"
 PADRAO_DEV = "hktn26-dev-secret"  # o mesmo de frontend/app.py
 ROTULO = b"crisis-api-v1"
 ISENTOS = {("GET", "/"), ("GET", "/brasil/saude")}
-# Exceção temporária: as tools do watsonx ainda não mandam o token. Sai quando forem republicadas.
-TRANSICAO = {("POST", "/save_events")}
 
 log = logging.getLogger("crisis.seguranca")
 
@@ -53,9 +51,6 @@ def instalar(app):
             return await call_next(request)
         recebido = request.headers.get(CABECALHO, "")
         if hmac.compare_digest(recebido.encode(), token(s).encode()):
-            return await call_next(request)
-        if chave in TRANSICAO:
-            log.warning("%s %s sem %s (aceito na transição)", *chave, CABECALHO)
             return await call_next(request)
         return JSONResponse({"detail": "Não autorizado"}, status_code=401)
 

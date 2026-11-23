@@ -1,3 +1,5 @@
+import os
+
 import requests
 from ibm_watsonx_orchestrate.agent_builder.tools import tool
 
@@ -13,7 +15,7 @@ def fetch_reliefweb(limit: int = 50) -> list[dict]:
     """
     url = "https://api.reliefweb.int/v2/disasters"
     params = {
-        "appname": "hktn26-crisis",
+        "appname": os.environ.get("RELIEFWEB_APPNAME") or "hktn26-crisis",
         "filter[field]": "status",
         "filter[value]": "current",
         "limit": limit,

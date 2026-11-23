@@ -1,5 +1,5 @@
 # 0004 — Segredo da API, identidade encaminhada e encaminhador do Brasil
-status: accepted · date: 2026-10-19
+status: accepted · date: 2026-10-19 · atualizado em 2026-11-23 (transição do `/save_events` encerrada)
 
 ## Context
 A porta da API está publicada (docker-compose `8001:8000`; as tools do watsonx gravam pelo IP público). A API do Crisis e a do Brasil aceitavam qualquer `user_id` no corpo, então quem alcançasse a porta agia como qualquer usuário, inclusive admin. No frontend do Brasil, ~17 rotas JSON rasas repetiam "pôr o usuário da sessão e checar papel" e discordavam da API sobre quem pode o quê (relatório de arquitetura, candidato 2). O dono pediu para corrigir no Brasil e no Crisis original, sem criar variável nova ("a chave já existe no .env").
@@ -16,6 +16,9 @@ A porta da API está publicada (docker-compose `8001:8000`; as tools do watsonx 
 - API do Brasil: identidade em `X-Brasil-Usuario`, papel vindo do `brasil.db` e dono conferido na API (`middleware/brasil/acesso.py`). `user_id`/`org_id` do corpo não valem mais.
 - Frontend do Brasil: o navegador só fala com `POST /brasil/acao/<nome>`. A tabela `POLITICA` (`frontend/brasil/encaminhador.py`) diz método, caminho e papéis de cada ação. O adapter da API vem de `app.config["BRASIL_API"]`.
 - `python -m middleware.seguranca` imprime o token, para a conexão das tools no watsonx (variável `CRISIS_API_TOKEN`).
+
+## Atualização 2026-11-23: fim da transição do `/save_events`
+A exceção temporária (`TRANSICAO`) foi removida de `middleware/seguranca.py`: com `SECRET_KEY` válido, `POST /save_events` passa a exigir `X-Crisis-Token` como as demais rotas (sem token ou token errado: 401; token válido: grava). As únicas isenções agora são `GET /` e `GET /brasil/saude`. O texto de "Decision" acima descreve o estado de 2026-10-19 e foi mantido como histórico. Quem ainda chamar a rota sem o token (a tool `save_classification` publicada no watsonx sem `CRISIS_API_TOKEN`, por exemplo) recebe 401.
 
 ## Consequences
 Positivo: a porta publicada deixa de dar acesso; a política de acesso do Brasil fica numa tabela com um teste por linha. Negativo: frontend, middleware e bot precisam do mesmo `SECRET_KEY`; as tools do watsonx precisam ser republicadas com o token antes de tirar a exceção do `/save_events`. Trocar o `SECRET_KEY` também desloga as sessões do Flask, porque é a mesma chave.

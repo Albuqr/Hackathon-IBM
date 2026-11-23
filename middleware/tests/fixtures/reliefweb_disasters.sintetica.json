@@ -1,0 +1,58 @@
+{
+  "_aviso": "SINTETICA: a ReliefWeb v2 devolveu 403 (appname nao aprovado) na gravacao. Construida a mao conforme a documentacao da API v2 e o parser de tools/fetch_reliefweb.py. Nao e resposta real.",
+  "time": 12,
+  "href": "https://api.reliefweb.int/v2/disasters?appname=hktn26-crisis&limit=4",
+  "links": {},
+  "totalCount": 4,
+  "count": 4,
+  "data": [
+    {
+      "id": "51001",
+      "score": 1,
+      "fields": {
+        "name": "Floods - Exemplolandia - Nov 2026",
+        "country": [{"name": "Exemplolandia", "iso3": "EXM", "location": {"lat": -12.5, "lon": 17.25}}],
+        "type": [{"name": "Flood"}],
+        "date": {"created": "2026-11-20T10:00:00+00:00"},
+        "url": "https://reliefweb.int/disaster/fl-2026-000001-exm"
+      },
+      "href": "https://api.reliefweb.int/v2/disasters/51001"
+    },
+    {
+      "id": "51002",
+      "score": 1,
+      "fields": {
+        "name": "Cholera Outbreak - Exemplolandia - Oct 2026",
+        "country": [{"name": "Exemplolandia", "iso3": "EXM", "location": {"lat": -12.5, "lon": 17.25}}],
+        "type": [{"name": "Epidemic"}],
+        "date": {"created": "2026-10-02T08:30:00+00:00"},
+        "url": "https://reliefweb.int/disaster/ep-2026-000002-exm"
+      },
+      "href": "https://api.reliefweb.int/v2/disasters/51002"
+    },
+    {
+      "id": "51003",
+      "score": 1,
+      "fields": {
+        "name": "Industrial Accident - Terraficticia - Nov 2026",
+        "country": [{"name": "Terraficticia", "iso3": "TFC", "location": {"lat": 4.0, "lon": -60.0}}],
+        "type": [{"name": "Technological Disaster"}],
+        "date": {"created": "2026-11-18T15:45:00+00:00"},
+        "url": "https://reliefweb.int/disaster/te-2026-000003-tfc"
+      },
+      "href": "https://api.reliefweb.int/v2/disasters/51003"
+    },
+    {
+      "id": "51001",
+      "score": 1,
+      "fields": {
+        "name": "Floods - Exemplolandia - Nov 2026",
+        "country": [{"name": "Exemplolandia", "iso3": "EXM", "location": {"lat": -12.5, "lon": 17.25}}],
+        "type": [{"name": "Flood"}],
+        "date": {"created": "2026-11-20T10:00:00+00:00"},
+        "url": "https://reliefweb.int/disaster/fl-2026-000001-exm"
+      },
+      "href": "https://api.reliefweb.int/v2/disasters/51001"
+    }
+  ]
+}

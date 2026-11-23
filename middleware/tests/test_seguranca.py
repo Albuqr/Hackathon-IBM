@@ -53,13 +53,19 @@ def test_padrao_de_desenvolvimento_conta_como_aberta(app_crisis):
     assert app_crisis("hktn26-dev-secret").get("/events").status_code == 200
 
 
-def test_save_events_aceito_sem_token_na_transicao_com_aviso(app_crisis, caplog):
-    cli = app_crisis("chave-de-teste-123")
-    with caplog.at_level(logging.WARNING, logger="crisis.seguranca"):
-        r = cli.post("/save_events", json=[])
-    assert r.status_code != 401  # passou pela checagem (o corpo vazio não importa aqui)
-    assert "sem X-Crisis-Token" in caplog.text
-    assert "chave-de-teste-123" not in caplog.text  # NFR-004
+def test_save_events_exige_token_apos_fim_da_transicao(app_crisis, monkeypatch):
+    from middleware.seguranca import token
+    chave = "chave-de-teste-123"
+    cli = app_crisis(chave)
+    evento = [{"id": "seg-1", "title": "T", "country_iso3": "CHL", "crisis_type": "seismic"}]
+    assert cli.post("/save_events", json=evento).status_code == 401
+    assert cli.post("/save_events", json=evento, headers={"X-Crisis-Token": "errado"}).status_code == 401
+    r = cli.post("/save_events", json=evento, headers={"X-Crisis-Token": token(chave)})
+    assert r.status_code == 200 and r.json()["saved"] == 1
+    # /save_event (singular) segue exigindo o token; as rotas isentas continuam livres
+    assert cli.post("/save_event", json=evento[0]).status_code == 401
+    assert cli.post("/save_event", json=evento[0], headers={"X-Crisis-Token": token(chave)}).status_code == 200
+    assert cli.get("/").status_code == 200 and cli.get("/brasil/saude").status_code == 200
 
 
 # AC-027.1 (brasil-app)

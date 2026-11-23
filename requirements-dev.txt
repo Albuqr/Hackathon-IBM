@@ -1,0 +1,6 @@
+# Dependências para rodar a suíte completa (pytest -q).
+# A suíte importa o middleware (FastAPI), as tools (SDK do orchestrate) e o frontend (Flask).
+-r middleware/requirements.txt
+-r tools/requirements.txt
+pytest
+flask
