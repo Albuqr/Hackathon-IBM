@@ -6,7 +6,8 @@ Nome, nome da mãe e CPF nunca saem para voluntário, ONG, admin, mapa ou log: n
 Busca por nome: se algum abrigo do gestor estiver verificado, procura em todos os abrigos; senão, só nos dele.
 Abrigo sensível (de proteção: mulheres, crianças...) só aparece na busca do próprio gestor (ADR 0008).
 De outros abrigos a busca devolve só o nome e o caminho de contato, e só de quem não saiu; CPF, datas e abrigo
-só aparecem para gente dos próprios abrigos.
+só aparecem para gente dos próprios abrigos. Toda busca entre abrigos é gravada em `buscas_abrigados_log`
+(quem, o quê, quando, quantos resultados), que nenhuma rota expõe.
 """
 import json
 import re
@@ -39,6 +40,8 @@ SQL_BUSCA = (
     "AND (a.gestor_id = ? OR (? = 1 AND a.sensivel = 0 AND p.saida_em IS NULL)) "
     "ORDER BY p.saida_em IS NOT NULL, p.nome_busca, p.id LIMIT ?"
 )
+# auditoria da busca entre abrigos (ADR 0008): só gravada; nenhuma rota lê esta tabela
+SQL_LOG_BUSCA = "INSERT INTO buscas_abrigados_log (user_id, consulta, buscado_em, resultados) VALUES (?,?,?,?)"
 
 
 _APOSTROFOS = re.compile("['’‘ʼ`´]")
@@ -238,6 +241,10 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
                                               "municipio": info.get("nome") if info else None},
                                    "entrada_em": x["entrada_em"], "saida_em": x["saida_em"],
                                    "presente": x["saida_em"] is None, "meu_abrigo": True})
+            if todos:  # busca entre abrigos: fica registrada, mesmo sem resultado (ADR 0008)
+                conn.execute(SQL_LOG_BUSCA, (u["id"], " ".join(nome.split())[:200],
+                                             datetime.now(timezone.utc).isoformat(timespec="seconds"), len(resultados)))
+                conn.commit()
             return {"escopo": "todos" if todos else "meus_abrigos", "resultados": resultados, "limite": LIMITE_BUSCA}
         finally:
             conn.close()

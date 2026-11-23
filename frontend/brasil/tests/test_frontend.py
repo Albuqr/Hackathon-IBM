@@ -396,3 +396,17 @@ def test_busca_de_outro_abrigo_mostra_so_nome_e_contato():
     outro, meu = re.match(r".*?const meta = !x\.meu_abrigo \? (.*?) : (.*)", bloco, re.S).groups()
     assert set(re.findall(r"x\.(\w+)", outro)) == {"contato"}
     assert {"nome_mae", "cpf", "abrigo", "entrada_em", "presente", "saida_em"} <= set(re.findall(r"x\.(\w+)", meu))
+
+
+def test_registro_de_buscas_nao_tem_acao_nem_pagina(front):
+    """ADR 0008: o registro das buscas entre abrigos não é visível para gestor, voluntário, ONG ou admin."""
+    from importlib import import_module
+    cli, _ = front
+    import re
+
+    def suspeito(texto):  # `/brasil/login` não conta
+        return any(p in ("log", "logs", "auditoria", "buscas", "historico") for p in re.split(r"[/_\-]", texto.lower()))
+    pol = import_module("brasil.encaminhador").POLITICA
+    assert "buscar_abrigados" in pol and not [n for n, r in pol.items() if suspeito(n) or suspeito(r.caminho)]
+    regras = [r.rule for r in cli.application.url_map.iter_rules() if r.rule.startswith("/brasil")]
+    assert regras and not [r for r in regras if suspeito(r)]

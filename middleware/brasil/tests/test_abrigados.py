@@ -330,6 +330,75 @@ def test_busca_ignora_pontuacao(cena):
         assert [x["nome"] for x in busca(cli, g1, termo).json()["resultados"]] == [nome], termo
 
 
+# ── auditoria da busca entre abrigos (ADR 0008) ──────────────────────
+def log_de_buscas(rotas) -> list:
+    conn = db.conectar(rotas.CFG)
+    try:
+        return [dict(r) for r in conn.execute("SELECT user_id, consulta, buscado_em, resultados FROM buscas_abrigados_log ORDER BY id")]
+    finally:
+        conn.close()
+
+
+def test_toda_busca_entre_abrigos_fica_registrada_mesmo_sem_resultado(cena):
+    cli, g1 = cena["cli"], cena["g1"]
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+    antes = datetime.now(timezone.utc).replace(microsecond=0)
+    assert len(busca(cli, g1, "  Jo ").json()["resultados"]) == 2
+    assert busca(cli, g1, "ninguem ficticio").json()["resultados"] == []
+    assert busca(cli, g1, "a").status_code == 422  # busca recusada não roda, não registra
+    log = log_de_buscas(cena["rotas"])
+    assert [(x["user_id"], x["consulta"], x["resultados"]) for x in log] == [(g1, "Jo", 2), (g1, "ninguem ficticio", 0)]
+    for x in log:
+        quando = datetime.fromisoformat(x["buscado_em"])
+        assert quando.utcoffset() == timedelta(0) and antes <= quando <= datetime.now(timezone.utc)
+
+
+def test_busca_so_nos_proprios_abrigos_nao_e_registrada(cena):
+    cli = cena["cli"]
+    assert busca(cli, cena["g1"], "joao").json()["escopo"] == "meus_abrigos"
+    assert busca(cli, cena["g2"], "nada").json()["escopo"] == "meus_abrigos"
+    assert log_de_buscas(cena["rotas"]) == []
+
+
+def suspeito(caminho: str) -> bool:
+    """Caminho que poderia expor o registro de buscas (`/brasil/login` não conta)."""
+    partes = caminho.lower().replace("_", "/").replace("-", "/").strip("/").split("/")
+    return any(p in ("log", "logs", "auditoria", "buscas", "historico") for p in partes)
+
+
+def test_registro_de_buscas_nao_sai_por_nenhuma_rota(cena):
+    """Só gravado: nenhuma rota da API nem ação da POLITICA lê a tabela, e nenhum perfil vê o que foi buscado."""
+    import os
+    from fastapi import FastAPI
+    cli, rotas, g1 = cena["cli"], cena["rotas"], cena["g1"]
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+    busca(cli, g1, "Rastro Fictício Auditado")
+    assert log_de_buscas(rotas)[0]["consulta"] == "Rastro Fictício Auditado"
+    app = FastAPI()
+    app.include_router(rotas.router)
+    caminhos = list(app.openapi()["paths"])
+    assert "/brasil/abrigados/busca" in caminhos and not [c for c in caminhos if suspeito(c)]
+    raiz = os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    # (POLITICA e rotas do Flask: test_frontend.py::test_registro_de_buscas_nao_tem_acao_nem_pagina)
+    # só db.py (esquema), merge_brasil.py e o INSERT em abrigados.py citam a tabela
+    pasta = os.path.join(raiz, "middleware", "brasil")
+    citam = {f for f in os.listdir(pasta) if f.endswith(".py")
+             and "buscas_abrigados_log" in open(os.path.join(pasta, f), encoding="utf-8").read()}
+    assert citam == {"db.py", "merge_brasil.py", "abrigados.py"}
+    fonte = open(os.path.join(pasta, "abrigados.py"), encoding="utf-8").read()
+    assert fonte.count("buscas_abrigados_log") == 2 and "INSERT INTO buscas_abrigados_log" in fonte  # docstring + INSERT
+    for base, _, arquivos in os.walk(os.path.join(raiz, "frontend", "brasil")):
+        for f in arquivos:
+            if f.endswith((".py", ".js", ".html")) and "tests" not in base:
+                assert "buscas_abrigados_log" not in open(os.path.join(base, f), encoding="utf-8").read(), f
+    for perfil in ("voluntario", "ong", "admin", "gestor", "gestor2"):
+        uid = cli.post(f"/brasil/dev/usuario/{perfil}").json()["id"]
+        h = como(uid)
+        for r in (cli.get("/brasil/abrigos", headers=h), cli.get(f"/brasil/usuarios/{uid}", headers=h),
+                  cli.get("/brasil/crises", headers=h), busca(cli, uid, "rastro")):
+            assert "Rastro" not in r.text and "buscado_em" not in r.text, (perfil, r.url)
+
+
 # ── privacidade (Done-when #4) ───────────────────────────────────────
 def _rotas_de_pessoas(c):
     pid = c["chegada"]["pessoas"][0]["id"]
