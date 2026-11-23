@@ -2,6 +2,14 @@
 
 Formato: data, decisão, motivo, como foi descoberto / o que deu errado.
 
+## Resumo executivo (fechamento da etapa, T8)
+- **O que mudou:** `/ingest`, `/chat` e `/predictions` rodam sobre Claude (`middleware/llm.py`) sem watsonx Orchestrate, com saída validada, degradação (200 com `degradado: true`, nunca 500 por falha do provedor), teto diário de chamadas (500), limite por ciclo (30) e cache de `/predictions` só para resultado válido. A gravação em `crises` passa por `gravacao.py` (tipo validado).
+- **O que não mudou:** matching, comunicação, otimização, Brasil (`middleware/brasil/`), frontend e a autenticação de `/save_events` (ADR 0004).
+- **Estado:** suíte 596 passed (sem rede, sem chaves). `requirements.txt` do middleware instala e o app importa/responde numa imagem limpa (`Dockerfile.middleware`, `python:3.12-slim`), ver T8 abaixo. **Nenhuma chamada real à Anthropic foi feita**: qualidade das respostas, obediência ao formato JSON, ID do modelo e custo real seguem sem teste.
+- **Para ir a produção:** `ANTHROPIC_API_KEY` e demais variáveis em `.env.example`; conferir fastapi/starlette no VPS; decidir o destino de `/save_events` (relatório no fim).
+
+Índice: decisões e descobertas por data (abaixo, histórico preservado) · "T8: o que deu errado e como foi achado" · "T8: sem uso e condição para remover" · "T8: pendências" · "T8: ideias registradas" · "T8: riscos" · "T8: relatório /save_events".
+
 ## 2026-11-23 · Opção A para a orquestração sem watsonx
 - **Decisão:** seguir a opção A (orquestração sem depender do watsonx).
 - **Motivo:** tirar o caminho crítico de um provedor único e permitir rodar e testar sem rede.
@@ -83,7 +91,7 @@ Não verificado: respostas reais do modelo (sem rede/chaves), nem os valores de 
 - **Decisão:** na T6 o `_ingest_fallback` (`middleware/main.py`) passa a gravar via `gravar_eventos`, saindo do INSERT direto. O módulo Brasil (`middleware/brasil/`) continua fora e segue gravando por conta própria.
 - **Motivo:** ponto único de validação do tipo; os produtores acima já emitem tipos válidos no fallback.
 
-## Pendências (não corrigidas)
+## Pendências (não corrigidas) — lista da T3; versão atual em "T8: pendências"
 - Aviso de depreciação `@app.on_event("startup")` em `middleware/main.py:94`.
 - `starlette.testclient` pede `httpx2` no lugar de `httpx`.
 - Versão do SDK do orchestrate diverge: README 2.8.0 x requirements 2.19.0.
@@ -143,3 +151,56 @@ Não verificado: respostas reais do modelo (sem rede/chaves), nem os valores de 
 - **Surpresas:** (1) o contador do teto diário é global e vazava entre arquivos de teste; cada arquivo que usa o provedor global precisa do reset (fixture local, como em `test_ingestao_crise.py`). (2) o cache antigo servia erro por 1 h. (3) o `/chat` antigo devolvia `str(e)` ao cliente.
 - **Não verificado:** nenhuma chamada real ao provedor (qualidade do chat e das previsões, obediência ao formato JSON, ID do modelo); formatos reais do Telegram além do código lido (`telegram_bot/bot.py` envia `text` + `context_type`); tamanho real dos prompts do bot frente ao limite de 6000; instalação do `requirements.txt` em ambiente limpo (Docker).
 - **Ideias, não implementadas:** frontend/bot passarem o contexto por `context`; trava anti-estouro no cache de `/predictions`; contador do teto persistente; retirar o provedor `watsonx` do Brasil para então remover `orquestracao_wxo.py` e o SDK.
+
+## T8: o que deu errado e como foi achado
+- **`/save_events` devolvia 422 com JSON em lista** (FastAPI 0.165 tratava `events: list` como formulário). Achado pelos testes de caracterização; corrigido com `List[dict]`; FastAPI e starlette fixados em `middleware/requirements.txt`; teste `test_save_events_http_aceita_json_em_lista`.
+- **Cache de `/predictions` guardava erro por 1 h.** `{"error":..., "predictions": []}` é truthy, então entrava no cache. Achado lendo o código na T7; agora só lista não vazia e sem erro é cacheada.
+- **`tools/fetch_gdacs.py` com dois defeitos** (geteventlist é GeoJSON mas a tool faz `ET.fromstring`; `geo:lat` procurado fora de `geo:Point`). Achados ao gravar fixtures reais (T6); só caracterizados em `middleware/tests/test_fetchers.py`, não corrigidos (a tool está publicada no watsonx).
+- **`/chat` devolvia `str(e)` ao cliente** (detalhe interno vazando). Achado ao reescrever o `/chat` na T7; agora a mensagem é fixa e o stack vai só para o log.
+- **Contador do teto diário vazava entre arquivos de teste.** O contador é global e vazava entre arquivos de teste. Achado na T7; cada arquivo que usa o provedor global reseta o contador por fixture local.
+- **Limite por ciclo cortava primeiro os eventos sem data.** USGS, GDACS, GDELT e conflitos fixos não trazem data no evento normalizado; só o EONET traz `date`. Achado ao implementar a ordenação por data; documentado, não corrigido (propagar `properties.time` e `pubDate` é melhoria).
+- **Fixtures reais x sintética.** USGS, GDACS RSS e GDACS geteventlist foram gravados da rede (2026-11-23). A ReliefWeb v2 respondeu 403 ("not using an approved appname"), então a fixture é sintética e nunca foi comparada com resposta real.
+- **`flask` ausente na coleta da suíte** (só estava em `frontend/requirements.txt`): criado `requirements-dev.txt`.
+- **Gravação direta em `crises` fora de `gravar_eventos`:** `middleware/brasil/ingestao.py`, `inteligencia.py` e `merge_brasil.py` seguem gravando por conta própria.
+- **Imagem limpa (T8):** em `middleware/main.py` o import falha sem a pasta `data/` (`BRASIL_DB_PATH` exige diretório gravável, `middleware/brasil/config.py`); no `docker-compose.yml` o volume `./data:/app/data` resolve, mas `docker run` solto da imagem, sem volume, não sobe. Com `mkdir data` o app importa e `/chat` responde degradado.
+
+## T8: sem uso e condição para remover
+Nada foi apagado. Condições:
+- `tools/classify_crisis.py`, `tools/predict_humanitarian_risk.py`: remover quando o dono decidir parar de publicar no watsonx (já substituídos por `classificacao.py` e `previsao.py`; importam `ibm_watsonx_ai`, que não está instalado).
+- `tools/save_classification.py`, `match_volunteers.py`, `suggest_reallocation.py`, `analyze_distribution.py`: nenhum código do middleware as importa; só existem para os agentes do watsonx. Remover junto com o watsonx. `save_classification` ainda é o único chamador externo conhecido de `/save_events` (ver relatório).
+- 7 YAMLs sem uso no núcleo (`crisis_orchestrator`, `monitoring_agent`, `classification_agent`, `communication_agent`, `matching_agent`, `optimization_agent`, `prediction_agent`): remover quando o provedor `watsonx` do Brasil deixar de referenciar IDs de agentes. Ficam `assistant_agent` e `volunteer_agent` (usados pelo `/chat`) e os `brasil_*`.
+- `import_all.py` e `test_agent.py`: só fazem sentido enquanto o watsonx for mantido (publicam tools/agentes; chamam o Orchestrate com `WO_*`).
+- `middleware/orquestracao_wxo.py` e o re-export `call_orchestrate` em `main.py`: `middleware/brasil/orquestracao/watsonx.py` importa `middleware.main.call_orchestrate`. Remover depois de retirar o provedor `watsonx` do Brasil.
+- `ibm-watsonx-orchestrate==2.19.0` em `middleware/requirements.txt`: sai quando o Brasil e os testes pararem de importar `tools/*.py` com o decorador `@tool` real.
+
+## T8: pendências
+- Depreciação `@app.on_event("startup")` em `middleware/main.py` e `starlette.testclient` pedindo `httpx2` no lugar de `httpx` (a imagem limpa instala os dois).
+- VPS: conferir `pip show fastapi starlette` contra as versões fixadas (0.165.0 / 1.10.0).
+- ReliefWeb: o appname está fixo em `tools/fetch_reliefweb.py` (`hktn26-crisis`) e foi recusado pela API v2; falta um appname aprovado para regravar a fixture real.
+- Tipos e mapeamentos: `tools/fetch_gdacs.py` ainda emite `unknown` e `DR` como meteorological (o `_ingest_fallback` usa drought); `classify_crisis` sem validação; ver "Tipos dos produtores x TIPOS_CRISE".
+- README: as seções de agentes e ferramentas ainda descrevem o watsonx (marcadas como legado); a divergência de versão do SDK (README 2.8.0 x requirements 2.19.0) foi corrigida na T8. `tools/requirements.txt` não foi revisado.
+- Os YAMLs `assistant_agent`/`volunteer_agent` ainda citam "llm: watsonx/..." e "Use the crisis context provided..."; só `instructions` é lido.
+- Frontend e bot não usam o campo `context` do `/chat` (colocam o contexto dentro de `text`).
+- Excedente do limite por ciclo não é reclassificado; o `needs_review` do LLM não vira linha em `classifications_log`.
+- `CRISIS_CHAT_MAX_CHARS=6000` é palpite; o prompt do bot com 5 crises não foi medido.
+- `.env.example` é novo na T8 (antes o README mandava copiá-lo e ele não existia); o `docker-compose.yml` usa `env_file: .env`.
+
+## T8: ideias registradas (não implementadas)
+- Vários provedores de LLM (hoje só Anthropic, por trás da interface de `llm.py`).
+- Teto diário persistente (SQLite/Redis); hoje é por processo, em memória, e zera ao reiniciar.
+- Trava anti-estouro no cache de `/predictions` (requisições simultâneas com cache vazio chamam o LLM várias vezes).
+- Frontend e bot passarem o contexto por `context` no `/chat`.
+- Reclassificar o excedente do limite por ciclo, usando `classifications_log` (`needs_review=1`) para achá-lo.
+- Propagar a data de USGS e GDACS em `_coletar_eventos`.
+- Retirar o provedor `watsonx` do Brasil, para então remover `orquestracao_wxo.py`, o re-export e o SDK.
+
+## T8: riscos
+- **Sem validação real do provedor:** ID `claude-haiku-5-5` e o formato JSON das respostas nunca foram exercitados contra a API; a validação estrita rejeita saída ruim, mas a taxa de rejeição é desconhecida.
+- **Custo:** teto de 500 chamadas/dia por processo (vários workers = teto por worker) e 30 por ciclo; o custo real por ciclo não foi medido.
+- **API aberta sem `SECRET_KEY`:** sem o segredo (ou com o padrão de dev) toda a API fica aberta, com aviso na subida; `/save_events` é isento mesmo com segredo (ADR 0004).
+- **Cache e contador em memória por processo:** reinício zera o contador do teto; cache de `/predictions` sem trava.
+- **Dependência do legado:** o Brasil ainda importa `main.call_orchestrate` e as tools com decorador do watsonx; mexer nisso sem tirar o provedor `watsonx` quebra o Brasil.
+- **Ordem do limite por ciclo:** hoje corta primeiro o que não tem data (ver acima), logo a seleção do que vai ao LLM não é por gravidade.
+
+## T8: instalação em ambiente limpo (verificado)
+`docker build -f Dockerfile.middleware` (python:3.12-slim) instalou todo o `middleware/requirements.txt` sem erro (fastapi 0.165.0, starlette 1.10.0, anthropic 2.12.0, ibm-watsonx-orchestrate 2.19.0). Dentro do contêiner, sem chaves e com `mkdir data`, `import middleware.main` funcionou, `GET /` deu 200 e `POST /chat` deu 200 com `degradado: true`. Imagem de teste removida. Não foi testado: `docker compose up` (frontend, bot, rede externa do Easypanel).
