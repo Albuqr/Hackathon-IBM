@@ -3,7 +3,10 @@
 Normaliza e valida o tipo da crise antes de gravar. Mantém a semântica que /save_event(s) já tinham:
 id existente -> UPDATE de severity, urgency, crisis_type e updated_at; id novo -> INSERT.
 """
+import logging
 from datetime import datetime
+
+log = logging.getLogger(__name__)
 
 # União dos tipos realmente usados no código: README (crises.crisis_type), prompt do classify_crisis
 # ("political") e módulo de abrigos/Brasil ("geological", "hydrological").
@@ -25,15 +28,17 @@ def normalizar_tipo(evento: dict) -> str:
 def gravar_eventos(db, eventos, agora: str = None) -> dict:
     """Grava uma lista de eventos em `db` (conexão sqlite3) e faz commit.
 
-    Devolve {"saved": inserções, "updated": atualizações, "ids": [...], "errors": [{"id", "error"}]}.
+    Devolve {"saved": inserções, "updated": atualizações, "ids": [...], "errors": [{"id", "title", "error"}]}.
     Um evento inválido (tipo fora de TIPOS_CRISE, dado malformado) vira erro e não derruba o lote.
+    Toda rejeição entra em `errors` (id, título, motivo) e no log (warning, só id e motivo).
     """
     agora = agora or datetime.utcnow().isoformat()
     saved = updated = 0
     ids, errors = [], []
     for evento in eventos:
         if not isinstance(evento, dict):
-            errors.append({"id": None, "error": "evento deve ser um objeto"})
+            errors.append({"id": None, "title": None, "error": "evento deve ser um objeto"})
+            log.warning("evento rejeitado: id=%s motivo=%s", None, "evento deve ser um objeto")
             continue
         eid = evento.get("id") or f"api-{agora}-{saved}"
         try:
@@ -71,6 +76,7 @@ def gravar_eventos(db, eventos, agora: str = None) -> dict:
                 saved += 1
             ids.append(eid)
         except Exception as e:
-            errors.append({"id": eid, "error": str(e)})
+            errors.append({"id": eid, "title": evento.get("title"), "error": str(e)})
+            log.warning("evento rejeitado: id=%s motivo=%s", eid, e)
     db.commit()
     return {"saved": saved, "updated": updated, "ids": ids, "errors": errors}

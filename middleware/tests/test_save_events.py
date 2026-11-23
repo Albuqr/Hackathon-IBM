@@ -170,3 +170,23 @@ def test_evento_com_erro_nao_derruba_o_lote(api):
 def test_save_event_com_erro_devolve_ok_false(api):
     r = api.post("/save_event", json={**EVENTO, "lat": "abc"})
     assert r.status_code == 200 and r.json()["ok"] is False and "error" in r.json()
+
+
+def test_save_events_lista_rejeitados_com_motivo_e_loga(api, caplog):
+    import logging
+    with caplog.at_level(logging.WARNING, logger="middleware.gravacao"):
+        corpo = api.lote([{**EVENTO, "id": "a", "crisis_type": "banana"}, {**EVENTO, "id": "b", "lat": "abc"},
+                          {**EVENTO, "id": "c"}]).json()
+    assert corpo["saved"] == 1
+    assert [(e["id"], e["title"]) for e in corpo["errors"]] == [("a", "Terremoto"), ("b", "Terremoto")]
+    assert "banana" in corpo["errors"][0]["error"] and "abc" in corpo["errors"][1]["error"]
+    msgs = [x.getMessage() for x in caplog.records if x.levelno == logging.WARNING]
+    assert any("id=a" in m and "banana" in m for m in msgs) and any("id=b" in m and "abc" in m for m in msgs)
+
+
+def test_save_event_rejeitado_devolve_motivo_e_loga(api, caplog):
+    import logging
+    with caplog.at_level(logging.WARNING, logger="middleware.gravacao"):
+        corpo = api.post("/save_event", json={**EVENTO, "crisis_type": "banana"}).json()
+    assert corpo["ok"] is False and "banana" in corpo["error"] and corpo["errors"][0]["id"] == "t-1"
+    assert any("id=t-1" in x.getMessage() for x in caplog.records if x.levelno == logging.WARNING)

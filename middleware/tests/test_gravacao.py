@@ -70,3 +70,17 @@ def test_tipos_do_schema_incluem_os_usados_no_repo():
     assert {"seismic", "meteorological", "humanitarian", "conflict", "wildfire", "drought", "sanitary",
             "political", "geological", "hydrological"} == set(TIPOS_CRISE)
     assert normalizar_tipo({}) == "humanitarian"
+
+
+def test_rejeicoes_vao_para_errors_com_titulo_e_para_o_log(db, caplog):
+    import logging
+    with caplog.at_level(logging.WARNING, logger="middleware.gravacao"):
+        r = gravar_eventos(db, [{"id": "tipo", "title": "Evento X", "crisis_type": "banana"},
+                                {"id": "lat", "title": "Evento Y", "lat": "abc"}, "lixo"])
+    assert [(e["id"], e["title"]) for e in r["errors"]] == [("tipo", "Evento X"), ("lat", "Evento Y"), (None, None)]
+    assert "banana" in r["errors"][0]["error"] and "abc" in r["errors"][1]["error"]
+    avisos = [x for x in caplog.records if x.levelno == logging.WARNING]
+    assert len(avisos) == 3
+    texto = " ".join(x.getMessage() for x in avisos)
+    assert "id=tipo" in texto and "banana" in texto and "id=lat" in texto and "abc" in texto
+    assert "Evento X" not in texto  # título não vai para o log

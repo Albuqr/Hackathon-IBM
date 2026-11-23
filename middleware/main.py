@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import json
@@ -497,9 +498,10 @@ def save_event(event: dict):
         finally:
             db.close()
         if res["errors"]:
-            return {"ok": False, "error": res["errors"][0]["error"]}
+            return {"ok": False, "error": res["errors"][0]["error"], "errors": res["errors"]}
         return {"ok": True, "id": eid}
     except Exception as e:
+        logging.getLogger("middleware.gravacao").warning("evento rejeitado: id=%s motivo=%s", eid, e)
         return {"ok": False, "error": str(e)}
 
 
