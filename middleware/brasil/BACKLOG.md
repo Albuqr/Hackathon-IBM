@@ -54,3 +54,19 @@ Pendências da fatia 1 (`feat/brasil-abrigos`). Contexto em `WALKTHROUGH.md` e n
 - **O quê:** com Node 24, `node --test` apontando para a pasta toda falha; rodar o arquivo `e2e/app.spec.mjs` direto funciona.
 - **Por quê:** quem rodar os testes de tela pela pasta vê falha que não é do código.
 - **Quem decide / o que destrava:** investigar o comportamento do Node 24 ou fixar o comando no README.
+
+## 9. Segurança adiada (`fix/security-backlog` e achados do SAST)
+- **O quê:** fazer o `fix/security-backlog` e limpar os achados que o testkit aponta: CSRF em `cadastro.html` e
+  `entrar.html` (item 3), `nan-injection` em `frontend/app.py`, SHA1 em `middleware/brasil/noticias.py`,
+  `request-with-http` (`middleware/main.py`, `telegram_bot/bot.py`, `tools/`) e o `osv-scanner` de dependências, que já
+  falha em `main`.
+- **Por quê:** o job `security` do CI fica vermelho por esses achados, quase todos já vinham de `main`. Adiado porque
+  isto é um protótipo com semente fictícia, sem dados reais (2026-11-23).
+- **Quem decide / o que destrava:** **tem de estar feito antes de qualquer dado real ou deploy público.**
+
+## 10. Conferir o CPF no celular em 390px
+- **O quê:** olhar nas telas, em 390px de largura, que o CPF (000.000.000-00) não quebra no meio na lista, na
+  confirmação da chegada e na busca.
+- **Por quê:** o `white-space: nowrap` do `.cpf` só foi coberto por teste de código; a conferência visual não foi feita
+  (2026-11-23). Em amostra funciona no desktop.
+- **Quem decide / o que destrava:** antes de mostrar a usuários reais em celular.
