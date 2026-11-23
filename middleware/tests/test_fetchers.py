@@ -106,6 +106,17 @@ def test_fetch_reliefweb_campos_e_tipos(monkeypatch):
     assert all(x["type"] in TIPOS_CRISE for x in ev)
 
 
+def test_reliefweb_appname_padrao_e_variavel(monkeypatch):
+    chamadas = _servir(monkeypatch, "reliefweb_disasters.sintetica.json")
+    fetch = agentes._carregar_ferramenta("fetch_reliefweb")
+    monkeypatch.delenv("RELIEFWEB_APPNAME", raising=False)
+    fetch()
+    assert chamadas[-1][1]["params"]["appname"] == "hktn26-crisis"
+    monkeypatch.setenv("RELIEFWEB_APPNAME", "app-de-teste")
+    fetch()
+    assert chamadas[-1][1]["params"]["appname"] == "app-de-teste"
+
+
 def test_fetch_reliefweb_403_vira_erro_estruturado(monkeypatch):
     class R403(_Resp):
         def raise_for_status(self):

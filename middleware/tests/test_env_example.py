@@ -13,3 +13,9 @@ def test_variaveis_crisis_estao_no_env_example():
     assert usadas, "nenhuma variável CRISIS_* encontrada (regex quebrou?)"
     faltando = [v for v in sorted(usadas) if not re.search(rf"^{v}=", exemplo, re.M)]
     assert not faltando, f"faltam no .env.example: {faltando}"
+
+
+def test_reliefweb_appname_esta_no_env_example():
+    exemplo = (RAIZ / ".env.example").read_text(encoding="utf-8")
+    assert "RELIEFWEB_APPNAME" in (RAIZ / "tools" / "fetch_reliefweb.py").read_text(encoding="utf-8")
+    assert re.search(r"^RELIEFWEB_APPNAME=", exemplo, re.M)

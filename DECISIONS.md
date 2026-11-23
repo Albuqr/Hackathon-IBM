@@ -176,7 +176,7 @@ Nada foi apagado. Condições:
 ## T8: pendências
 - Depreciação `@app.on_event("startup")` em `middleware/main.py` e `starlette.testclient` pedindo `httpx2` no lugar de `httpx` (a imagem limpa instala os dois).
 - VPS: conferir `pip show fastapi starlette` contra as versões fixadas (0.165.0 / 1.10.0).
-- ReliefWeb: o appname está fixo em `tools/fetch_reliefweb.py` (`hktn26-crisis`) e foi recusado pela API v2; falta um appname aprovado para regravar a fixture real.
+- ReliefWeb: o appname (`hktn26-crisis`, padrão em `tools/fetch_reliefweb.py`, sobrescrevível por `RELIEFWEB_APPNAME` desde a T9) foi recusado pela API v2; falta um appname aprovado para regravar a fixture real.
 - Tipos e mapeamentos: `tools/fetch_gdacs.py` ainda emite `unknown` e `DR` como meteorological (o `_ingest_fallback` usa drought); `classify_crisis` sem validação; ver "Tipos dos produtores x TIPOS_CRISE".
 - README: as seções de agentes e ferramentas ainda descrevem o watsonx (marcadas como legado); a divergência de versão do SDK (README 2.8.0 x requirements 2.19.0) foi corrigida na T8. `tools/requirements.txt` não foi revisado.
 - Os YAMLs `assistant_agent`/`volunteer_agent` ainda citam "llm: watsonx/..." e "Use the crisis context provided..."; só `instructions` é lido.
