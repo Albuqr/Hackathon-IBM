@@ -46,6 +46,12 @@ Formato: data, decisão, motivo, como foi descoberto / o que deu errado.
 - **Motivo:** `flask` só estava em `frontend/requirements.txt`; a coleta da suíte falhou na 1ª rodada.
 - **Descoberta / o que deu errado:** validado em venv novo: `pip install -r requirements-dev.txt` + pytest passa a suíte inteira.
 
+## 2026-11-23 · FastAPI e starlette fixados
+- **Decisão:** `middleware/requirements.txt` passa a fixar `fastapi==0.165.0` e `starlette==1.10.0` (versões em que a suíte passa, conforme `pip freeze` do .venv).
+- **Motivo:** o tratamento de `events: list` como formulário mudou entre versões; sem fixar, o `/save_events` com JSON em lista pode voltar a dar 422.
+- **Cobertura:** `middleware/tests/test_save_events.py::test_save_events_http_aceita_json_em_lista` (POST JSON em lista devolve 200).
+- **Pendente:** conferir no VPS (`pip show fastapi starlette`) e alinhar com as versões fixadas.
+
 ## Pendências (não corrigidas)
 - Aviso de depreciação `@app.on_event("startup")` em `middleware/main.py:94`.
 - `starlette.testclient` pede `httpx2` no lugar de `httpx`.
