@@ -465,6 +465,8 @@ Serviços disponíveis:
 - Middleware: `http://localhost:8001`
 - Bot Telegram: ativo em background (long-polling)
 
+Um `docker run` solto da imagem precisa da pasta `data/` gravável (no docker-compose o volume `./data` resolve).
+
 #### 4. Rodar localmente (sem Docker)
 
 ```bash
@@ -1035,6 +1037,8 @@ Services available:
 - Frontend: `http://localhost:5000`
 - Middleware: `http://localhost:8001`
 - Telegram Bot: running in background (long-polling)
+
+A bare `docker run` of the image needs a writable `data/` folder (in docker-compose the `./data` volume covers it).
 
 #### 4. Run locally (without Docker)
 
