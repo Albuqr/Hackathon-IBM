@@ -68,7 +68,7 @@ Todo `acao(...)` do navegador vai para `POST /brasil/acao/<nome>` e passa pela `
 | `pessoas_abrigo` | `GET /brasil/abrigos/{id}/pessoas` | lê `abrigados` |
 | `registrar_chegada` | `POST /brasil/abrigos/{id}/chegadas` | escreve `familias`, `abrigados` |
 | `registrar_saida` | `POST /brasil/abrigados/{pid}/saida` | escreve `abrigados.saida_em` |
-| `buscar_abrigados` | `GET /brasil/abrigados/busca?nome=` | lê `abrigados`, `abrigos`; escreve `buscas_abrigados_log` (só no escopo `todos`) |
+| `buscar_abrigados` | `POST /brasil/abrigados/busca` (`{"nome": ...}` no corpo, fora da URL e do log de acesso) | lê `abrigados`, `abrigos`; escreve `buscas_abrigados_log` (só no escopo `todos`) |
 | `lotacao_abrigo` (na política, a tela usa a lotação que vem junto) | `GET /brasil/abrigos/{id}/lotacao` | lê `abrigados` |
 
 `entrada_em` e `saida_em` ficam sempre em UTC (`2026-11-18T13:00:00+00:00`); data sem fuso é horário de Brasília (UTC-03:00). Entrada mais de 10 minutos no futuro é recusada (422), e saída antes da entrada também (422). Chegada em abrigo inativo é recusada (409) com a mensagem para reativar o abrigo antes, e a tela troca o botão "Registrar chegada" pelo link para reativar (decisão c).
@@ -88,7 +88,7 @@ Todo `acao(...)` do navegador vai para `POST /brasil/acao/<nome>` e passa pela `
 | Papel por ação no navegador; identidade sempre da sessão | `frontend/brasil/encaminhador.py`: `POLITICA`, `encaminhar`; telas com `exige_login("gestor_abrigo")` em `frontend/brasil/__init__.py` |
 | A API confere o papel de novo | `middleware/brasil/acesso.py`: `Acesso.exige` (cada router faz `acesso.exige(PAPEL)`) |
 | Só o dono vê o abrigo; outro gestor = 404 | `middleware/brasil/abrigos.py`: `abrigo_do_gestor` (usado por abrigados e estoque) |
-| Escopo da busca: todos os abrigos se algum abrigo do gestor estiver verificado, menos os sensíveis de outros gestores; de outros abrigos só nome + contato fixo e só quem não saiu; CPF, datas e abrigo só dos próprios; toda busca entre abrigos registrada, sem rota que leia o registro (ADR 0008) | `abrigos.py`: `gestor_verificado`; `abrigados.py`: `buscar_abrigados`, `SQL_BUSCA`, `CONTATO_OUTRO_ABRIGO`, `SQL_LOG_BUSCA` |
+| Escopo da busca: todos os abrigos se algum abrigo do gestor estiver verificado, menos os sensíveis de outros gestores; de outros abrigos só nome + contato fixo e só quem não saiu; CPF, datas e abrigo só dos próprios; toda busca entre abrigos registrada, sem rota que leia o registro (ADR 0008) | `abrigos.py`: `gestor_verificado`; `abrigados.py`: `buscar_abrigados`, `SQL_BUSCA_MEUS`, `SQL_BUSCA_OUTROS` (até 50 de cada, os próprios primeiro), `CONTATO_OUTRO_ABRIGO`, `SQL_LOG_BUSCA` |
 | Profissionais e veículos só como pedido (Urgente/Precisa e quantidade > 0) | `middleware/brasil/estoque.py`: `_so_necessidade`, `atualizar_estoque` |
 | Verificação só de teste; 404 sem `BRASIL_DEV_LOGIN=1` | `abrigos.py`: `dev_verificar` |
 | Privacidade: listas de abrigo só têm a contagem de presentes; nada imprime/loga pessoas; voluntário/ONG/admin recebem 403 nas rotas de pessoas; abrigados não entram no mapa | `abrigos.py`: `completo`; `abrigados.py` (docstring e rotas); `semear_teste.py`: `abrigos_teste` (resumo só com contagens) |

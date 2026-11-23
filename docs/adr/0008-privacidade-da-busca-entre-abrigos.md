@@ -23,3 +23,7 @@ A ADR 0006 abriu a busca em todos os abrigos para o gestor com algum abrigo veri
 
 ## Consequences
 Positivo: busca não revela onde está nem desde quando está quem é protegido; um gestor que use a busca para procurar alguém fica registrado. Negativo: reunir famílias depende da coordenação regional, que ainda não tem canal no sistema; homônimos de outros abrigos ficam indistinguíveis (sem nome da mãe); o registro guarda nomes buscados, então é dado pessoal e precisa de prazo de guarda e de quem pode consultá-lo, ainda não decididos. Também ainda não decidido: o resultado de outro abrigo implica que a pessoa está presente em algum abrigo, porque quem saiu é excluído. Futuro: contato público do abrigo ou canal da coordenação, e uma tela de auditoria para quem for definido (fora do papel `gestor_abrigo`).
+
+## Emendas (revisão da onda 1)
+- A busca é `POST /brasil/abrigados/busca` com `{"nome": ...}` no corpo (era `GET ...?nome=`): a URL vai para o log de acesso do servidor, e nome de abrigado não pode ir para log.
+- Consulta com mais de 200 caracteres é recusada (422) e não é registrada. O registro guarda o termo normalizado que a busca usou (sem acento, minúsculo, pontuação vira espaço: `nome_busca`), não o texto digitado, para que enchimento de pontuação ou acentos não esconda o nome buscado.

@@ -194,7 +194,7 @@ export function iniciarPessoas({ abrigo, msg }) {
     const termo = busca.value.trim();
     const meu = ++pedido;
     if (termo.length < 2) { resultados.hidden = true; resultados.replaceChildren(); return; }
-    const r = await acao("buscar_abrigados", { q: { nome: termo } });
+    const r = await acao("buscar_abrigados", { corpo: { nome: termo } });
     if (meu !== pedido) return;
     resultados.hidden = false;
     if (!r.ok) { resultados.replaceChildren(el("li", { class: "vazio", texto: r.erro })); return; }
@@ -208,7 +208,9 @@ export function iniciarPessoas({ abrigo, msg }) {
         `Entrada ${data(x.entrada_em)}`, x.presente ? "Presente" : `Saiu ${data(x.saida_em)}`].filter(Boolean).join(" · ");
       return el("li", {}, [el("div", { class: "item-texto" }, [el("span", { class: "item-titulo", texto: x.nome }), el("span", { class: "item-meta", texto: meta })])]);
     }));
-    if (achados.length >= r.dados.limite) resultados.append(el("li", { class: "vazio", texto: `Mostrando os primeiros ${r.dados.limite}. Digite mais do nome.` }));
+    // o limite vale para cada grupo: os seus abrigos e os outros
+    const meus = achados.filter((x) => x.meu_abrigo).length;
+    if (meus >= r.dados.limite || achados.length - meus >= r.dados.limite) resultados.append(el("li", { class: "vazio", texto: `Mostrando até ${r.dados.limite} dos seus abrigos e ${r.dados.limite} de outros. Digite mais do nome.` }));
   }
   busca.addEventListener("input", () => { clearTimeout(t); t = setTimeout(procurar, 350); });
 

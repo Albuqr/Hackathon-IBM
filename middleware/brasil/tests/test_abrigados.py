@@ -247,7 +247,18 @@ def test_nome_busca_sem_acento_e_minusculo():
 
 # ── busca ────────────────────────────────────────────────────────────
 def busca(cli, uid, nome):
-    return cli.get("/brasil/abrigados/busca", params={"nome": nome}, headers=como(uid))
+    return cli.post("/brasil/abrigados/busca", json={"nome": nome}, headers=como(uid))
+
+
+def test_busca_e_post_com_nome_no_corpo_e_get_nao_existe(cena):
+    """O nome vai no corpo, não na URL: a URL entra no log de acesso do servidor (dados de abrigado nunca em log)."""
+    cli, g1, g2 = cena["cli"], cena["g1"], cena["g2"]
+    assert cli.get("/brasil/abrigados/busca", params={"nome": "joao"}, headers=como(g1)).status_code == 405
+    assert cli.post("/brasil/abrigados/busca", params={"nome": "joao"}, json={}, headers=como(g1)).status_code == 422
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+    r = busca(cli, g1, "jo").json()  # mesmas regras de escopo pelo POST
+    assert r["escopo"] == "todos" and {x["meu_abrigo"] for x in r["resultados"]} == {True, False}
+    assert busca(cli, g2, "joao").json() == {"escopo": "meus_abrigos", "resultados": [], "limite": 50}
 
 
 def test_busca_de_gestor_nao_verificado_so_nos_proprios_abrigos(cena):
@@ -356,6 +367,24 @@ def test_busca_mostra_quem_ja_saiu_como_nao_presente(cena):
     assert x["presente"] is False and x["saida_em"]
 
 
+def test_muitos_de_outros_abrigos_nao_empurram_a_propria_gente_para_fora(cena):
+    """Limite separado: até 50 dos próprios abrigos (com quem saiu) e até 50 de outros; os próprios primeiro."""
+    cli, g1, g2, a2 = cena["cli"], cena["g1"], cena["g2"], cena["a2"]
+    for i in range(0, 60, 30):
+        r = chegar(cli, g2, a2, [{"nome": f"Silva Fic {i + j:03d}", "nome_mae": "M Fic"} for j in range(30)])
+        assert r.status_code == 200, r.text
+    pid = chegar(cli, g1, cena["a1"], [{"nome": "Zeca Silva Fic", "nome_mae": "M Fic"}]).json()["pessoas"][0]["id"]
+    assert cli.post(f"/brasil/abrigados/{pid}/saida", headers=como(g1)).status_code == 200
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+    r = busca(cli, g1, "silva").json()
+    meus = [x for x in r["resultados"] if x["meu_abrigo"]]
+    assert sorted(x["nome"] for x in meus) == ["Ana Fictícia da Silva", "João Fictício da Silva",
+                                               "Pedrinho Fictício da Silva", "Zeca Silva Fic"]
+    assert [x["presente"] for x in meus if x["nome"] == "Zeca Silva Fic"] == [False]
+    assert r["resultados"][:len(meus)] == meus  # os próprios primeiro
+    assert len(r["resultados"]) - len(meus) == r["limite"] == 50
+
+
 @pytest.mark.parametrize("nome", ["", "a", "  b  ", "%"])
 def test_busca_curta_422(cena, nome):
     assert busca(cena["cli"], cena["g1"], nome).status_code == 422
@@ -401,10 +430,49 @@ def test_toda_busca_entre_abrigos_fica_registrada_mesmo_sem_resultado(cena):
     assert busca(cli, g1, "ninguem ficticio").json()["resultados"] == []
     assert busca(cli, g1, "a").status_code == 422  # busca recusada não roda, não registra
     log = log_de_buscas(cena["rotas"])
-    assert [(x["user_id"], x["consulta"], x["resultados"]) for x in log] == [(g1, "Jo", 2), (g1, "ninguem ficticio", 0)]
+    assert [(x["user_id"], x["consulta"], x["resultados"]) for x in log] == [(g1, "jo", 2), (g1, "ninguem ficticio", 0)]
     for x in log:
         quando = datetime.fromisoformat(x["buscado_em"])
         assert quando.utcoffset() == timedelta(0) and antes <= quando <= datetime.now(timezone.utc)
+
+
+@pytest.mark.parametrize("consulta,termo", [
+    ("." * 150 + " Joana Fictícia Pereira", "joana ficticia pereira"),
+    ("j" + "'" * 150 + "oana ficticia", "joana ficticia"),
+    ("j" + "́" * 150 + "oana ficticia", "joana ficticia"),
+    ("-" * 190 + "joana", "joana"),
+])
+def test_registro_guarda_o_termo_usado_mesmo_com_enchimento(cena, consulta, termo):
+    """Enchimento que a normalização apaga não esconde do registro o nome de fato buscado."""
+    cli, g1 = cena["cli"], cena["g1"]
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+    assert len(consulta) <= 200
+    assert [x["nome"] for x in busca(cli, g1, consulta).json()["resultados"]] == ["Joana Fictícia Pereira"]
+    assert [(x["consulta"], x["resultados"]) for x in log_de_buscas(cena["rotas"])] == [(termo, 1)]
+
+
+@pytest.mark.parametrize("consulta", ["." * 250 + " joana ficticia pereira", "-" * 199 + "joana", "a" * 5000])
+def test_busca_com_mais_de_200_caracteres_422_e_nao_registra(cena, consulta):
+    cli, g1 = cena["cli"], cena["g1"]
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+    r = busca(cli, g1, consulta)
+    assert r.status_code == 422 and r.json()["detail"] == "Digite no máximo 200 caracteres do nome"
+    assert log_de_buscas(cena["rotas"]) == []
+
+
+def test_busca_fica_registrada_mesmo_se_montar_a_resposta_falhar(cena, monkeypatch):
+    """O registro é gravado logo depois da consulta: um erro ao montar os resultados não apaga o rastro."""
+    from middleware.brasil import malha
+    cli, g1 = cena["cli"], cena["g1"]
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+
+    class Quebrada:
+        def info(self, *_):
+            raise RuntimeError("malha quebrada")
+    monkeypatch.setattr(malha, "carregar", lambda: Quebrada())
+    with pytest.raises(RuntimeError):
+        busca(cli, g1, "jo")
+    assert [(x["user_id"], x["consulta"], x["resultados"]) for x in log_de_buscas(cena["rotas"])] == [(g1, "jo", 2)]
 
 
 def test_busca_so_nos_proprios_abrigos_nao_e_registrada(cena):
@@ -427,7 +495,7 @@ def test_registro_de_buscas_nao_sai_por_nenhuma_rota(cena):
     cli, rotas, g1 = cena["cli"], cena["rotas"], cena["g1"]
     cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
     busca(cli, g1, "Rastro Fictício Auditado")
-    assert log_de_buscas(rotas)[0]["consulta"] == "Rastro Fictício Auditado"
+    assert log_de_buscas(rotas)[0]["consulta"] == "rastro ficticio auditado"
     app = FastAPI()
     app.include_router(rotas.router)
     caminhos = list(app.openapi()["paths"])
@@ -461,7 +529,7 @@ def _rotas_de_pessoas(c):
         ("GET", f"/brasil/abrigos/{c['a1']}/pessoas", None),
         ("POST", f"/brasil/abrigados/{pid}/saida", {}),
         ("GET", f"/brasil/abrigos/{c['a1']}/lotacao", None),
-        ("GET", "/brasil/abrigados/busca?nome=joao", None),
+        ("POST", "/brasil/abrigados/busca", {"nome": "joao"}),
     ]
 
 
@@ -488,6 +556,22 @@ def test_outro_gestor_recebe_404_nas_pessoas_do_abrigo_alheio(cena, i):
 
 def test_saida_de_pessoa_inexistente_404(cena):
     assert cena["cli"].post("/brasil/abrigados/99999/saida", headers=como(cena["g1"])).status_code == 404
+
+
+def test_saida_de_pessoa_de_outro_gestor_responde_igual_a_inexistente(cena):
+    """Não dá para descobrir pelo 404 se o id existe, nem pelo 409/422 se a pessoa saiu ou quando entrou."""
+    cli, g1, g2, pid = cena["cli"], cena["g1"], cena["g2"], cena["pessoa_g2"]
+
+    def resposta(i, **kw):
+        r = cli.post(f"/brasil/abrigados/{i}/saida", headers=como(g1), **kw)
+        return r.status_code, r.json()
+    inexistente = resposta(999999)
+    assert inexistente == (404, {"detail": "Pessoa não encontrada"})
+    assert resposta(pid) == inexistente
+    assert resposta(pid, json={"saida_em": "2020-01-01T00:00"}) == inexistente  # antes da entrada: seria 422
+    assert resposta(pid, json={"saida_em": "lixo"}) == inexistente
+    assert cli.post(f"/brasil/abrigados/{pid}/saida", headers=como(g2)).status_code == 200
+    assert resposta(pid) == inexistente  # já saiu: seria 409
 
 
 @pytest.mark.parametrize("perfil", ["voluntario", "ong", "admin"])

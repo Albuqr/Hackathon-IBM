@@ -71,7 +71,7 @@ def test_semente_pela_api_estoque_lotacao_e_busca_sem_verificar(ambiente):
     estoque = {x["nome"]: x["status"] for x in cli.get(f"/brasil/abrigos/{abrigo['id']}/estoque", headers=g1).json()}
     assert estoque["Água"] == "urgente" and estoque["Colchões"] == "sobrando" and estoque["Equipe de saúde"] == "precisa"
     # não verificado: a busca só acha gente dos próprios abrigos
-    busca = cli.get("/brasil/abrigados/busca", params={"nome": "exemplo"}, headers=g1).json()
+    busca = cli.post("/brasil/abrigados/busca", json={"nome": "exemplo"}, headers=g1).json()
     assert busca["escopo"] == "meus_abrigos" and busca["resultados"]
     assert all(r["meu_abrigo"] for r in busca["resultados"])
 
@@ -90,6 +90,6 @@ def test_semente_casa_de_acolhimento_e_sensivel_e_fica_fora_da_busca_de_outro_ge
     assert len(casa) == 1 and casa[0]["sensivel"] is True
     (abrigo,) = cli.get("/brasil/abrigos", headers=g1).json()
     cli.post(f"/brasil/dev/abrigos/{abrigo['id']}/verificar", headers=g1)
-    r = cli.get("/brasil/abrigados/busca", params={"nome": "joana ficticia reis"}, headers=g1)
+    r = cli.post("/brasil/abrigados/busca", json={"nome": "joana ficticia reis"}, headers=g1)
     assert r.json()["escopo"] == "todos" and r.json()["resultados"] == [] and "Joana" not in r.text
-    assert len(cli.get("/brasil/abrigados/busca", params={"nome": "joana ficticia reis"}, headers=g2).json()["resultados"]) == 1
+    assert len(cli.post("/brasil/abrigados/busca", json={"nome": "joana ficticia reis"}, headers=g2).json()["resultados"]) == 1
