@@ -71,7 +71,7 @@ Todo `acao(...)` do navegador vai para `POST /brasil/acao/<nome>` e passa pela `
 | `buscar_abrigados` | `GET /brasil/abrigados/busca?nome=` | lê `abrigados`, `abrigos`; escreve `buscas_abrigados_log` (só no escopo `todos`) |
 | `lotacao_abrigo` (na política, a tela usa a lotação que vem junto) | `GET /brasil/abrigos/{id}/lotacao` | lê `abrigados` |
 
-`entrada_em` e `saida_em` ficam sempre em UTC (`2026-11-18T13:00:00+00:00`); data sem fuso é horário de Brasília (UTC-03:00). Entrada mais de 10 minutos no futuro é recusada (422), e saída antes da entrada também (422). Chegada em abrigo inativo é recusada com a mensagem para reativar o abrigo antes.
+`entrada_em` e `saida_em` ficam sempre em UTC (`2026-11-18T13:00:00+00:00`); data sem fuso é horário de Brasília (UTC-03:00). Entrada mais de 10 minutos no futuro é recusada (422), e saída antes da entrada também (422). Chegada em abrigo inativo é recusada (409) com a mensagem para reativar o abrigo antes, e a tela troca o botão "Registrar chegada" pelo link para reativar (decisão c).
 
 ### `/brasil/abrigo/<id>/estoque` (`abrigo_estoque`; `static/estoque.js`)
 | POLITICA | API | Tabelas |
@@ -116,19 +116,21 @@ nem renomeia. Mesmo nome normalizado reaproveita o item existente.
 | 4 | Voluntário/ONG (e admin) 403 nas rotas de pessoas, sem vazar dados | `test_abrigados.py::test_outros_perfis_recebem_403_em_toda_rota_de_pessoas`, `::test_dados_de_abrigados_nao_aparecem_para_outros_perfis`, `::test_rotas_de_pessoas_nao_imprimem_dados`, `::test_outro_gestor_recebe_404_nas_pessoas_do_abrigo_alheio`; `test_frontend.py::test_politica_de_abrigados_so_para_gestor_de_abrigo`, `::test_pessoas_do_abrigo_so_para_gestor` |
 | 5 | Água Urgente, Colchões Sobrando, item novo sugerido ao segundo gestor, "agua" sinalizado | `tests/test_estoque.py::test_agua_urgente_com_quantidade_e_colchoes_sobrando`, `::test_item_novo_aparece_para_outro_gestor_ao_digitar`, `::test_agua_minuscula_e_sinalizada_como_duplicado_sem_bloquear`, `::test_regra_de_duplicados` |
 | 6 | Profissionais e veículos só como pedido | `test_estoque.py::test_profissionais_e_veiculos_so_pedido_com_quantidade`, `::test_grupo_profissionais_forca_so_necessidade_e_veiculo_escolhe`, `::test_lista_base_tem_os_quatro_grupos_e_profissionais_e_veiculos_so_pedido` |
-| 7 | Suíte verde (menos o teste de data conhecido) | `pytest`: 403 passam, 1 falha conhecida `test_inteligencia.py::test_fr025_descartada_sai_do_mapa_e_nao_verificada_expira_em_7_dias` (relógio real). Merge: `test_merge.py::test_abrigos_entram_no_merge_...`, `::test_itens_e_estoque_entram_no_merge_...`, `::test_familias_e_abrigados_entram_no_merge_...`; semente: `test_semente.py::test_semente_cria_abrigos_pessoas_e_estoque_ficticios_e_e_idempotente` |
+| 7 | Suíte verde (menos o teste de data conhecido) | `pytest`: 430 passam, 1 falha conhecida `test_inteligencia.py::test_fr025_descartada_sai_do_mapa_e_nao_verificada_expira_em_7_dias` (relógio real). Merge: `test_merge.py::test_abrigos_entram_no_merge_...`, `::test_itens_e_estoque_entram_no_merge_...`, `::test_familias_e_abrigados_entram_no_merge_...`; semente: `test_semente.py::test_semente_cria_abrigos_pessoas_e_estoque_ficticios_e_e_idempotente` |
 | 8 | Este roteiro | `middleware/brasil/WALKTHROUGH.md` |
 
 Caminhos de teste relativos a `middleware/brasil/` quando não indicado.
 
-## Decisões de produto para o João confirmar
-Tomadas durante a fatia, sem regra no brief:
+## Decisões de produto
+Tomadas durante a fatia, sem regra no brief; todas já decididas:
 - a) Decidido (ADR 0008): abrigo sensível nunca aparece na busca de outros gestores; só o dono acha a própria gente.
 - b) Decidido (ADR 0008): de outros abrigos a busca mostra só o nome e "Entre em contato com a coordenação regional.", e quem saiu não aparece; nos próprios abrigos continua tudo, inclusive quem saiu ("Saiu <data>").
-- c) Decidido (João, 2026-11-23): chegada em abrigo inativo é recusada, com mensagem clara para reativar o abrigo
-  antes (teste: `test_abrigados.py`).
+- c) Decidido (João, 2026-11-23): chegada em abrigo inativo é recusada (409), com mensagem clara para reativar o
+  abrigo antes; a saída continua valendo. Testes: `test_abrigados.py::test_chegada_em_abrigo_inativo_409_e_nada_e_gravado`,
+  `::test_abrigo_criado_inativo_tambem_recusa_chegada`, `::test_saida_de_abrigo_inativo_continua_valendo`,
+  `::test_abrigo_inativo_de_outro_gestor_continua_404`; `test_frontend.py::test_pessoas_de_abrigo_inativo_pede_para_reativar_em_vez_de_registrar_chegada`.
 - d) Decidido (João, 2026-11-23): saída com data antes da entrada continua recusada (422), já implementado e testado
-  (`test_abrigados.py`).
+  (`test_abrigados.py::test_saida_antes_da_entrada_422`).
 - e) Decidido (João, 2026-11-23): por quanto tempo guardar os dados de quem saiu é decisão do cliente (LGPD) e não está
   implementado. **Bloqueia carregar dados reais**; até lá só dados fictícios da semente (ver o aviso no topo).
 - f) Decidido (João, 2026-11-23): o status Urgente mantém a cor de alerta laranja que já existe (`--acento`), além do

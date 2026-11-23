@@ -1,6 +1,6 @@
 # Backlog da gestão de abrigos
 
-Pendências da fatia 1 (`feat/brasil-abrigos`). Contexto em `WALKTHROUGH.md` e nas ADRs 0005 a 0007.
+Pendências da fatia 1 (`feat/brasil-abrigos`). Contexto em `WALKTHROUGH.md` e nas ADRs 0005 a 0008.
 
 ## 1. Tempo de guarda dos dados de quem saiu (bloqueio)
 - **O quê:** definir por quanto tempo nome, nome da mãe, CPF e datas de quem saiu do abrigo ficam guardados, e
