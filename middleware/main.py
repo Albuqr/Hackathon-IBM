@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from middleware.gravacao import gravar_eventos
+from middleware.ingestao_crise import executar_ingestao
 
 # ── Predictions cache ──
 _predictions_cache = {"data": None, "ts": 0}
@@ -744,9 +745,29 @@ def _coletar_eventos():
     return events
 
 
-def _ingest_fallback():
-    """Rede de segurança do /ingest: coleta direta e gravação por regras de severidade, sem LLM."""
-    events = _coletar_eventos()
+def _avisar_novos(saved_events):
+    """Avisa os assinantes do Telegram sobre crises recém-gravadas (falha de aviso não derruba o ingest)."""
+    try:
+        _tools_dir = os.path.join(os.path.dirname(__file__), "..", "tools")
+        if _tools_dir not in sys.path:
+            sys.path.insert(0, _tools_dir)
+        from notify_telegram import broadcast_to_subscribers
+        for ev in saved_events:
+            country = ev.get("country", "")
+            if country:
+                asyncio.run(broadcast_to_subscribers(
+                    country=country,
+                    crisis_title=ev.get("title", "Nova crise"),
+                    severity=int(ev.get("severity", 1)),
+                ))
+    except Exception as _be:
+        print(f"[broadcast] error: {_be}")
+
+
+def _ingest_fallback(events=None):
+    """Rede de segurança do /ingest: coleta direta (ou os `events` já coletados) e gravação por regras, sem LLM."""
+    if events is None:
+        events = _coletar_eventos()
     # Só eventos cujo id ainda não existe (atualizar=False): a regra por fonte não pode sobrescrever
     # severidade/urgência/tipo de uma classificação melhor feita antes (LLM ou manual).
     db = get_db()
@@ -767,23 +788,8 @@ def _ingest_fallback():
         s = e["source"]
         sources_count[s] = sources_count.get(s, 0) + 1
 
-    # Broadcast new crises to Telegram subscribers
     if saved_events:
-        try:
-            _tools_dir = os.path.join(os.path.dirname(__file__), "..", "tools")
-            if _tools_dir not in sys.path:
-                sys.path.insert(0, _tools_dir)
-            from notify_telegram import broadcast_to_subscribers
-            for ev in saved_events:
-                country = ev.get("country", "")
-                if country:
-                    asyncio.run(broadcast_to_subscribers(
-                        country=country,
-                        crisis_title=ev.get("title", "Nova crise"),
-                        severity=int(ev.get("severity", 1)),
-                    ))
-        except Exception as _be:
-            print(f"[broadcast] error: {_be}")
+        _avisar_novos(saved_events)
 
     # Update ingest tracking
     _last_ingest["ts"]    = time.time()
@@ -801,38 +807,17 @@ def _ingest_fallback():
 
 @app.post("/ingest")
 def trigger_ingest():
-    """Trigger crisis data ingestion.
-    Primary path: watsonx Orchestrate monitoring_agent.
-    Fallback: direct tool calls if Orchestrate fails or times out.
-    """
-    global _last_ingest
-    vps_url    = os.environ.get("VPS_API_URL", "http://31.97.83.21:17291")
-    agent_id   = os.environ.get("MONITORING_AGENT_ID",
-                                os.environ.get("ORCHESTRATOR_AGENT_ID", ""))
-
-    # ── Primary: Orchestrate ──────────────────────────────────────────
-    if agent_id:
-        try:
-            message = (
-                f"Fetch all crisis data from USGS, GDACS, EONET and conflict APIs, "
-                f"classify each event, and save them to the database at {vps_url}"
-            )
-            print("[ingest] Trying Orchestrate monitoring_agent...")
-            result = call_orchestrate(message, agent_id=agent_id, max_wait=300)
-            if not result.get("error"):
-                _last_ingest["ts"] = time.time()
-                print("[ingest] Orchestrate path succeeded")
-                return {"ok": True, "triggered_by": "orchestrate"}
-            else:
-                print(f"[ingest] Orchestrate returned error: {result.get('error')} — falling back")
-        except Exception as e:
-            print(f"[ingest] Orchestrate exception: {e} — falling back")
-    else:
-        print("[ingest] No agent_id configured — using fallback directly")
-
-    # ── Fallback: direct tool calls ───────────────────────────────────
-    print("[ingest] Running fallback (direct tool calls)")
-    return _ingest_fallback()
+    """Ciclo de ingestão: coleta, classificação por LLM (middleware/classificacao.py) e gravação em Python.
+    Com o LLM indisponível (inclui o teto diário) cai na rede de segurança por regras (_ingest_fallback)
+    e sinaliza `degradado`. O watsonx Orchestrate não é mais usado aqui."""
+    db = get_db()
+    try:
+        res = executar_ingestao(db)
+    finally:
+        db.close()
+    _last_ingest["ts"] = time.time()
+    _last_ingest["count"] = res.get("events_saved", 0)
+    return res
 
 
 @app.post("/chat")

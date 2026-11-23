@@ -1,36 +1,5 @@
 """_coletar_eventos / _ingest_fallback com respostas gravadas (sem rede)."""
-import json
-from pathlib import Path
-
-import pytest
-import requests
-
 from middleware.gravacao import TIPOS_CRISE
-
-FX = Path(__file__).parent / "fixtures"
-
-
-class _Resp:
-    def __init__(self, texto):
-        self.text, self.content = texto, texto.encode("utf-8")
-
-    def json(self):
-        return json.loads(self.text)
-
-    def raise_for_status(self):
-        pass
-
-
-@pytest.fixture
-def rede_gravada(monkeypatch):
-    """USGS e GDACS RSS vêm das fixtures; EONET e GDELT falham (o código já trata)."""
-    def get(url, **kw):
-        if "earthquake.usgs.gov" in url:
-            return _Resp((FX / "usgs_4_5_day.real.geojson").read_text(encoding="utf-8"))
-        if "gdacs.org/xml/rss.xml" in url:
-            return _Resp((FX / "gdacs_rss.real.xml").read_text(encoding="utf-8"))
-        raise ConnectionError("sem rede")
-    monkeypatch.setattr(requests, "get", get)
 
 
 def _por_fonte(eventos, fonte):
