@@ -412,10 +412,34 @@ def test_toda_busca_entre_abrigos_fica_registrada_mesmo_sem_resultado(cena):
     assert busca(cli, g1, "ninguem ficticio").json()["resultados"] == []
     assert busca(cli, g1, "a").status_code == 422  # busca recusada não roda, não registra
     log = log_de_buscas(cena["rotas"])
-    assert [(x["user_id"], x["consulta"], x["resultados"]) for x in log] == [(g1, "Jo", 2), (g1, "ninguem ficticio", 0)]
+    assert [(x["user_id"], x["consulta"], x["resultados"]) for x in log] == [(g1, "jo", 2), (g1, "ninguem ficticio", 0)]
     for x in log:
         quando = datetime.fromisoformat(x["buscado_em"])
         assert quando.utcoffset() == timedelta(0) and antes <= quando <= datetime.now(timezone.utc)
+
+
+@pytest.mark.parametrize("consulta,termo", [
+    ("." * 150 + " Joana Fictícia Pereira", "joana ficticia pereira"),
+    ("j" + "'" * 150 + "oana ficticia", "joana ficticia"),
+    ("j" + "́" * 150 + "oana ficticia", "joana ficticia"),
+    ("-" * 190 + "joana", "joana"),
+])
+def test_registro_guarda_o_termo_usado_mesmo_com_enchimento(cena, consulta, termo):
+    """Enchimento que a normalização apaga não esconde do registro o nome de fato buscado."""
+    cli, g1 = cena["cli"], cena["g1"]
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+    assert len(consulta) <= 200
+    assert [x["nome"] for x in busca(cli, g1, consulta).json()["resultados"]] == ["Joana Fictícia Pereira"]
+    assert [(x["consulta"], x["resultados"]) for x in log_de_buscas(cena["rotas"])] == [(termo, 1)]
+
+
+@pytest.mark.parametrize("consulta", ["." * 250 + " joana ficticia pereira", "-" * 199 + "joana", "a" * 5000])
+def test_busca_com_mais_de_200_caracteres_422_e_nao_registra(cena, consulta):
+    cli, g1 = cena["cli"], cena["g1"]
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+    r = busca(cli, g1, consulta)
+    assert r.status_code == 422 and r.json()["detail"] == "Digite no máximo 200 caracteres do nome"
+    assert log_de_buscas(cena["rotas"]) == []
 
 
 def test_busca_so_nos_proprios_abrigos_nao_e_registrada(cena):
@@ -438,7 +462,7 @@ def test_registro_de_buscas_nao_sai_por_nenhuma_rota(cena):
     cli, rotas, g1 = cena["cli"], cena["rotas"], cena["g1"]
     cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
     busca(cli, g1, "Rastro Fictício Auditado")
-    assert log_de_buscas(rotas)[0]["consulta"] == "Rastro Fictício Auditado"
+    assert log_de_buscas(rotas)[0]["consulta"] == "rastro ficticio auditado"
     app = FastAPI()
     app.include_router(rotas.router)
     caminhos = list(app.openapi()["paths"])

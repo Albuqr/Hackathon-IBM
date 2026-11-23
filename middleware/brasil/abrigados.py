@@ -25,6 +25,7 @@ from .config import Config
 
 NECESSIDADES = ("idoso", "deficiencia", "saude", "gestante")
 LIMITE_BUSCA = 50
+MAX_NOME_BUSCA = 200  # o mesmo limite do nome no cadastro
 FOLGA_FUTURO = timedelta(minutes=10)  # relógio do celular adiantado; mais que isso é engano
 INATIVO = "Este abrigo está inativo. Reative o abrigo antes de registrar chegadas."
 # o abrigo não tem contato público: quem achou alguém de outro abrigo fala com a coordenação (ADR 0008)
@@ -231,8 +232,9 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
     def buscar_abrigados(d: Busca, u: dict = Depends(gestor)):
         """Busca por nome, sem acento e sem diferença de maiúsculas. Gente dos próprios abrigos vem completa (com CPF);
         de outros abrigos, só o nome e o caminho de contato (ADR 0008)."""
-        nome = d.nome
-        termo = nome_busca(nome)
+        if len(d.nome) > MAX_NOME_BUSCA:
+            raise HTTPException(422, f"Digite no máximo {MAX_NOME_BUSCA} caracteres do nome")
+        termo = nome_busca(d.nome)
         if len(termo) < 2:
             raise HTTPException(422, "Digite pelo menos 2 letras do nome")
         padrao = "%" + re.sub(r"([\\%_])", r"\\\1", termo) + "%"
@@ -251,7 +253,8 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
                                    "entrada_em": x["entrada_em"], "saida_em": x["saida_em"],
                                    "presente": x["saida_em"] is None, "meu_abrigo": True})
             if todos:  # busca entre abrigos: fica registrada, mesmo sem resultado (ADR 0008)
-                conn.execute(SQL_LOG_BUSCA, (u["id"], " ".join(nome.split())[:200],
+                # grava o termo usado na busca (normalizado), não o digitado: pontuação de enchimento não o esconde
+                conn.execute(SQL_LOG_BUSCA, (u["id"], termo,
                                              datetime.now(timezone.utc).isoformat(timespec="seconds"), len(resultados)))
                 conn.commit()
             return {"escopo": "todos" if todos else "meus_abrigos", "resultados": resultados, "limite": LIMITE_BUSCA}
