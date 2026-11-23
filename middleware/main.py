@@ -519,12 +519,11 @@ def save_events(events: List[dict]):
     return {"ok": True, "saved": res["saved"], "errors": res["errors"]}
 
 
-def _ingest_fallback():
-    """Direct tool calls used as fallback when Orchestrate is unavailable."""
+def _coletar_eventos():
+    """Coleta direta (USGS, EONET, GDACS RSS, GDELT e conflitos fixos). Só busca e normaliza: não grava."""
     import defusedxml.ElementTree as ET
     import re as _re
     events = []
-    now = datetime.utcnow().isoformat()
 
     # 1. USGS Earthquakes
     try:
@@ -742,41 +741,26 @@ def _ingest_fallback():
                 "people_affected": 0,
             })
     print(f"Fallback conflicts: {len(_FALLBACK)} adicionados")
+    return events
 
-    # Salvar no banco
+
+def _ingest_fallback():
+    """Rede de segurança do /ingest: coleta direta e gravação por regras de severidade, sem LLM."""
+    events = _coletar_eventos()
+    # Só eventos cujo id ainda não existe (atualizar=False): a regra por fonte não pode sobrescrever
+    # severidade/urgência/tipo de uma classificação melhor feita antes (LLM ou manual).
     db = get_db()
-    saved = 0
+    try:
+        res = gravar_eventos(db, [e for e in events if e.get("id")], atualizar=False)
+    finally:
+        db.close()
+    saved = res["saved"]
+    novos = set(res["ids"])
     saved_events = []
-    for event in events:
-        if not event.get("id"):
-            continue
-        try:
-            existing = db.execute(
-                "SELECT id FROM crises WHERE id=?", (event["id"],)
-            ).fetchone()
-            if not existing:
-                db.execute("""
-                    INSERT INTO crises
-                    (id, title, country, country_iso3, lat, lon,
-                     severity, urgency, crisis_type, source,
-                     people_affected, created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """, (
-                    event["id"], event["title"],
-                    event["country"], event["country_iso3"],
-                    event["lat"], event["lon"],
-                    event["severity"], event["urgency"],
-                    event["crisis_type"], event["source"],
-                    event["people_affected"], now, now
-                ))
-                saved += 1
-                saved_events.append(event)
-        except Exception as e:
-            print(f"DB error {event.get('id')}: {e}")
-            continue
-
-    db.commit()
-    db.close()
+    for e in events:  # um por id (a coleta pode repetir)
+        if e.get("id") in novos:
+            novos.discard(e["id"])
+            saved_events.append(e)
 
     sources_count = {}
     for e in events:
@@ -811,6 +795,7 @@ def _ingest_fallback():
         "events_collected": len(events),
         "events_saved":    saved,
         "by_source":       sources_count,
+        "errors":          res["errors"],
     }
 
 
