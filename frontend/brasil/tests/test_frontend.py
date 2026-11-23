@@ -386,12 +386,25 @@ def test_politica_de_abrigados_so_para_gestor_de_abrigo():
         "pessoas_abrigo": ("GET", "/abrigos/{abrigo_id}/pessoas"),
         "registrar_saida": ("POST", "/abrigados/{pessoa_id}/saida"),
         "lotacao_abrigo": ("GET", "/abrigos/{abrigo_id}/lotacao"),
-        "buscar_abrigados": ("GET", "/abrigados/busca"),
+        "buscar_abrigados": ("POST", "/abrigados/busca"),
     }
     for nome, (metodo, caminho) in esperado.items():
         assert (pol[nome].metodo, pol[nome].caminho, pol[nome].papeis) == (metodo, caminho, ("gestor_abrigo",))
     # nenhuma outra ação alcança as rotas de pessoas
     assert {n for n, r in pol.items() if "/abrigados" in r.caminho or r.caminho.endswith(("/chegadas", "/pessoas", "/lotacao"))} == set(esperado)
+
+
+def test_busca_de_abrigados_vai_no_corpo_e_nunca_na_url(front, logar):
+    """O nome buscado não pode cair no log de acesso: o encaminhador manda no corpo do POST, e a tela usa `corpo`."""
+    import os
+    cli, api = front
+    logar(cli, "gestor_abrigo", uid=9)
+    api.respostas[("POST", "/abrigados/busca")] = (200, {"escopo": "meus_abrigos", "resultados": [], "limite": 50})
+    r = cli.post("/brasil/acao/buscar_abrigados", json={"corpo": {"nome": "Joana Fictícia"}})
+    assert r.status_code == 200
+    assert api.chamadas[-1] == ("POST", "/abrigados/busca", 9, {"nome": "Joana Fictícia"}, None)
+    js = open(os.path.join(os.path.dirname(__file__), "..", "static", "pessoas.js"), encoding="utf-8").read()
+    assert 'acao("buscar_abrigados", { corpo: { nome: termo } })' in js
 
 
 def test_tela_de_pessoas_nao_usa_dialogos_do_navegador_nem_console():

@@ -68,7 +68,7 @@ Todo `acao(...)` do navegador vai para `POST /brasil/acao/<nome>` e passa pela `
 | `pessoas_abrigo` | `GET /brasil/abrigos/{id}/pessoas` | lê `abrigados` |
 | `registrar_chegada` | `POST /brasil/abrigos/{id}/chegadas` | escreve `familias`, `abrigados` |
 | `registrar_saida` | `POST /brasil/abrigados/{pid}/saida` | escreve `abrigados.saida_em` |
-| `buscar_abrigados` | `GET /brasil/abrigados/busca?nome=` | lê `abrigados`, `abrigos`; escreve `buscas_abrigados_log` (só no escopo `todos`) |
+| `buscar_abrigados` | `POST /brasil/abrigados/busca` (`{"nome": ...}` no corpo, fora da URL e do log de acesso) | lê `abrigados`, `abrigos`; escreve `buscas_abrigados_log` (só no escopo `todos`) |
 | `lotacao_abrigo` (na política, a tela usa a lotação que vem junto) | `GET /brasil/abrigos/{id}/lotacao` | lê `abrigados` |
 
 `entrada_em` e `saida_em` ficam sempre em UTC (`2026-11-18T13:00:00+00:00`); data sem fuso é horário de Brasília (UTC-03:00). Entrada mais de 10 minutos no futuro é recusada (422), e saída antes da entrada também (422). Chegada em abrigo inativo é recusada (409) com a mensagem para reativar o abrigo antes, e a tela troca o botão "Registrar chegada" pelo link para reativar (decisão c).

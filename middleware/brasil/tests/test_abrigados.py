@@ -247,7 +247,18 @@ def test_nome_busca_sem_acento_e_minusculo():
 
 # ── busca ────────────────────────────────────────────────────────────
 def busca(cli, uid, nome):
-    return cli.get("/brasil/abrigados/busca", params={"nome": nome}, headers=como(uid))
+    return cli.post("/brasil/abrigados/busca", json={"nome": nome}, headers=como(uid))
+
+
+def test_busca_e_post_com_nome_no_corpo_e_get_nao_existe(cena):
+    """O nome vai no corpo, não na URL: a URL entra no log de acesso do servidor (dados de abrigado nunca em log)."""
+    cli, g1, g2 = cena["cli"], cena["g1"], cena["g2"]
+    assert cli.get("/brasil/abrigados/busca", params={"nome": "joao"}, headers=como(g1)).status_code == 405
+    assert cli.post("/brasil/abrigados/busca", params={"nome": "joao"}, json={}, headers=como(g1)).status_code == 422
+    cli.post(f"/brasil/dev/abrigos/{cena['a1']}/verificar", headers=como(g1))
+    r = busca(cli, g1, "jo").json()  # mesmas regras de escopo pelo POST
+    assert r["escopo"] == "todos" and {x["meu_abrigo"] for x in r["resultados"]} == {True, False}
+    assert busca(cli, g2, "joao").json() == {"escopo": "meus_abrigos", "resultados": [], "limite": 50}
 
 
 def test_busca_de_gestor_nao_verificado_so_nos_proprios_abrigos(cena):
@@ -461,7 +472,7 @@ def _rotas_de_pessoas(c):
         ("GET", f"/brasil/abrigos/{c['a1']}/pessoas", None),
         ("POST", f"/brasil/abrigados/{pid}/saida", {}),
         ("GET", f"/brasil/abrigos/{c['a1']}/lotacao", None),
-        ("GET", "/brasil/abrigados/busca?nome=joao", None),
+        ("POST", "/brasil/abrigados/busca", {"nome": "joao"}),
     ]
 
 

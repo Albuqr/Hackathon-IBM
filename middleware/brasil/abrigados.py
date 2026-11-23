@@ -130,6 +130,11 @@ class Saida(BaseModel):
     saida_em: str | None = None
 
 
+class Busca(BaseModel):
+    # no corpo do POST, não na URL: a URL vai para o log de acesso do servidor, e nome de abrigado não pode ir
+    nome: str = ""
+
+
 def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
     r = APIRouter()
     gestor = acesso.exige(PAPEL)
@@ -222,10 +227,11 @@ def criar_router(cfg: Config, acesso: Acesso) -> APIRouter:
         finally:
             conn.close()
 
-    @r.get("/abrigados/busca")
-    def buscar_abrigados(nome: str = "", u: dict = Depends(gestor)):
+    @r.post("/abrigados/busca")
+    def buscar_abrigados(d: Busca, u: dict = Depends(gestor)):
         """Busca por nome, sem acento e sem diferença de maiúsculas. Gente dos próprios abrigos vem completa (com CPF);
         de outros abrigos, só o nome e o caminho de contato (ADR 0008)."""
+        nome = d.nome
         termo = nome_busca(nome)
         if len(termo) < 2:
             raise HTTPException(422, "Digite pelo menos 2 letras do nome")

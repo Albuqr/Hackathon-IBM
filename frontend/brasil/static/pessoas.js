@@ -194,7 +194,7 @@ export function iniciarPessoas({ abrigo, msg }) {
     const termo = busca.value.trim();
     const meu = ++pedido;
     if (termo.length < 2) { resultados.hidden = true; resultados.replaceChildren(); return; }
-    const r = await acao("buscar_abrigados", { q: { nome: termo } });
+    const r = await acao("buscar_abrigados", { corpo: { nome: termo } });
     if (meu !== pedido) return;
     resultados.hidden = false;
     if (!r.ok) { resultados.replaceChildren(el("li", { class: "vazio", texto: r.erro })); return; }

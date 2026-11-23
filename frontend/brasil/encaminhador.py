@@ -71,7 +71,7 @@ POLITICA: dict[str, Regra] = {
     "pessoas_abrigo": Regra("GET", "/abrigos/{abrigo_id}/pessoas", ("gestor_abrigo",)),
     "registrar_saida": Regra("POST", "/abrigados/{pessoa_id}/saida", ("gestor_abrigo",)),
     "lotacao_abrigo": Regra("GET", "/abrigos/{abrigo_id}/lotacao", ("gestor_abrigo",)),
-    "buscar_abrigados": Regra("GET", "/abrigados/busca", ("gestor_abrigo",)),
+    "buscar_abrigados": Regra("POST", "/abrigados/busca", ("gestor_abrigo",)),
 }
 
 _PARAM = re.compile(r"\{(\w+)\}")
