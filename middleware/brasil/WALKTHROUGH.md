@@ -44,7 +44,8 @@ API_URL=http://127.0.0.1:8000 python frontend/app.py
     Acolhimento de Teste (sensível, uma pessoa). Estoque: Cobertores Urgente, Ambulância Precisa 1, entre outros.
   - Todos começam "Não verificado". Para ver a busca mudar: em `gestor`, Pessoas > buscar "exemplo" (só os dele); no
     painel, "Marcar como verificado" (só de teste); buscar de novo (aparece também a família de Canoas, só com o nome e "Entre em contato com a coordenação
-    regional."; a Casa de Acolhimento, sensível, nunca aparece para `gestor`). Cada busca entre abrigos fica em
+    regional."; a Casa de Acolhimento, sensível, nunca aparece para `gestor`). Em outros abrigos a busca pede nome e
+    sobrenome (2+ palavras de 2+ letras), traz até 10 e vale 30 por hora. Cada busca entre abrigos fica em
     `buscas_abrigados_log`.
 - Cadastro: http://localhost:5000/brasil/cadastro cria uma conta `gestor_abrigo` e cai na criação do abrigo em etapas.
 
@@ -93,7 +94,7 @@ Todo `acao(...)` do navegador vai para `POST /brasil/acao/<nome>` e passa pela `
 | Papel por ação no navegador; identidade sempre da sessão | `frontend/brasil/encaminhador.py`: `POLITICA`, `encaminhar`; telas com `exige_login("gestor_abrigo")` em `frontend/brasil/__init__.py` |
 | A API confere o papel de novo | `middleware/brasil/acesso.py`: `Acesso.exige` (cada router faz `acesso.exige(PAPEL)`) |
 | Só o dono vê o abrigo; outro gestor = 404 | `middleware/brasil/abrigos.py`: `abrigo_do_gestor` (usado por abrigados e estoque) |
-| Escopo da busca: todos os abrigos se algum abrigo do gestor estiver verificado, menos os sensíveis de outros gestores; de outros abrigos só nome + contato fixo e só quem não saiu; CPF, datas e abrigo só dos próprios; toda busca entre abrigos registrada, sem rota que leia o registro (ADR 0008) | `abrigos.py`: `gestor_verificado`; `abrigados.py`: `buscar_abrigados`, `SQL_BUSCA_MEUS`, `SQL_BUSCA_OUTROS` (até 50 de cada, os próprios primeiro), `CONTATO_OUTRO_ABRIGO`, `SQL_LOG_BUSCA` |
+| Escopo da busca: todos os abrigos se algum abrigo do gestor estiver verificado, menos os sensíveis de outros gestores; de outros abrigos só nome + contato fixo e só quem não saiu; CPF, datas e abrigo só dos próprios; toda busca entre abrigos registrada, sem rota que leia o registro (ADR 0008) | `abrigos.py`: `gestor_verificado`; `abrigados.py`: `buscar_abrigados`, `SQL_BUSCA_MEUS`, `SQL_BUSCA_OUTROS` (até 50 dos próprios, os primeiros, e 10 de outros; nome e sobrenome; 30 buscas por hora, 429 além disso), `CONTATO_OUTRO_ABRIGO`, `SQL_LOG_BUSCA` |
 | Profissionais e veículos só como pedido (Urgente/Precisa e quantidade > 0) | `middleware/brasil/estoque.py`: `_so_necessidade`, `atualizar_estoque` |
 | Verificação só de teste; 404 sem `BRASIL_DEV_LOGIN=1` | `abrigos.py`: `dev_verificar` |
 | Privacidade: listas de abrigo só têm a contagem de presentes; nada imprime/loga pessoas; voluntário/ONG/admin recebem 403 nas rotas de pessoas; abrigados não entram no mapa | `abrigos.py`: `completo`; `abrigados.py` (docstring e rotas); `semear_teste.py`: `abrigos_teste` (resumo só com contagens) |

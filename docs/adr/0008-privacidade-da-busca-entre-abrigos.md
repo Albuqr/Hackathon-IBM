@@ -27,3 +27,9 @@ Positivo: busca não revela onde está nem desde quando está quem é protegido;
 ## Emendas (revisão da onda 1)
 - A busca é `POST /brasil/abrigados/busca` com `{"nome": ...}` no corpo (era `GET ...?nome=`): a URL vai para o log de acesso do servidor, e nome de abrigado não pode ir para log.
 - Consulta com mais de 200 caracteres é recusada (422) e não é registrada. O registro guarda o termo normalizado que a busca usou (sem acento, minúsculo, pontuação vira espaço: `nome_busca`), não o texto digitado, para que enchimento de pontuação ou acentos não esconda o nome buscado.
+
+## Emenda: limites da busca em outros abrigos
+- Em outros abrigos só se busca por nome e sobrenome: o termo normalizado precisa ter 2+ palavras de 2+ letras. Gestor verificado com termo que não serve recebe só os próprios abrigos, mais o campo `aviso` ("digite nome e sobrenome"); outros abrigos não são consultados e a busca não conta no limite nem é registrada. A busca nos próprios abrigos não muda (mínimo de 2 letras, até 50).
+- De outros abrigos vêm no máximo 10 resultados (`LIMITE_BUSCA_OUTROS`; `limite_outros` na resposta, só no escopo `todos`).
+- Cada gestor faz até 30 buscas por hora em outros abrigos, contadas em `buscas_abrigados_log` (últimos 60 minutos); a 31ª recebe 429 ("Você fez muitas buscas em outros abrigos. Tente de novo em até uma hora."). Busca recusada por limite não consulta nem é registrada, como as demais recusas; só conta a busca que de fato consulta outros abrigos. Contagem, consulta e registro rodam numa transação só (`BEGIN IMMEDIATE`).
+- Motivo: dificultar varredura de nomes soltos ("maria") e esvaziar o uso da busca para achar pessoas específicas em volume. Ainda aberto: o teto de 30 por hora é fixo e por gestor, não por abrigo ou IP.
