@@ -66,12 +66,12 @@ def test_save_events_aceita_lista_e_insere(api):
     assert linha["people_affected"] == 1200 and linha["source"] == "teste"
 
 
-def test_save_events_http_recusa_json_em_lista_hoje(api):
-    # `events: list` sem tipo de item vira campo de formulário no FastAPI 0.165: o POST JSON do
-    # tools/save_classification.py (json=[payload]) leva 422 e nada é gravado.
+def test_save_events_http_aceita_json_em_lista(api):
+    # Antes (`events: list`) o FastAPI 0.165 tratava o parâmetro como formulário e devolvia 422 para o
+    # POST JSON do tools/save_classification.py. Com List[dict] o corpo JSON em lista é aceito.
     r = api.post("/save_events", json=[EVENTO])
-    assert r.status_code == 422
-    assert api.linhas() == {}
+    assert r.status_code == 200 and r.json() == {"ok": True, "saved": 1, "errors": []}
+    assert "t-1" in api.linhas()
 
 
 def test_save_events_http_recusa_dict(api):
@@ -90,26 +90,30 @@ def test_save_event_rejeita_lista(api):
 
 # ---------- type / crisis_type ----------
 
-def test_crisis_type_nao_e_normalizado_hoje(api):
+def test_crisis_type_e_normalizado(api):
     api.lote([{**EVENTO, "crisis_type": "  Seismic "}])
-    assert api.linhas()["t-1"]["crisis_type"] == "  Seismic "
+    assert api.linhas()["t-1"]["crisis_type"] == "seismic"
 
 
-def test_campo_type_e_ignorado_hoje(api):
+def test_campo_type_vale_quando_nao_ha_crisis_type(api):
     evento = {k: v for k, v in EVENTO.items() if k != "crisis_type"}
-    api.lote([{**evento, "type": "seismic"}])
-    assert api.linhas()["t-1"]["crisis_type"] == "humanitarian"  # padrão; "type" não é lido
+    api.lote([{**evento, "type": "Wildfire"}])
+    assert api.linhas()["t-1"]["crisis_type"] == "wildfire"  # antes: "type" era ignorado -> humanitarian
 
 
-def test_crisis_type_fora_do_schema_e_aceito_hoje(api):
+def test_crisis_type_fora_do_schema_e_rejeitado(api):
+    # Antes: aceito e gravado como veio ("banana"). Agora: erro por evento, nada inserido.
     r = api.lote([{**EVENTO, "crisis_type": "banana"}])
-    assert r.json() == {"ok": True, "saved": 1, "errors": []}
-    assert api.linhas()["t-1"]["crisis_type"] == "banana"
+    corpo = r.json()
+    assert corpo["saved"] == 0 and [e["id"] for e in corpo["errors"]] == ["t-1"]
+    assert "banana" in corpo["errors"][0]["error"]
+    assert api.linhas() == {}
 
 
-def test_save_event_crisis_type_fora_do_schema_e_aceito_hoje(api):
-    assert api.post("/save_event", json={**EVENTO, "crisis_type": "banana"}).json()["ok"] is True
-    assert api.linhas()["t-1"]["crisis_type"] == "banana"
+def test_save_event_crisis_type_fora_do_schema_e_rejeitado(api):
+    r = api.post("/save_event", json={**EVENTO, "crisis_type": "banana"}).json()
+    assert r["ok"] is False and "banana" in r["error"]
+    assert api.linhas() == {}
 
 
 # ---------- campos ausentes ----------

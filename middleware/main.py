@@ -9,10 +9,12 @@ import time
 import asyncio
 import requests
 from datetime import datetime
+from typing import List
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from middleware.gravacao import gravar_eventos
 
 # ── Predictions cache ──
 _predictions_cache = {"data": None, "ts": 0}
@@ -485,93 +487,34 @@ def ingest_status():
 
 @app.post("/save_event")
 def save_event(event: dict):
-    """Save a single crisis event dict to the crises table. Unauthenticated."""
+    """Save a single crisis event dict to the crises table. Unauthenticated. Adapter of gravar_eventos."""
     now = datetime.utcnow().isoformat()
     eid = event.get("id") or f"api-{now}"
     try:
         db = get_db()
-        existing = db.execute("SELECT id FROM crises WHERE id=?", (eid,)).fetchone()
-        if existing:
-            db.execute(
-                "UPDATE crises SET severity=?, urgency=?, crisis_type=?, updated_at=? WHERE id=?",
-                (event.get("severity", 1), event.get("urgency", "monitoring"),
-                 event.get("crisis_type", "humanitarian"), now, eid)
-            )
-        else:
-            db.execute("""
-                INSERT INTO crises
-                (id, title, country, country_iso3, lat, lon,
-                 severity, urgency, crisis_type, source,
-                 people_affected, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (
-                eid,
-                event.get("title", ""),
-                event.get("country", ""),
-                event.get("country_iso3", "UNK"),
-                float(event.get("lat", 0)),
-                float(event.get("lon", 0)),
-                event.get("severity", 1),
-                event.get("urgency", "monitoring"),
-                event.get("crisis_type", "humanitarian"),
-                event.get("source", "api"),
-                int(event.get("people_affected", 0)),
-                now, now
-            ))
-        db.commit()
-        db.close()
+        try:
+            res = gravar_eventos(db, [{**event, "id": eid}], agora=now)
+        finally:
+            db.close()
+        if res["errors"]:
+            return {"ok": False, "error": res["errors"][0]["error"]}
         return {"ok": True, "id": eid}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 @app.post("/save_events")
-def save_events(events: list):
-    """Save a list of crisis event dicts to the crises table. Unauthenticated."""
-    now = datetime.utcnow().isoformat()
-    saved = 0
-    errors = []
+def save_events(events: List[dict]):
+    """Save a list of crisis event dicts to the crises table. Unauthenticated. Adapter of gravar_eventos."""
     db = get_db()
-    for event in events:
-        eid = event.get("id") or f"api-{now}-{saved}"
-        try:
-            existing = db.execute("SELECT id FROM crises WHERE id=?", (eid,)).fetchone()
-            if existing:
-                db.execute(
-                    "UPDATE crises SET severity=?, urgency=?, crisis_type=?, updated_at=? WHERE id=?",
-                    (event.get("severity", 1), event.get("urgency", "monitoring"),
-                     event.get("crisis_type", "humanitarian"), now, eid)
-                )
-            else:
-                db.execute("""
-                    INSERT INTO crises
-                    (id, title, country, country_iso3, lat, lon,
-                     severity, urgency, crisis_type, source,
-                     people_affected, created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """, (
-                    eid,
-                    event.get("title", ""),
-                    event.get("country", ""),
-                    event.get("country_iso3", "UNK"),
-                    float(event.get("lat", 0)),
-                    float(event.get("lon", 0)),
-                    event.get("severity", 1),
-                    event.get("urgency", "monitoring"),
-                    event.get("crisis_type", "humanitarian"),
-                    event.get("source", "api"),
-                    int(event.get("people_affected", 0)),
-                    now, now
-                ))
-                saved += 1
-        except Exception as e:
-            errors.append({"id": eid, "error": str(e)})
-    db.commit()
-    db.close()
+    try:
+        res = gravar_eventos(db, events)
+    finally:
+        db.close()
     # Update ingest tracking
     _last_ingest["ts"]    = time.time()
-    _last_ingest["count"] = _last_ingest["count"] + saved
-    return {"ok": True, "saved": saved, "errors": errors}
+    _last_ingest["count"] = _last_ingest["count"] + res["saved"]
+    return {"ok": True, "saved": res["saved"], "errors": res["errors"]}
 
 
 def _ingest_fallback():
