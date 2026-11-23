@@ -1,7 +1,7 @@
 # Dash Brasil
 
 Crises brasileiras por município, dentro do Crisis Monitor, em `/brasil/` (frontend) e `/brasil/...` (API).
-Decisões: `docs/adr/0001` a `0007`. Roteiro da gestão de abrigos: `WALKTHROUGH.md`. Requisitos: spec da feature `brasil-dash`.
+Decisões: `docs/adr/0001` a `0007`. Roteiro da gestão de abrigos: `WALKTHROUGH.md`; pendências: `BACKLOG.md`. Requisitos: spec da feature `brasil-dash`.
 
 ## O que tem
 | Parte | Onde |

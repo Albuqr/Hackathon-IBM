@@ -7,6 +7,7 @@ Para explicar do começo ao fim o que entrou na branch `feat/brasil-abrigos`. De
 
 > **Antes de usar dados reais (bloqueio):** o tempo de guarda dos dados de quem saiu do abrigo é decisão do cliente
 > (LGPD) e não está implementado. Até essa decisão e a implementação, só dados fictícios da semente; nenhum dado real.
+> Pendências da fatia: [BACKLOG.md](BACKLOG.md).
 
 ## O que foi construído
 - Papel novo `gestor_abrigo`, com cadastro aberto (`/brasil/cadastro`) e dois logins de teste (`gestor`, `gestor2`).
