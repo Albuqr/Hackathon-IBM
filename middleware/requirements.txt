@@ -9,3 +9,5 @@ python-telegram-bot
 pydantic
 python-multipart
 defusedxml
+anthropic==2.12.0
+PyYAML==6.0.4
